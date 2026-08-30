@@ -1,0 +1,231 @@
+# Skis
+
+A route planner for a day's skiing. You tell it where you are, when you need to
+be down, and what you're comfortable on. It gives you routes with different
+characters, lets you push them around with one-tap refinements, and then
+navigates you.
+
+Currently one resort: **Monterosa Ski**, Valle d'Aosta.
+
+---
+
+## The problem it solves
+
+This is not point-A-to-B routing. It is closer to the orienteering problem:
+given a time budget, find a closed walk that maximises something while getting
+home before the lifts shut.
+
+Nobody skiing wants the shortest path down. They want a good day that ends on
+time. The moment this app exists for: **it's 2pm, you have 90 minutes, you're on
+the wrong side of the mountain, and your car is at Champoluc.**
+
+---
+
+## Running it
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+```
+
+```bash
+npm test           # 27 solver checks — must pass before any commit touching the solver
+npm run bench      # solve() timings, the measurement behind the worker decision
+npm run build      # production build to dist/
+npm run preview    # serve the production build
+```
+
+### The map key
+
+The 3D map uses **MapLibre GL JS** over **MapTiler** terrain and its winter
+basemap (pistes and lifts are already in it).
+
+```bash
+cp .env.example .env
+# add your key from maptiler.com — the free tier is enough
+```
+
+**The app runs without a key.** Rather than a broken grey box, it renders an
+interactive terrain view built from the resort graph's own node altitudes:
+inverse-distance interpolation roughened with ridged noise, hillshaded, with the
+route draped over it. You can orbit and pitch it exactly as you would the real
+map. What you lose is real satellite relief and the basemap's own pistes and
+lift lines. The UI says so plainly rather than pretending.
+
+MapLibre is code-split, so a visitor without a key never downloads the 800KB
+they cannot use.
+
+---
+
+## How it fits together
+
+```
+src/
+  solver.js            the route solver — plain JS, no dependencies, no React
+  resort.js            the Monterosa graph (nodes, lifts, runs)
+  solver.test.js       27 behavioural checks
+  solver.worker.js     the solver, off the main thread
+
+  resorts/index.js     resort registry — what is live, what is coming
+
+  lib/plan.js          human intent → solver options (end times, refinements)
+  lib/geo.js           route → GeoJSON, node snapping, bounds
+  lib/offline.js       committing a route: tiles, graph and route cached
+  lib/persist.js       profile, last plan, committed route
+  lib/useSolver.js     worker hook — only the newest request can resolve
+
+  map/MapCanvas.jsx      MapLibre + MapTiler terrain
+  map/FallbackTerrain.jsx  the no-key terrain view
+  map/layers.js          route casing, difficulty-coloured runs, dashed lifts
+
+  ui/Sheet.jsx           the bottom sheet, the primary surface
+  ui/ElevationProfile.jsx  filled profile + difficulty mix bar
+  screens/               Resort, Plan, Solving, Choose, Detail, Navigate, Summary, Empty
+```
+
+### The solver
+
+Untouched from the handoff and deliberately so. It does constrained randomised
+sampling: Dijkstra from the finish node gives time-home from everywhere, which
+lets a random walk take an edge only if it can still get back. Survivors are
+scored against several objectives. Deterministic by design, so refinements do
+not reshuffle options randomly.
+
+It is free of React imports and has no dependencies, so it ports to a worker or
+a server unchanged. It already runs in a worker here.
+
+**Why a worker.** Measured, not assumed — `npm run bench`:
+
+| case | p50 | p95 |
+|---|---|---|
+| full day, red | 59ms | 89ms |
+| blue only | 46ms | 50ms |
+| 2pm, 90 min, cross-valley | 15ms | 24ms |
+
+A phone is 2-4x slower, so a full-day solve is 200-300ms. Refinements re-solve
+on every tap, and refine is make-or-break — a quarter-second of dropped frames
+per tap is exactly the failure mode to avoid.
+
+### Offline
+
+Committing to a route caches everything needed to ski it with no signal:
+
+- **route and graph** → `localStorage`, a few KB
+- **app shell** → service worker precache
+- **map tiles** → warmed over the route's bounding box at z11–z15, then served
+  `CacheFirst`
+
+Alpine coverage is unreliable; this is a hard requirement, and it is also why
+the graph is kept small and local.
+
+---
+
+## Design
+
+The reference is **Komoot**, and specifically not a clean-neutral
+AI-assistant aesthetic.
+
+- The map is the hero — full-bleed, always mounted, never boxed into a card.
+- The bottom sheet is the primary surface. It drags up over the map and the map
+  never fully disappears.
+- One saturated accent (a rescue orange) carries the route casing, the primary
+  button and active states. Everything else is a cool neutral.
+- The elevation profile is a recurring motif: filled area, difficulty-coloured
+  line, lifts dashed, x axis in **time** rather than distance.
+
+**Why orange and not Komoot's green.** Blue, red and black are reserved — they
+are European piste difficulty signals and are not ours to spend on branding.
+Green is out too: it is the beginner grade in France, and this app expands into
+France. A rescue orange is the strongest read left over both snow and rock.
+
+---
+
+## Decisions that are already made
+
+These came from the brief and are not up for casual revision.
+
+- **Ask for an end time, not a duration.** Skiers think "down by four". Duration
+  is derived, and the last-lift constraint falls out naturally.
+- **Three entry contexts change defaults, not screens.** Night-before, first
+  lift, mid-day reset.
+- **Ability is set once in the profile** and shown as an overridable chip.
+- **Hard constraints are filtered before ranking, not warned about after.** Lift
+  hours remove options rather than generating alerts. When nothing fits, the app
+  says so plainly and says what would change it.
+- **Routes are labelled by character**, not statistics. Numbers are support.
+- **"To next junction", not "to next turn".** Pistes have decision points where
+  runs split; they do not have turns.
+- **Waypoints are optional.** No required pin-dropping step.
+
+Two solver behaviours are surfaced rather than hidden: it returns **fewer routes
+than asked** when the mountain cannot support more (the list is not padded), and
+routes carry a **`similar`** flag when they cover the same terrain with a
+different emphasis, which the UI states plainly.
+
+---
+
+## Deploying
+
+Vercel, zero config — `vercel.json` is in the repo.
+
+```bash
+npx vercel            # preview
+npx vercel --prod
+```
+
+Set `VITE_MAPTILER_KEY` in the Vercel project's environment variables.
+
+---
+
+## Getting to the App Store
+
+The web build is step 1. The app is already a standalone-display PWA with
+safe-area handling and offline caching, so it installs to a home screen today.
+
+For a real App Store listing it wraps in **Capacitor**, which is configured
+here (`capacitor.config.json`). The native project has to be generated and built
+on macOS with Xcode:
+
+```bash
+npm run build
+npx cap add ios          # macOS + Xcode only, once
+npm run ios              # sync the web build and open Xcode
+```
+
+Then in Xcode: set the bundle identifier and signing team, and archive.
+
+Still needed before submitting, none of which is code in this repo:
+
+- an Apple Developer Program account
+- a privacy manifest and App Store privacy answers — the app requests location
+  (to snap your start to the nearest lift station) and stores nothing off-device
+- screenshots at the required device sizes
+- **real resort data**, see below
+
+`@capacitor/status-bar` is installed so the status bar can be set to overlay the
+map, which is the point of the full-bleed layout.
+
+---
+
+## The thing to fix first
+
+`src/resort.js` is **hand-typed from memory and is not accurate.** Run names,
+times and queue estimates are plausible fiction. It is scaffolding, not data.
+
+Replacing it is the highest priority now that the app works. The source is
+OpenStreetMap via the Overpass API: alpine resorts are tagged with `piste:type`
+and `piste:difficulty`, and `aerialway` covers lifts. Build nodes at
+intersections and lift stations, edges for piste segments and lifts, and weights
+from length and gradient for runs plus published ride times for lifts.
+
+Expect mess: unconnected piste segments, missing difficulty tags, lifts that do
+not quite touch the pistes they serve. Budget real time for cleaning and
+graph-stitching, and validate that the graph is strongly connected before
+trusting it.
+
+Queue times and last-lift times are not in OSM. They need resort partnerships,
+which is also the B2B model — resorts pay for the service.
+
+A resort only goes live in `src/resorts/index.js` once its graph has been
+extracted, cleaned and checked. Routing on a graph that is nearly right is worse
+than no routing at all.

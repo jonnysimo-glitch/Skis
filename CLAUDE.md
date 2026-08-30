@@ -30,10 +30,34 @@ market solves that. It should be the thing this app is known for.
 
 ---
 
+## Current state
+
+The app is built and runs. `npm run dev`, or `npm run build && npm run preview`.
+See README.md for the file map and the reasoning behind the structure.
+
+Working: resort selection, plan, solve in a worker, choose with live refine,
+route detail, offline commit, navigate, summary, and the empty state. The 3D map
+works with a MapTiler key and falls back to a terrain view built from the graph's
+own altitudes without one.
+
+Not done, in priority order:
+
+1. **Replace `src/resort.js` with real OSM data.** See "Replacing the resort
+   data" below. Everything else is downstream of this.
+2. Second resort. `src/resorts/index.js` is the registry; the solver still
+   imports its graph directly from `resort.js`, and that is the one change
+   needed — pass the graph into `solve()`. Deliberately not abstracted before a
+   second real dataset exists.
+3. iOS wrapper. Capacitor is configured; `npx cap add ios` needs macOS.
+
 ## Already built and tested — do not redesign these
 
 `src/solver.js` and `src/resort.js` are working and covered by
 `src/solver.test.js` (27 behavioural checks, all passing). Run `npm test`.
+
+They are unchanged from the handoff and should stay that way. The solver runs in
+`src/solver.worker.js`; that wrapper is three lines because the solver imports
+nothing but its own graph. Keep it that way.
 
 The solver does constrained randomised sampling: Dijkstra from the finish node
 gives time-home from everywhere, which lets a random walk take an edge only if
@@ -48,7 +72,7 @@ same run three times — that means the solver is padding. A blue-only skier wit
 five runs available has no choice but to lap them, and refusing to plan their
 day is worse than repeating a run. A fixed cap breaks one case or the other.
 
-`skis-route-planner-v1.html` is the previous prototype. It is a **flow and
+`docs/skis-route-planner-v1.html` is the previous prototype. It is a **flow and
 logic reference only — its visual design is explicitly rejected.** Read it for
 the interaction model. Do not carry over its look.
 
@@ -183,7 +207,19 @@ Plus a genuine empty state when the clocks don't allow a route.
 
 Run the solver in a web worker if it blocks the UI on a phone. Measure first.
 
+Measured — `npm run bench` gives 89ms p95 for a full day on a laptop, so
+200-300ms on a phone. Refinements re-solve on every tap, so it runs in a worker.
+Re-run the benchmark if the sampling constants change.
+
 ---
+
+## One decision made during the build
+
+The brand accent is a **rescue orange**, not Komoot's green. Blue, red and black
+are reserved as piste difficulty signals, and green is the beginner grade in
+France, which this expands into. Orange is the strongest read left over both
+snow and rock. Everything else about the Komoot direction above stands as
+written.
 
 ## Replacing the resort data
 
