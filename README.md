@@ -234,8 +234,22 @@ different emphasis, which the UI states plainly.
 
 ## Trying it
 
-**GitHub Pages.** The `gh-pages` branch carries a prebuilt copy of the site, so
-there is no CI in the way. Turn it on once:
+**One file, no setup.** `npm run build:single` produces
+`dist-single/skis.html` — everything inlined, openable straight from disk with
+no server and no hosting. Good for putting the app in front of someone quickly.
+
+What that costs: no web worker (solving runs on the main thread), no service
+worker, and no MapLibre — a `file://` page has an opaque origin, so its tile
+workers cannot start. The schematic terrain and everything else works. GPS is
+unavailable for the same reason and the app says so.
+
+**GitHub Pages.** Note that Pages on a **private** repo needs a paid GitHub
+plan; on the free plan the Source setting is replaced by an upgrade prompt.
+Make the repo public, or use Vercel/Netlify, whose free tiers deploy private
+repos.
+
+The `gh-pages` branch carries a prebuilt copy of the site, so there is no CI in
+the way. Once Pages is available, turn it on:
 
 **Settings → Pages → Source: Deploy from a branch → `gh-pages` / `(root)`**
 

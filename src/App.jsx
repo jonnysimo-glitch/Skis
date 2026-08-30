@@ -129,7 +129,13 @@ export default function App() {
   // it and takes over once it is genuinely painting — real elevation, real
   // relief. If it never gets there, the schematic simply stays.
   const showSchematic = mapBroken || !mapLive;
-  const tryMapLibre = !mapBroken;
+  // MapLibre spawns its own workers for tile parsing, which cannot be
+  // constructed from a file:// page's opaque origin. It would fail four times
+  // over and then hit the watchdog, so on file:// go straight to the schematic
+  // — which is the whole point of having one.
+  const canRunMapLibre =
+    typeof location === "undefined" || location.protocol !== "file:";
+  const tryMapLibre = !mapBroken && canRunMapLibre;
 
   const chosen = routes[pickIndex] || null;
   const shownRoute =

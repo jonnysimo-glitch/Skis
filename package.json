@@ -16,7 +16,8 @@
     "test:map": "node scripts/validate-layers.mjs",
     "e2e": "npm run build && node scripts/e2e.mjs",
     "e2e:only": "node scripts/e2e.mjs",
-    "dev:host": "vite --host"
+    "dev:host": "vite --host",
+    "build:single": "vite build --config vite.config.singlefile.js"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.1",

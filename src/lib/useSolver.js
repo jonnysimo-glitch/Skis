@@ -20,6 +20,17 @@ export function useSolver() {
 
   useEffect(() => {
     let worker = null;
+    // A file:// page has an opaque origin, so constructing a worker throws.
+    // The bundler can hoist that construction out of a try/catch, so the throw
+    // escapes as an uncaught error and looks like a crash. Cheaper and clearer
+    // to not attempt it: the main-thread path below is already the fallback.
+    const workersUsable =
+      typeof Worker !== "undefined" &&
+      !(typeof location !== "undefined" && location.protocol === "file:");
+    if (!workersUsable) {
+      workerRef.current = null;
+      return undefined;
+    }
     try {
       worker = new Worker(new URL("../solver.worker.js", import.meta.url), {
         type: "module",
