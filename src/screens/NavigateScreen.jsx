@@ -1,6 +1,11 @@
 /**
  * Navigate.
  *
+ * A different interface from the rest of the app on purpose. Everywhere else
+ * content lives in a sheet you drag; here it is pinned. You are moving, the
+ * phone is in a glove, and the one thing you need is fixed where you left it.
+ * Nothing on this screen can be dragged out of the way by accident.
+ *
  * "To next junction", not "to next turn". Pistes have decision points where
  * runs split; they do not have turns.
  *
@@ -14,18 +19,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useGeolocation, kmh } from "../lib/useGeolocation.js";
 import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
-import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
-import ElevationProfile from "../ui/ElevationProfile.jsx";
-import { LegList, Metrics } from "../ui/RouteBits.jsx";
 import { LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
 import { NODES } from "../resort.js";
-import { Arrow, Warning, Restart, Check, Satellite, Locate } from "../ui/Icons.jsx";
+import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Close } from "../ui/Icons.jsx";
 
 /** Why the screen is not following along, in words a skier can act on. */
 function gpsExplanation(state) {
   switch (state) {
-    case "locating": return "Finding you\u2026";
+    case "locating": return "Finding you…";
     case "denied": return "Location is off, so tap when you arrive.";
     case "insecure": return "Location needs https, so tap when you arrive.";
     case "unavailable": return "No location here, so tap when you arrive.";
@@ -117,139 +119,114 @@ export default function NavigateScreen({
   const overrun = projectedFinish - plan.t1;
 
   const junction = NODES[leg.to];
+  const isLift = leg.kind === "lift";
+
+  // The distance reads better than the plan once there is a fix to compute it
+  // from: "300 m" is checkable against what you can see, "4 min" is not.
+  const distance =
+    toJunction === null
+      ? null
+      : toJunction >= 1000
+        ? { v: (toJunction / 1000).toFixed(1), unit: "km" }
+        : { v: String(Math.round(toJunction)), unit: "m" };
 
   return (
-    <>
-      <SheetHead>
-        <div className="eyebrow eyebrow--accent">
-          Leg {step + 1} of {route.segments.length} · {route.title}
+    <div className="nav">
+      {/* The instruction. Pinned, high contrast, legible at arm's length in
+          flat light with the screen dimmed by cold. */}
+      <header className="nav__head">
+        <div className="nav__badge">
+          {isLift ? <Lift width="30" height="30" /> : <Descend width="30" height="30" />}
         </div>
-      </SheetHead>
-
-      <SheetBody>
-        <div className="banner">
-          <div className="banner__k">
-            {leg.kind === "lift" ? `${leg.liftType} up` : `${leg.difficulty} run`}
+        <div className="nav__what">
+          <div className="nav__do">
+            {isLift ? "Ride" : "Ski"} {leg.name}
           </div>
-          <div className="banner__d">
-            {leg.kind === "lift" ? "Ride" : "Ski"} {leg.name}
-          </div>
-          <div className="banner__s">
+          <div className="nav__then">
             {next
               ? `then ${next.kind === "lift" ? "ride" : "ski"} ${next.name}`
               : `last one, finishes at ${junction.name}`}
           </div>
         </div>
+        <div className={`nav__grade nav__grade--${isLift ? "lift" : leg.difficulty}`}>
+          {isLift ? leg.liftType : leg.difficulty}
+        </div>
+        <button className="nav__stop" onClick={onAbandon} aria-label="Stop navigating">
+          <Close width="20" height="20" />
+        </button>
+      </header>
 
-        <div className="spacer-sm" />
-
-        <Metrics
-          three
-          items={[
-            // Once there is a fix, how far away the junction is beats how long
-            // the plan said the leg would take.
-            toJunction !== null
-              ? {
-                  k: "to junction",
-                  v: toJunction >= 1000 ? (toJunction / 1000).toFixed(1) : Math.round(toJunction),
-                  unit: toJunction >= 1000 ? " km" : " m",
-                }
-              : {
-                  k: "to junction",
-                  v: leg.kind === "lift" ? leg.ride : leg.min,
-                  unit: " min",
-                },
-            speed !== null && speed > 0
-              ? { k: "speed", v: speed, unit: " km/h" }
-              : {
-                  k: leg.kind === "lift" ? "metres up" : "metres down",
-                  v: leg.kind === "lift" ? leg.gain : leg.drop,
-                },
-            { k: "due back", v: minutesToClock(projectedFinish) },
-          ]}
-        />
-
-        <p className="note" style={{ marginTop: "var(--s-3)", display: "flex", gap: "var(--s-2)", alignItems: "center" }}>
-          {following ? (
-            <>
-              <Satellite width="15" height="15" style={{ flex: "none", color: "var(--accent-ink)" }} />
-              <span>
-                Following you. <b>{junction.name}</b> is next, at{" "}
-                {junction.alt.toLocaleString()} m.
-              </span>
-            </>
-          ) : (
-            <>
-              <Locate width="15" height="15" style={{ flex: "none" }} />
-              <span>
-                {gpsExplanation(gps.state)} Next junction is <b>{junction.name}</b>,{" "}
-                {junction.alt.toLocaleString()} m.
-                {!live && " Times are from your plan."}
-              </span>
-            </>
-          )}
-        </p>
-
-        <div className="spacer" />
-
-        {overrun > 0 ? (
-          <div className="warn">
-            <Warning className="warn__icon" width="18" height="18" />
-            <span>
-              <span className="warn__t">
-                {overrun} minute{overrun === 1 ? "" : "s"} over
-              </span>
-              <span className="warn__p">
-                Finishing the route as planned puts you back at{" "}
-                {minutesToClock(projectedFinish)}, past your{" "}
-                {minutesToClock(plan.t1)}.{" "}
-                {drift > 4 ? `You are ${drift} minutes behind the plan. ` : ""}
-                Re-plan from {NODES[leg.from].name} and it will use the time you
-                actually have.
-              </span>
-            </span>
+      <div className="nav__metrics">
+        <div className="navmetric">
+          <div className="navmetric__v">
+            {distance ? distance.v : isLift ? leg.ride : leg.min}
+            <span className="navmetric__u">{distance ? distance.unit : "min"}</span>
           </div>
+          <div className="navmetric__k">to {junction.name}</div>
+        </div>
+        <div className="navmetric">
+          <div className="navmetric__v">
+            {speed !== null ? speed : isLift ? leg.gain : leg.drop}
+            <span className="navmetric__u">{speed !== null ? "km/h" : "m"}</span>
+          </div>
+          <div className="navmetric__k">{speed !== null ? "speed" : isLift ? "up" : "down"}</div>
+        </div>
+        <div className={`navmetric${overrun > 0 ? " navmetric--warn" : ""}`}>
+          <div className="navmetric__v">{minutesToClock(projectedFinish)}</div>
+          <div className="navmetric__k">
+            {overrun > 0 ? `${overrun} min over` : "due back"}
+          </div>
+        </div>
+      </div>
+
+      <div className="nav__status">
+        {following ? (
+          <>
+            <Satellite width="14" height="14" />
+            <span>Following you</span>
+          </>
         ) : (
-          drift < -4 && (
-            <div className="info">
-              <Check className="info__icon" width="17" height="17" />
-              <span>
-                {Math.abs(drift)} minutes ahead of the plan. Back at{" "}
-                <b>{minutesToClock(projectedFinish)}</b>.
-              </span>
-            </div>
-          )
+          <>
+            <Locate width="14" height="14" />
+            <span>{gpsExplanation(gps.state)}</span>
+          </>
         )}
+        <span className="nav__legcount">
+          Leg {step + 1} of {route.segments.length}
+        </span>
+      </div>
 
-        <ElevationProfile route={route} height={72} doneThrough={step} showScale />
+      {/* The map is what sits here. Left alone so it can be dragged. */}
 
-        <div className="spacer" />
-
-        <LegList route={route} current={step} doneThrough={step} />
-      </SheetBody>
-
-      <SheetFoot>
+      <footer className="nav__foot">
+        {overrun > 0 && (
+          <div className="nav__over">
+            <Warning width="17" height="17" style={{ flex: "none" }} />
+            <span>
+              <b>{overrun} min over.</b> Finishing as planned puts you back at{" "}
+              {minutesToClock(projectedFinish)}, past your {minutesToClock(plan.t1)}.
+            </span>
+            <button className="nav__replan" onClick={() => onReplan(leg.from)}>
+              <Restart width="16" height="16" /> Re-plan
+            </button>
+          </div>
+        )}
+        <div className="nav__actions">
         {last ? (
-          <button className="btn" onClick={onFinish}>
-            <Check width="18" height="18" /> Finish
+          <button className="btn btn--nav" onClick={onFinish}>
+            <Check width="20" height="20" /> Finish
           </button>
         ) : (
           <button
-            className={following ? "btn btn--ghost" : "btn"}
+            className={`btn btn--nav${following ? " btn--nav-quiet" : ""}`}
             onClick={() => onStep(step + 1)}
           >
-            Reached {junction.name} <Arrow width="18" height="18" />
+            Reached {junction.name} <Arrow width="20" height="20" />
           </button>
         )}
-        {overrun > 0 && (
-          <button className="btn btn--ghost" onClick={() => onReplan(leg.from)}>
-            <Restart width="17" height="17" /> Re-plan from {NODES[leg.from].name}
-          </button>
-        )}
-        <button className="btn btn--quiet" onClick={onAbandon}>
-          Stop navigating
-        </button>
-      </SheetFoot>
-    </>
+        </div>
+      </footer>
+
+    </div>
   );
 }

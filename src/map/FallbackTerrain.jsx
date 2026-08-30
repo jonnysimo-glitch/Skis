@@ -190,6 +190,7 @@ export default function FallbackTerrain({
   camera,
   controlRef,
   viewportBottom = 0,
+  viewportTop = 0,
 }) {
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
@@ -199,7 +200,7 @@ export default function FallbackTerrain({
     bearing: -28, pitch: 56, zoom: 1, targetZoom: 1, panX: 0, panY: 0,
   });
   const dirty = useRef(true);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop });
 
   if (!fieldRef.current) fieldRef.current = buildField();
 
@@ -214,7 +215,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -343,12 +344,13 @@ export default function FallbackTerrain({
         u0 = Math.min(u0, p.u); u1 = Math.max(u1, p.u);
         v0 = Math.min(v0, p.v); v1 = Math.max(v1, p.v);
       }
-      // The sheet covers the bottom. Frame the subject in what is left, but
-      // keep the terrain itself drawing full-bleed behind it.
+      // Chrome covers the bottom, and while navigating the top too. Frame the
+      // subject in what is left, but keep the terrain drawing full-bleed
+      // behind it: a letterboxed mountain looks broken.
       const padX = 26;
-      const padTop = 74;
+      const padTop = 74 + propsRef.current.viewportTop;
       const padBottom = 24;
-      const visibleH = Math.max(180, height - propsRef.current.viewportBottom);
+      const visibleH = Math.max(180, height - propsRef.current.viewportBottom - propsRef.current.viewportTop);
       const availW = width - padX * 2;
       const availH = visibleH - padTop - padBottom;
 

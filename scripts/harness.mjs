@@ -150,6 +150,9 @@ export async function toPlan(page, url) {
   await page.waitForSelector(".hero", { timeout: 20000 });
   await page.click(".hero");
   await page.click("text=Go skiing");
+  // The skiing tab opens on the resort now, not on the form. Plan is the verb.
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
 }
 

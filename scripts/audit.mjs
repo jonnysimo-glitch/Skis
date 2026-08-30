@@ -13,44 +13,7 @@
  *
  * Findings are grouped by screen so a regression points at one place.
  */
-import { chromium } from "playwright";
-import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
-
-const ROOT = new URL("../dist/", import.meta.url).pathname;
-const MIME = {
-  ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
-  ".json": "application/json", ".webmanifest": "application/manifest+json",
-  ".png": "image/png", ".svg": "image/svg+xml", ".woff2": "font/woff2",
-};
-
-async function serve() {
-  const server = createServer(async (req, res) => {
-    let path = join(ROOT, normalize(new URL(req.url, "http://l").pathname));
-    try { if ((await stat(path)).isDirectory()) path = join(path, "index.html"); }
-    catch { path = join(ROOT, "index.html"); }
-    try {
-      res.writeHead(200, { "Content-Type": MIME[extname(path)] || "application/octet-stream" });
-      res.end(await readFile(path));
-    } catch { res.writeHead(404).end("nf"); }
-  });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  return { server, url: `http://127.0.0.1:${server.address().port}/` };
-}
-
-function chromiumPath() {
-  try {
-    const found = chromium.executablePath();
-    if (found && existsSync(found)) return undefined;
-  } catch { /* not installed through Playwright */ }
-  for (const c of [process.env.CHROMIUM_PATH, "/opt/pw-browsers/chromium", "/usr/bin/chromium"]) {
-    if (c && existsSync(c)) return c;
-  }
-  console.error("\n  No Chromium found. Run: npx playwright install chromium\n");
-  process.exit(2);
-}
+import { serve, launch, newPage as makePage } from "./harness.mjs";
 
 /** The audit itself, run inside the page against whatever is on screen. */
 const PROBE = `(() => {
@@ -114,15 +77,18 @@ const PROBE = `(() => {
   // --- 8pt grid ------------------------------------------------------------
   // The rule is that spacing lands on the 4pt half-step. A 1-2px nudge to sit an
   // icon on a text baseline is not spacing, it is kerning, so the floor is 4px.
+  // The ceiling is there because an auto margin resolves to whatever space is
+  // left over, which is layout rather than spacing and lands wherever it lands.
   // Third-party control CSS (MapLibre ships 10px margins) is not ours to police.
   const GRID = 4;
+  const LAYOUT = 120;
   const offGrid = new Map();
   for (const el of all) {
     if (el.closest("[class^=maplibregl-], [class*=' maplibregl-']")) continue;
     const s = getComputedStyle(el);
     for (const prop of ["paddingTop", "paddingBottom", "paddingLeft", "paddingRight", "gap", "rowGap", "columnGap", "marginTop", "marginBottom"]) {
       const v = parseFloat(s[prop]);
-      if (!v || Number.isNaN(v) || v < GRID) continue;
+      if (!v || Number.isNaN(v) || v < GRID || v > LAYOUT) continue;
       if (Math.abs(v % GRID) > 0.6 && Math.abs((v % GRID) - GRID) > 0.6) {
         const key = \`\${prop}:\${v}px\`;
         offGrid.set(key, (offGrid.get(key) || 0) + 1);
@@ -157,7 +123,7 @@ const PROBE = `(() => {
   };
   for (const el of all) {
     if (el.children.length || !el.textContent.trim()) continue;
-    if (el.closest(".hero, .banner, .tabbar, canvas, .mapnote, .modal__scrim")) continue;
+    if (el.closest(".hero, .nav__head, .nav__status, .tabbar, canvas, .mapnote, .modal__scrim, .resortpill, .planbtn, .navcontrols, .nav__foot")) continue;
     const s = getComputedStyle(el);
     const size = parseFloat(s.fontSize);
     const weight = +s.fontWeight || 400;
@@ -179,32 +145,15 @@ const PROBE = `(() => {
 // --------------------------------------------------------------------- run --
 
 const { server, url } = await serve();
-const executablePath = chromiumPath();
-const browser = await chromium.launch({
-  ...(executablePath ? { executablePath } : {}),
-  headless: true,
-});
+const browser = await launch({});
 
 const problems = [];
 let screensChecked = 0;
 
+/** A phone-sized page with the clock frozen. */
 async function newPage(at = [9, 5]) {
-  const ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 2 });
-  await ctx.addInitScript(`(() => {
-    const f = new Date(); f.setHours(${at[0]}, ${at[1]}, 0, 0);
-    const R = Date;
-    class F extends R { constructor(...a){ return a.length ? new R(...a) : new R(f.getTime()); } static now(){ return f.getTime(); } }
-    globalThis.Date = F;
-  })()`);
-  const page = await ctx.newPage();
-  page.errors = [];
-  page.on("pageerror", (e) => page.errors.push(e.message));
-  page.on("console", (m) => {
-    if (m.type() !== "error") return;
-    if (/ERR_CERT|ERR_CONNECTION|ERR_FAILED|Failed to load resource/.test(m.text())) return;
-    page.errors.push(m.text());
-  });
-  page.ctx_ = ctx;
+  const page = await makePage(browser, { at, viewport: { width: 393, height: 852 } });
+  page.ctx_ = page.context_;
   return page;
 }
 
@@ -250,6 +199,8 @@ for (const [label, at] of [["night before", [21, 30]], ["first lift", [8, 20]], 
   await go(page);
   await page.click(".hero");
   await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await audit(page, `plan (${label})`);
 
@@ -263,7 +214,7 @@ for (const [label, at] of [["night before", [21, 30]], ["first lift", [8, 20]], 
     await audit(page, `detail (${label})`);
 
     await page.click("text=/Save offline and start|^Start$/");
-    await page.waitForSelector(".banner", { timeout: 15000 });
+    await page.waitForSelector(".nav", { timeout: 15000 });
     await audit(page, `navigate (${label})`);
   }
   await page.ctx_.close();
@@ -275,6 +226,8 @@ for (const ability of ["Blue", "Anything"]) {
   await go(page);
   await page.click(".hero");
   await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await page.click(`button.chip:text-is("${ability}")`);
   await page.click("text=Find routes");
@@ -289,6 +242,8 @@ for (const ability of ["Blue", "Anything"]) {
   await go(page);
   await page.click(".hero");
   await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await page.click('.segmented__opt:has-text("Straight there")');
   await audit(page, "plan (straight there)");
@@ -306,6 +261,8 @@ for (const ability of ["Blue", "Anything"]) {
   await go(page);
   await page.click(".hero");
   await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await page.fill("#p-t0", "15:30");
   await page.fill("#p-t1", "15:40");
@@ -321,15 +278,17 @@ for (const ability of ["Blue", "Anything"]) {
   await go(page);
   await page.click(".hero");
   await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await page.click("text=Find routes");
   await page.waitForSelector(".routecard", { timeout: 20000 });
   await page.click(".routecard");
   await page.waitForSelector(".sheet__foot .btn");
   await page.click("text=/Save offline and start|^Start$/");
-  await page.waitForSelector(".banner", { timeout: 15000 });
+  await page.waitForSelector(".nav", { timeout: 15000 });
   for (let i = 0; i < 80; i++) {
-    const b = await page.$('.sheet__foot .btn:has-text("Reached")');
+    const b = await page.$('.nav__foot .btn:has-text("Reached")');
     if (!b) break;
     await b.click();
     await page.waitForTimeout(25);

@@ -51,7 +51,7 @@ const where = (page) =>
     if (tab === "Home") return "home";
     if (tab === "Stats") return "stats";
     if (document.querySelector(".empty")) return "empty";
-    if (document.querySelector(".banner")) return "navigate";
+    if (document.querySelector(".nav")) return "navigate";
     if (document.querySelector(".solving")) return "solving";
     // A time input only exists on the form, and the form has chips of its own,
     // so it has to be ruled out before falling back to them.
@@ -343,7 +343,7 @@ if (feature("5. Navigation follows the GPS")) {
   await page.click(".routecard");
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
   await page.click("text=/Save offline and start|^Start$/");
-  await page.waitForSelector(".banner", { timeout: 20000 });
+  await page.waitForSelector(".nav", { timeout: 20000 });
   check("navigation starts", (await where(page)) === "navigate");
 
   const first = await text(page);
@@ -391,7 +391,7 @@ if (feature("5. Navigation follows the GPS")) {
   }
 
   const before = await legNumber();
-  const manual = await page.$('.sheet__foot .btn:has-text("Reached")');
+  const manual = await page.$('.nav__foot .btn:has-text("Reached")');
   if (manual) {
     await manual.click();
     await page.waitForTimeout(400);
@@ -476,6 +476,8 @@ if (feature("6. Every location failure says something")) {
       await page.waitForSelector(".hero", { timeout: 20000 });
       await page.click(".hero");
       await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 15000 });
+      await page.click(".planbtn");
       await page.waitForSelector("#p-t1", { timeout: 15000 });
       await page.click(".locate");
       await page.waitForTimeout(900);
@@ -498,10 +500,10 @@ if (feature("7. Finishing a day writes it down, once")) {
   await page.click(".routecard");
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
   await page.click("text=/Save offline and start|^Start$/");
-  await page.waitForSelector(".banner", { timeout: 20000 });
+  await page.waitForSelector(".nav", { timeout: 20000 });
 
   for (let i = 0; i < 120; i++) {
-    const b = await page.$('.sheet__foot .btn:has-text("Reached")');
+    const b = await page.$('.nav__foot .btn:has-text("Reached")');
     if (!b) break;
     await b.click();
     await page.waitForTimeout(20);

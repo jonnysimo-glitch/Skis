@@ -882,3 +882,203 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { transform: translateY(100%); } }
+
+/* ------------------------------------------------------------- explore -- */
+/* Browse first, plan second. The resort is on screen before any form is. */
+
+.resortpill {
+  flex: 1; min-width: 0;
+  height: var(--tap);
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  background: rgba(11, 26, 36, 0.72);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  color: #fff;
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-callout); font-weight: 600;
+  text-align: left;
+}
+.resortpill__nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resortpill__x {
+  color: rgba(255, 255, 255, 0.55); flex: none;
+  font-size: var(--t-caption); font-weight: 600;
+}
+
+/* The only saturated thing on the explore screen, because it is the only
+   thing on it that does anything. */
+.planbtn {
+  flex: none;
+  height: var(--tap);
+  padding: 0 var(--s-5);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--display);
+  font-size: var(--t-headline); font-weight: 700;
+  display: flex; align-items: center; gap: var(--s-2);
+  box-shadow: var(--e-2);
+  transition: transform 0.1s var(--ease-std), background 0.14s var(--ease-std);
+}
+.planbtn:active { transform: scale(0.97); background: var(--accent-press); }
+
+.lede--sm { font-size: var(--t-callout); }
+
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+.fact {
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "icon value" "icon key";
+  column-gap: var(--s-3);
+  align-items: center;
+}
+.fact__icon { grid-area: icon; color: var(--ink-3); }
+.fact__v {
+  grid-area: value;
+  font-family: var(--display);
+  font-size: var(--t-title-3); font-weight: 700; line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.fact__k {
+  grid-area: key;
+  font-size: var(--t-caption-2); color: var(--ink-3);
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------ navigate -- */
+/* Pinned, not draggable. You are moving and wearing gloves: the instruction
+   stays exactly where you last saw it. */
+
+.nav {
+  position: absolute; inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  display: flex; flex-direction: column;
+}
+.nav > * { pointer-events: auto; }
+
+.nav__head {
+  background: var(--ink);
+  color: #fff;
+  padding: calc(var(--safe-top) + var(--s-4)) var(--gutter) var(--s-4);
+  display: flex; align-items: center; gap: var(--s-3);
+}
+.nav__badge {
+  width: 52px; height: 52px; flex: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.13);
+  display: grid; place-items: center;
+}
+.nav__what { flex: 1; min-width: 0; }
+.nav__do {
+  font-family: var(--display);
+  font-size: var(--t-title-2); font-weight: 700; line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.nav__then {
+  font-size: var(--t-footnote);
+  color: rgba(255, 255, 255, 0.62);
+  margin-top: var(--s-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav__grade {
+  flex: none; align-self: flex-start;
+  font-size: var(--t-caption-2); font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: var(--s-1) var(--s-2);
+  border-radius: var(--r-sm);
+  color: #fff;
+}
+.nav__grade--blue { background: var(--piste-blue); }
+.nav__grade--red { background: var(--piste-red); }
+.nav__grade--black { background: #38424b; }
+.nav__grade--lift { background: rgba(255, 255, 255, 0.16); }
+
+.nav__metrics {
+  display: flex;
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+.navmetric { flex: 1; min-width: 0; padding: var(--s-3) var(--s-2); text-align: center; }
+.navmetric + .navmetric { border-left: 1px solid var(--line); }
+.navmetric__v {
+  font-family: var(--display);
+  font-size: 26px; font-weight: 700; line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.navmetric__u { font-size: var(--t-footnote); font-weight: 600; color: var(--ink-3); margin-left: 2px; }
+.navmetric__k {
+  font-size: var(--t-caption-2); color: var(--ink-3);
+  letter-spacing: 0.05em; text-transform: uppercase;
+  margin-top: var(--s-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.navmetric--warn .navmetric__v { color: var(--warn); }
+
+.nav__status {
+  align-self: flex-start;
+  margin: var(--s-3) var(--gutter) 0;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-pill);
+  background: rgba(11, 26, 36, 0.72);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  color: #fff;
+  font-size: var(--t-caption);
+  display: flex; align-items: center; gap: var(--s-2);
+}
+.nav__legcount { color: rgba(255, 255, 255, 0.6); }
+
+.nav__foot {
+  margin-top: auto;
+  padding: var(--s-3) var(--gutter) calc(var(--safe-bottom) + var(--s-3));
+  background: linear-gradient(to top, rgba(11, 26, 36, 0.6), rgba(11, 26, 36, 0));
+}
+/* Bigger than the standard primary. This one gets tapped with a mitten on. */
+.btn--nav { flex: 1; min-height: 56px; box-shadow: var(--e-2); }
+.btn--nav-quiet { background: rgba(255, 255, 255, 0.92); color: var(--ink); }
+.btn--nav-quiet:active { background: #fff; }
+
+/* Stopping is the only control worth a button of its own, and it goes where a
+   close button goes. Everything else that matters shows itself. */
+.nav__stop {
+  flex: none; align-self: flex-start;
+  width: var(--tap); height: var(--tap);
+  margin: calc(var(--s-1) * -1) calc(var(--s-2) * -1) 0 0;
+  padding: var(--s-1);
+  border-radius: 50%;
+  background-clip: content-box;
+  color: rgba(255, 255, 255, 0.55);
+  display: grid; place-items: center;
+}
+.nav__stop:active { background: rgba(255, 255, 255, 0.14); background-clip: content-box; }
+
+.nav__actions { display: flex; align-items: center; gap: var(--s-2); }
+
+/* Running out of day is the one thing that must never be behind a tap. */
+.nav__over {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-md);
+  padding: var(--s-3);
+  margin-bottom: var(--s-2);
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-footnote); line-height: 1.35;
+  color: var(--ink);
+}
+.nav__over > span { flex: 1; min-width: 0; }
+.nav__over svg { color: var(--warn); }
+.nav__replan {
+  flex: none;
+  min-height: var(--tap);
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  background: var(--warn);
+  color: #fff;
+  font-size: var(--t-footnote); font-weight: 700;
+  display: flex; align-items: center; gap: var(--s-1);
+}

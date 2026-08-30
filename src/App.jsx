@@ -34,6 +34,7 @@ import DetailScreen from "./screens/DetailScreen.jsx";
 import NavigateScreen from "./screens/NavigateScreen.jsx";
 import SummaryScreen from "./screens/SummaryScreen.jsx";
 import EmptyScreen from "./screens/EmptyScreen.jsx";
+import ExploreScreen, { PlanButton } from "./screens/ExploreScreen.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
@@ -56,7 +57,7 @@ import {
   routeBounds,
   nearestNode,
 } from "./lib/geo.js";
-import { Compass, Layers, Plus, Minus, Close, Info, Back } from "./ui/Icons.jsx";
+import { Compass, Layers, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
 
 const EDGES = buildEdges();
 const GRAPH_GEOJSON = graphToGeoJSON(EDGES);
@@ -73,17 +74,27 @@ const MAX_SNAP_METRES = 6000;
 
 /** How tall the sheet opens for each screen. */
 const SNAP_FOR = {
+  // Enough to read the resort and its numbers without the fold landing in the
+  // middle of a label, which reads as a bug rather than as "there is more".
+  explore: 0.44,
   plan: 0.7,
   solving: "peek",
   choose: 0.66,
   detail: 0.64,
-  navigate: "half",
   summary: "half",
   empty: "half",
 };
 
 /** Tab bar height in CSS pixels; keep in step with --tabbar. */
 const TABBAR_H = 56;
+
+/**
+ * How much of the screen the fixed navigation panels take, so the map can
+ * frame the current leg in the strip that is actually visible rather than
+ * behind the instruction.
+ */
+const NAV_HEAD_H = 210;
+const NAV_FOOT_H = 96;
 
 /**
  * Why a straight transfer will not work. Different failures from a day plan:
@@ -126,7 +137,7 @@ export default function App() {
   // Three places: home (where and what you have done), skiing (the mountain),
   // stats (the record). `screen` is the step within skiing.
   const [tab, setTab] = useState(() => (load("resortId") ? "skiing" : "home"));
-  const [screen, setScreen] = useState("plan");
+  const [screen, setScreen] = useState("explore");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const resort = getResort(resortId) || defaultResort;
@@ -214,7 +225,7 @@ export default function App() {
   }, [screen, shownRoute, step, plan.start, plan.finish]);
 
   const focus = useMemo(() => {
-    if (screen === "plan" || screen === "empty") {
+    if (screen === "explore" || screen === "plan" || screen === "empty") {
       return {
         kind: "point",
         center: resort.center,
@@ -222,6 +233,9 @@ export default function App() {
         pitch: resort.pitch,
         bearing: resort.bearing,
         doneThrough: -1,
+        padding: screen === "explore"
+          ? { top: 110, bottom: 260, left: 24, right: 24 }
+          : undefined,
       };
     }
     if (screen === "navigate" && shownRoute) {
@@ -234,6 +248,9 @@ export default function App() {
         zoom: 13.4,
         pitch: 66,
         doneThrough: step,
+        // The instruction covers the top and the buttons the bottom, so the
+        // leg has to be framed in the strip that is left.
+        padding: { top: NAV_HEAD_H, bottom: NAV_FOOT_H, left: 24, right: 24 },
       };
     }
     if (shownRoute) {
@@ -247,9 +264,12 @@ export default function App() {
   // the way rather than stacking on top of the header.
   // Everything that floats over the map sits above the tab bar, except while
   // navigating, when the tab bar is out of the way.
+  const navigating = onMountain && screen === "navigate";
   const tabBarShown = !(onMountain && (screen === "navigate" || screen === "solving"));
   const sheetFloor = tabBarShown ? TABBAR_H : 0;
-  const chromeBottom = Math.max(16, sheetHeight + sheetFloor + 14);
+  const chromeBottom = navigating
+    ? NAV_FOOT_H
+    : Math.max(16, sheetHeight + sheetFloor + 14);
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const chromeHidden = sheetHeight > viewportH * 0.74;
 
@@ -422,7 +442,7 @@ export default function App() {
     setStep(0);
     const next = getResort(id);
     setPlan(defaultPlan(next, context, nowMinutes(), gps?.state === "ok" ? gps.key : null));
-    setScreen("plan");
+    setScreen("explore");
   };
 
   /** Finishing a day is the only thing that writes to the record. */
@@ -470,7 +490,8 @@ export default function App() {
           pins={pins}
           camera={focus}
           controlRef={mapControl}
-          viewportBottom={sheetHeight}
+          viewportBottom={navigating ? NAV_FOOT_H : sheetHeight}
+          viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}
     </>
@@ -481,7 +502,17 @@ export default function App() {
       {MapLayer}
 
       <div className="topbar">
-        {!["plan", "solving", "summary"].includes(screen) && (
+        {onMountain && screen === "explore" && (
+          <>
+            <button className="resortpill" onClick={() => setTab("home")}>
+              <Mountain width="17" height="17" />
+              <span className="resortpill__nm">{resort.name}</span>
+              <span className="resortpill__x">Change</span>
+            </button>
+            <PlanButton onPlan={() => setScreen("plan")} />
+          </>
+        )}
+        {!["explore", "plan", "solving", "summary", "navigate"].includes(screen) && (
           <button
             className="iconbtn"
             aria-label="Back"
@@ -491,16 +522,14 @@ export default function App() {
                   ? plan.mode === "direct"
                     ? "plan"
                     : "choose"
-                  : screen === "navigate"
-                    ? "detail"
-                    : "plan"
+                  : "plan"
               )
             }
           >
             <Back />
           </button>
         )}
-        <span className="topbar__spacer" />
+        {screen !== "explore" && <span className="topbar__spacer" />}
       </div>
 
       <div
@@ -564,8 +593,12 @@ export default function App() {
         />
       )}
 
-      {onMountain && (
+      {onMountain && !navigating && (
       <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
+        {screen === "explore" && (
+          <ExploreScreen resort={resort} />
+        )}
+
         {screen === "plan" && (
           <PlanScreen
             resort={resort}
@@ -577,7 +610,7 @@ export default function App() {
             gps={gps}
             onLocate={onLocate}
             onSolve={onSolve}
-            onBack={() => setTab("home")}
+            onBack={() => setScreen("explore")}
           />
         )}
 
@@ -627,19 +660,6 @@ export default function App() {
           />
         )}
 
-        {screen === "navigate" && chosen && opts && (
-          <NavigateScreen
-            route={chosen}
-            opts={opts}
-            plan={plan}
-            step={step}
-            onStep={setStep}
-            onFinish={finishDay}
-            onReplan={onReplan}
-            onAbandon={() => setScreen("detail")}
-          />
-        )}
-
         {screen === "summary" && chosen && opts && (
           <SummaryScreen
             route={chosen}
@@ -647,12 +667,27 @@ export default function App() {
             plan={plan}
             onAgain={() => {
               setRefine(new Set());
-              setScreen("plan");
+              setScreen("explore");
             }}
             onDone={() => setTab("stats")}
           />
         )}
       </Sheet>
+      )}
+
+      {/* Navigating is a different interface, not a different sheet. Fixed
+          panels, nothing draggable, the map in between. */}
+      {navigating && chosen && opts && (
+        <NavigateScreen
+          route={chosen}
+          opts={opts}
+          plan={plan}
+          step={step}
+          onStep={setStep}
+          onFinish={finishDay}
+          onReplan={onReplan}
+          onAbandon={() => setScreen("detail")}
+        />
       )}
 
       {/* Navigating is full screen: the tab bar is somewhere to go afterwards,
@@ -661,7 +696,7 @@ export default function App() {
         tab={tab}
         onChange={(next) => {
           setTab(next);
-          if (next === "skiing" && screen === "summary") setScreen("plan");
+          if (next === "skiing" && screen === "summary") setScreen("explore");
         }}
         hidden={!tabBarShown}
       />

@@ -95,6 +95,8 @@ try {
     check("the choice is shown on the card", (await page.$$(".hero__tick")).length === 1);
 
     await page.click("text=Go skiing");
+    await page.waitForSelector(".planbtn", { timeout: 15000 });
+    await page.click(".planbtn");
     await page.waitForSelector("#p-t1", { timeout: 15000 });
     check("going skiing brings up the map", (await page.$("canvas")) !== null);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
@@ -429,7 +431,7 @@ try {
     );
 
     await page.click("text=/Save offline and start|^Start$/");
-    await page.waitForSelector(".banner", { timeout: 10000 });
+    await page.waitForSelector(".nav", { timeout: 10000 });
 
     const stored = await page.evaluate(() => {
       const raw = JSON.parse(localStorage.getItem("skis.v1") || "{}");
@@ -445,16 +447,16 @@ try {
     );
 
     const legs = await page.$$eval(".leg", (n) => n.length);
-    const firstBanner = await page.$eval(".banner__d", (n) => n.textContent);
-    await page.click('.sheet__foot .btn:has-text("Reached")');
+    const firstBanner = await page.$eval(".nav__do", (n) => n.textContent);
+    await page.click('.nav__foot .btn:has-text("Reached")');
     await page.waitForTimeout(350);
-    check("advancing changes the instruction", (await page.$eval(".banner__d", (n) => n.textContent)) !== firstBanner);
+    check("advancing changes the instruction", (await page.$eval(".nav__do", (n) => n.textContent)) !== firstBanner);
     check("and marks the leg behind you as done", (await page.$$(".leg--done")).length >= 1);
     check("exactly one leg is current", (await page.$$(".leg--now")).length === 1);
 
     // Walk to the end.
     for (let i = 0; i < legs + 4; i++) {
-      const next = await page.$('.sheet__foot .btn:has-text("Reached")');
+      const next = await page.$('.nav__foot .btn:has-text("Reached")');
       if (!next) break;
       await next.click();
       await page.waitForTimeout(45);
@@ -533,12 +535,14 @@ try {
 
     await page.click(".hero");
     await page.click("text=Go skiing");
+    await page.waitForSelector(".planbtn", { timeout: 15000 });
+    await page.click(".planbtn");
     await page.waitForSelector("#p-t1", { timeout: 15000 });
     await solve(page);
     await page.click(".routecard");
     await page.waitForSelector(".sheet__foot .btn");
     await page.click("text=/Save offline and start|^Start$/");
-    await page.waitForSelector(".banner", { timeout: 10000 });
+    await page.waitForSelector(".nav", { timeout: 10000 });
 
     await page.context_.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -791,7 +795,7 @@ try {
       await page.click(".routecard");
       await page.waitForSelector(".sheet__foot .btn");
       await page.click("text=/Save offline and start|^Start$/");
-      await page.waitForSelector(".banner", { timeout: 10000 });
+      await page.waitForSelector(".nav", { timeout: 10000 });
       return page;
     }
 
@@ -887,6 +891,8 @@ try {
     check("home deliberately has no map", (await page.$("canvas")) === null);
     await page.click(".hero");
     await page.click("text=Go skiing");
+    await page.waitForSelector(".planbtn", { timeout: 15000 });
+    await page.click(".planbtn");
     await page.waitForSelector("#p-t1", { timeout: 15000 });
 
     const canvases = () =>
