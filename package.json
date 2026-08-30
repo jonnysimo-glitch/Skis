@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/solver.test.js && node src/lib/graph.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
+    "test": "node src/solver.test.js && node scripts/osm/graph.test.mjs && node src/lib/graph.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
     "bench": "node scripts/bench-solver.js",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:sync": "npm run build && npx cap sync ios",
@@ -20,7 +20,9 @@
     "build:single": "vite build --config vite.config.singlefile.js",
     "test:palette": "node scripts/check-contrast.mjs",
     "audit": "npm run build && node scripts/audit.mjs",
-    "features": "npm run build && node scripts/features.mjs"
+    "features": "npm run build && node scripts/features.mjs",
+    "resort": "node scripts/build-resort.mjs",
+    "resort:query": "node scripts/build-resort.mjs --query"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",
@@ -38,6 +40,7 @@
     "@maplibre/maplibre-gl-style-spec": "^26.4.1",
     "@vitejs/plugin-react": "^4.3.4",
     "playwright": "^1.62.1",
+    "pngjs": "^7.0.0",
     "vite": "^5.4.11",
     "vite-plugin-pwa": "^0.21.1"
   }

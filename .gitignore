@@ -12,3 +12,8 @@ coverage/
 ios/
 android/
 dist-single/
+
+# Cached elevation tiles. Large, and re-fetchable from a public source.
+# The Overpass exports in data/osm/ are NOT ignored: they are the input a
+# resort graph was built from, and keeping them makes a build reproducible.
+data/dem/

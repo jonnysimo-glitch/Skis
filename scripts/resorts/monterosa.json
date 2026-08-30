@@ -1,0 +1,30 @@
+{
+  "id": "monterosa",
+  "name": "Monterosa Ski",
+  "region": "Valle d'Aosta",
+  "country": "Italy",
+  "note": "Gressoney, Ayas and Alagna, linked over two high cols.",
+
+  "bbox": [7.70, 45.79, 7.96, 45.92],
+  "tolerance": 50,
+
+  "bases": ["Staffal", "Stafal", "Champoluc", "Frachey", "Alagna", "Alagna Valsesia", "Gressoney-La-Trinité"],
+  "areas": {
+    "Staffal": "Gressoney",
+    "Stafal": "Gressoney",
+    "Gressoney-La-Trinité": "Gressoney",
+    "Champoluc": "Ayas",
+    "Frachey": "Ayas",
+    "Alagna": "Alagna",
+    "Alagna Valsesia": "Alagna"
+  },
+
+  "firstLift": 510,
+  "lastDown": 990,
+  "lifts": {
+    "default": { "lastUp": 960, "queue": 5 }
+  },
+
+  "operationsProvenance": "PLACEHOLDER, carried over from the hand-typed graph this replaces. Must be replaced with published lift hours.",
+  "sources": []
+}

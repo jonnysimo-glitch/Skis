@@ -415,6 +415,62 @@ map, which is the point of the full-bleed layout.
 
 ---
 
+## Adding a resort
+
+Adding a resort is a config file and a command. That is deliberate: the
+business case is resorts paying to be in here, so the marginal cost of the
+next one has to be near zero.
+
+```bash
+npm run resort -- kronplatz          # fetch, build, validate, write
+npm run resort -- --all              # every config in scripts/resorts/
+npm run resort -- kronplatz --dry    # report without writing
+npm run resort:query -- kronplatz    # print the Overpass query and stop
+```
+
+`scripts/resorts/<id>.json` holds the things that are specific to one resort
+and are not derivable: the bounding box, which stations are bases you would
+park at, how the mountain divides into areas, and the lift operating hours.
+Everything geometric comes from OpenStreetMap.
+
+The pipeline is `scripts/osm/`:
+
+- **`overpass.mjs`** builds and runs one query per resort, asking for downhill
+  pistes, aerialways, named stations and peaks, and mountain restaurants.
+  Responses are cached under `data/osm/` and committed, so a build is
+  reproducible and OSM's donated hardware is not asked twice for the same
+  data.
+- **`elevation.mjs`** reads height from the same terrarium tiles the map draws,
+  bilinear between pixels. Every gradient and vertical total depends on this,
+  so it is measured rather than assumed, and a missing tile is a hard error
+  rather than a shrug.
+- **`graph.mjs`** turns ways into nodes and edges. This is where the mess is
+  handled: endpoints within a tolerance become one place, lifts are stored
+  uphill and runs downhill whichever way the mapper drew them, `piste:difficulty`
+  is mapped to piste colours **rounding towards harder**, and
+  `aerialway:duration` is used where mapped rather than estimated.
+- **`validate.mjs`** prunes to the largest **strongly connected** component and
+  refuses to write a graph that fails its checks. Strongly connected, not
+  merely connected: a piste you can ski down and never climb back from is the
+  exact trap this app exists to prevent, and an undirected check waves it
+  through.
+
+`node scripts/osm/graph.test.mjs` runs the pipeline against a fixture built to
+contain every defect the real data has — a piste that starts 25 m from the
+station it serves, a lift drawn downhill, a missing `piste:difficulty`, a way
+with no geometry, a zip line tagged as an aerialway, and a one-way trap that
+must not survive pruning.
+
+### What OpenStreetMap does not have
+
+Last-lift times and queue estimates. They are operational facts the resort
+owns, and they are the numbers behind "nothing will strand you", so they live
+in the config with an explicit provenance field rather than being buried in a
+generated graph. A resort whose config still says `PLACEHOLDER` must not be
+marked `available`.
+
+---
+
 ## The thing to fix first
 
 `src/resort.js` is **hand-typed from memory and is not accurate.** Run names,

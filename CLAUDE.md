@@ -42,8 +42,11 @@ own altitudes without one.
 
 Not done, in priority order:
 
-1. **Replace `src/resort.js` with real OSM data.** See "Replacing the resort
-   data" below. Everything else is downstream of this.
+1. **Replace `src/resort.js` with real OSM data.** The pipeline is built and
+   tested (`npm run resort -- <id>`, see README "Adding a resort"); what it
+   needs is network access to overpass-api.de, which some sandboxes block.
+   Configs exist for monterosa, kronplatz and paganella. Everything else is
+   downstream of this.
 2. Second resort. `src/resorts/index.js` is the registry. The solver now takes
    a graph (`solve({ ...opts, graph })`, `asGraph()` builds one) and falls back
    to Monterosa when none is passed, so the code side is done and covered by
