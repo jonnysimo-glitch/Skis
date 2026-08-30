@@ -761,9 +761,11 @@ try {
       /variations on the same runs/i.test(notice)
     );
     check(
-      "rather than being sold them as variety",
-      /isn't much blue terrain/i.test(notice),
-      notice.slice(notice.indexOf("There isn't"), notice.indexOf("There isn't") + 90)
+      "and told why, naming the terrain that is short",
+      // Meaning, not wording: the notice has to say the ability level is the
+      // constraint. Asserting the exact sentence just breaks on a copy edit.
+      /blue terrain/i.test(notice) && /not much|isn't much|little/i.test(notice),
+      notice.replace(/\s+/g, " ").match(/[^.]*blue terrain[^.]*/i)?.[0]?.trim() ?? "no message found"
     );
 
     // The whole mountain, by contrast, should offer real choice and hide the

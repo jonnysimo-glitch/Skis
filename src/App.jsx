@@ -71,8 +71,8 @@ const SNAP_FOR = {
   resort: "half",
   plan: 0.8,
   solving: "peek",
-  choose: "half",
-  detail: "half",
+  choose: 0.68,
+  detail: 0.66,
   navigate: "half",
   summary: "half",
   empty: "half",
@@ -402,9 +402,14 @@ export default function App() {
             <Back />
           </button>
         )}
-        <span className="wordmark">
-          <i className="wordmark__dot" /> Skis
-        </span>
+        {/* The wordmark is for the first screen. Once there is a back button
+            the user knows where they are, and two pieces of chrome competing
+            over the map is one too many. */}
+        {screen === "resort" && (
+          <span className="wordmark">
+            <i className="wordmark__dot" /> Skis
+          </span>
+        )}
         <span className="topbar__spacer" />
       </div>
 
@@ -439,13 +444,10 @@ export default function App() {
         </button>
       </div>
 
-      {noteOpen && showSchematic && !chromeHidden && (
+      {noteOpen && showSchematic && !chromeHidden && screen === "resort" && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
-          <span className="mapnote__t">
-            <b>Schematic terrain</b> — drag to orbit. Add{" "}
-            <code>VITE_MAPTILER_KEY</code> for real relief.
-          </span>
+          <span className="mapnote__t">Simplified terrain — drag to orbit</span>
           <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">
             <Close width="16" height="16" />
           </button>

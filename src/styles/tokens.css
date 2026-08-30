@@ -1,55 +1,125 @@
 /**
  * Design tokens.
  *
- * Direction is Komoot: the map is the hero, UI floats over terrain in a bottom
- * sheet, and ONE saturated accent carries the route line, the primary button
- * and active states. Everything else is a cool neutral so the route reads
- * instantly against snow and rock.
+ * Two rules this file exists to enforce:
  *
- * The accent is a rescue orange. It has to survive being drawn over white snow
- * AND dark rock, and it cannot be blue, red or black — those three are reserved
- * as European piste difficulty signals and are not ours to spend on branding.
+ *   1. Nothing is an arbitrary number. Spacing comes off an 8pt grid, type off
+ *      a scale, radii off a set. Ad-hoc 11px and 13px paddings are the single
+ *      clearest sign that a screen was assembled rather than designed.
+ *   2. It has to feel native on an iPhone. Screen margins are 16pt, body text
+ *      is 17pt, touch targets are 44pt, and the type stack resolves to SF Pro
+ *      on device so it renders exactly like the rest of the OS.
+ *
+ * Direction is Komoot: the map is the hero, UI floats over terrain in a bottom
+ * sheet, one saturated accent carries the route and the primary action.
  */
 :root {
-  /* One accent, used with discipline. */
-  --accent: #e35205;
-  --accent-deep: #c9430a;   /* white text on this passes AA (4.9:1) */
-  --accent-soft: #fff1e7;
-  --accent-line: #f26b1d;   /* route casing over terrain — brightness over text contrast */
+  /* --- Accent -------------------------------------------------------------
+     A rescue orange. It has to survive being drawn over white snow AND dark
+     rock, and it cannot be blue, red or black — those three are reserved as
+     European piste difficulty signals and are not ours to spend on branding. */
+  --accent: #e2540a;
+  --accent-press: #c44508;
+  --accent-tint: #fff2ea;
+  --accent-line: #f26b1d;   /* over terrain: brightness beats text contrast */
+  --accent-ink: #b03e07;    /* accent-coloured text on light backgrounds */
 
-  /* Cool neutrals: snow and rock. */
-  --ink: #0b1a24;
-  --ink-2: #46606f;
-  --ink-3: #7d95a5;
-  --ink-4: #a8bcc8;
-  --surface: #ffffff;
-  --surface-2: #f1f5f8;
-  --surface-3: #e4ecf1;
-  --line: #dce6ec;
-  --line-strong: #c3d3dd;
+  /* --- Neutrals -----------------------------------------------------------
+     Cool cast, like snow shadow. A single ramp so contrast is predictable. */
+  --n-00: #ffffff;
+  --n-05: #f5f8fa;
+  --n-10: #eaeff3;
+  --n-20: #dbe3e9;
+  --n-30: #c2cfd8;
+  --n-40: #9aabb7;
+  --n-50: #74899a;
+  --n-60: #54697a;
+  --n-70: #3a4d5c;
+  --n-80: #22333f;
+  --n-90: #142430;
+  --n-95: #0b1a24;
 
-  /* Domain signals. European piste convention — not decoration, do not restyle. */
+  --ink: var(--n-95);
+  --ink-2: var(--n-60);
+  --ink-3: var(--n-50);
+  --ink-4: var(--n-40);
+  --surface: var(--n-00);
+  --surface-2: var(--n-05);
+  --surface-3: var(--n-10);
+  --line: var(--n-20);
+  --line-strong: var(--n-30);
+
+  /* --- Domain signals -----------------------------------------------------
+     European piste convention. Not decoration — do not restyle. */
   --piste-blue: #1d6fcc;
   --piste-red: #c22b37;
   --piste-black: #101820;
   --lift: #7d95a5;
 
-  --warn: #a86416;
-  --warn-bg: #fdf5e6;
-  --warn-line: #ecd9ab;
+  --warn: #9a5b12;
+  --warn-bg: #fdf4e6;
+  --warn-line: #ecd7a8;
 
-  --display: "Outfit Variable", "Outfit", system-ui, -apple-system, sans-serif;
-  --ui: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  /* --- Type ---------------------------------------------------------------
+     Body resolves to SF Pro on iPhone, so text metrics match the OS. Inter is
+     the bundled fallback everywhere else. Display is Archivo: a sturdy sporty
+     grotesque that keeps numbers looking like instrument readings rather than
+     like a web dashboard. */
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+        "Inter Variable", "Inter", "Segoe UI", sans-serif;
+  --display: "Archivo Variable", "Archivo", -apple-system, BlinkMacSystemFont,
+             "SF Pro Display", system-ui, sans-serif;
 
+  /* iOS type scale. Body is 17 — anything smaller reads as a web page. */
+  --t-title-xl: 34px;
+  --t-title-1: 28px;
+  --t-title-2: 22px;
+  --t-title-3: 20px;
+  --t-headline: 17px;
+  --t-body: 17px;
+  --t-callout: 16px;
+  --t-subhead: 15px;
+  --t-footnote: 13px;
+  --t-caption: 12px;
+  --t-caption-2: 11px;
+
+  /* --- Spacing: 8pt grid ------------------------------------------------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+
+  /** Apple's standard screen margin. Everything aligns to this. */
+  --gutter: 16px;
+  /** Minimum comfortable touch target. */
+  --tap: 44px;
+
+  /* --- Radii -------------------------------------------------------------- */
+  --r-xs: 6px;
   --r-sm: 10px;
   --r-md: 14px;
-  --r-lg: 20px;
-  --r-sheet: 26px;
+  --r-lg: 18px;
+  --r-xl: 22px;
+  --r-sheet: 28px;
   --r-pill: 999px;
 
-  --shadow-sheet: 0 -2px 28px rgba(11, 26, 36, 0.16);
-  --shadow-float: 0 2px 14px rgba(11, 26, 36, 0.18);
-  --shadow-card: 0 1px 3px rgba(11, 26, 36, 0.07);
+  /* --- Elevation ----------------------------------------------------------
+     Layered rather than one soft blur: a tight contact shadow plus a wide
+     ambient one is what stops a card looking like a coloured rectangle. */
+  --e-1: 0 1px 2px rgba(11, 26, 36, 0.06), 0 1px 1px rgba(11, 26, 36, 0.04);
+  --e-2: 0 2px 6px rgba(11, 26, 36, 0.08), 0 1px 2px rgba(11, 26, 36, 0.06);
+  --e-3: 0 6px 16px rgba(11, 26, 36, 0.12), 0 2px 4px rgba(11, 26, 36, 0.06);
+  --e-sheet: 0 -1px 0 rgba(11, 26, 36, 0.06), 0 -8px 32px rgba(11, 26, 36, 0.18);
+
+  /* --- Motion -------------------------------------------------------------
+     iOS-like: quick, decisive, slight overshoot on sheets only. */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);

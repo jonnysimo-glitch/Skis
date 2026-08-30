@@ -13,7 +13,6 @@ import { backAt, legClocks, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
 import { NODES } from "../resort.js";
 import { commitRoute } from "../lib/offline.js";
-import { hasMapKey } from "../map/config.js";
 import { Back, Download, Warning, Check, Wifi, Clock } from "../ui/Icons.jsx";
 
 export default function DetailScreen({ route, opts, plan, resortId, onStart, onBack }) {
@@ -100,19 +99,16 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
         ) : (
           <button className="btn" onClick={save}>
             <Download width="18" height="18" />
-            {hasMapKey ? "Save offline and start" : "Start"}
+            Save offline and start
           </button>
         )}
         <button className="btn btn--quiet" onClick={onBack}>
           <Back width="16" height="16" /> Back to options
         </button>
-        {!hasMapKey && (
-          <p className="note" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <Wifi width="14" height="14" style={{ flex: "none", marginTop: 2 }} />
-            No map key set, so there are no tiles to cache. The route and the
-            terrain view work offline as they are.
-          </p>
-        )}
+        <p className="note" style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", justifyContent: "center" }}>
+          <Wifi width="14" height="14" style={{ flex: "none" }} />
+          Saved to your phone — works with no signal
+        </p>
       </SheetFoot>
     </>
   );

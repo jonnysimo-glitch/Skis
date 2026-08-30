@@ -7,7 +7,7 @@
  */
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import { RESORTS } from "../resorts/index.js";
-import { Mountain, Arrow, Check } from "../ui/Icons.jsx";
+import { Arrow, Check } from "../ui/Icons.jsx";
 
 /**
  * Terrain illustration standing in for photography. Layered ridgelines with
@@ -84,9 +84,8 @@ export default function ResortScreen({ selected, onSelect, onContinue }) {
   return (
     <>
       <SheetHead>
-        <div className="eyebrow">
-          <Mountain width="14" height="14" /> Where are you skiing
-        </div>
+        {/* No eyebrow: "where are you skiing" and "pick a mountain" say the
+            same thing, and one of them is just taking up the sheet. */}
         <h1 className="title">Pick a mountain</h1>
       </SheetHead>
 
@@ -111,17 +110,21 @@ export default function ResortScreen({ selected, onSelect, onContinue }) {
                 {resort.region}, {resort.country}
               </span>
               <span className="hero__meta">
-                <span>
-                  <b>{resort.stats.lifts}</b> lifts
+                <span className="hero__stat">
+                  <b>{resort.stats.lifts}</b>
+                  <span>lifts</span>
                 </span>
-                <span>
-                  <b>{resort.stats.runs}</b> runs
+                <span className="hero__stat">
+                  <b>{resort.stats.runs}</b>
+                  <span>runs</span>
                 </span>
-                <span>
-                  <b>{resort.stats.top.toLocaleString()}</b> m top
+                <span className="hero__stat">
+                  <b>{(resort.stats.top / 1000).toFixed(1)}k</b>
+                  <span>m top</span>
                 </span>
-                <span>
-                  <b>{resort.stats.valleys}</b> valleys
+                <span className="hero__stat">
+                  <b>{resort.stats.valleys}</b>
+                  <span>valleys</span>
                 </span>
               </span>
             </span>

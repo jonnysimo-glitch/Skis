@@ -30,8 +30,8 @@ export const CONTEXT_COPY = {
     eyebrow: "First lift",
     title: "What have you\ngot time for?",
     hint: {
-      t: "Starting from where you are",
-      s: "First lift is in a few minutes. Times are set from the clock — change them if you are not going up yet.",
+      t: "Times set from the clock",
+      s: "Change them if you're not going up yet.",
     },
   },
   midday: {
@@ -39,7 +39,7 @@ export const CONTEXT_COPY = {
     title: "Where are you,\nand when's the car?",
     hint: {
       t: "Half the day is gone",
-      s: "Start is where you are standing now, finish is wherever you left the car. Nothing suggested will strand you above a closed lift.",
+      s: "Start is where you are, finish is where the car is.",
     },
   },
 };

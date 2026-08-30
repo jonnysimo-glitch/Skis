@@ -44,9 +44,9 @@ export default function ChooseScreen({
 
   const similar = routes.filter((r) => r.similar).length;
   // The solver returns fewer than asked when the terrain cannot support more.
-  // Worth saying out loud only once the list is genuinely thin — being told
-  // "only four different days" when four are on offer is noise.
-  const short = routes.length < SHOWN_BY_DEFAULT + 1;
+  // Three is the intended answer, though, so announcing a shortfall at three
+  // is crying wolf. Say it when the choice is genuinely thin.
+  const short = routes.length < SHOWN_BY_DEFAULT;
 
   return (
     <>
@@ -59,11 +59,7 @@ export default function ChooseScreen({
               : `${routes.length} routes`}
           {opts.lunch ? " · lunch included" : ""}
         </div>
-        <h1 className="title">
-          Pick a shape
-          <br />
-          for the day
-        </h1>
+        <h1 className="title title--sm">Pick a shape for the day</h1>
       </SheetHead>
 
       <SheetBody>
@@ -71,8 +67,9 @@ export default function ChooseScreen({
           <div className="info" style={{ marginBottom: 14 }}>
             <Info className="info__icon" width="17" height="17" />
             <span>
-              There isn't much {opts.ability} terrain here — {similar === routes.length ? "these are" : `${similar} of these are`}{" "}
-              <b>variations on the same runs</b> rather than genuinely different days.
+              Not much {opts.ability} terrain here —{" "}
+              {similar === routes.length ? "these are" : `${similar} of these are`}{" "}
+              <b>variations on the same runs</b>.
             </span>
           </div>
         )}
@@ -81,9 +78,8 @@ export default function ChooseScreen({
           <div className="info" style={{ marginBottom: 14 }}>
             <Info className="info__icon" width="17" height="17" />
             <span>
-              The mountain only supports <b>{routes.length}</b> genuinely different{" "}
-              {routes.length === 1 ? "day" : "days"} in that window. Padding the list
-              with near-copies wouldn't be a choice.
+              Only <b>{routes.length === 1 ? "one" : routes.length}</b> genuinely
+              different {routes.length === 1 ? "day" : "days"} fits that window.
             </span>
           </div>
         )}

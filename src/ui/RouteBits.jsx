@@ -20,7 +20,6 @@ export function StatRow({ items, large }) {
     <div className={`stats${large ? " stats--lg" : ""}`}>
       {items.map((item) => (
         <div className="stat" key={item.k}>
-          <item.icon className="stat__icon" width={large ? 18 : 15} height={large ? 18 : 15} />
           <span className="stat__v">
             {item.v}
             {item.unit && <span className="stat__u">{item.unit}</span>}
@@ -34,15 +33,15 @@ export function StatRow({ items, large }) {
 
 /** The four numbers a skier checks first. */
 export const routeStats = (route) => [
-  { icon: Clock, k: "out", v: hours(route.minutes) },
-  { icon: Ruler, k: "skied", v: route.km, unit: " km" },
+  { icon: Clock, k: "time", v: hours(route.minutes) },
+  { icon: Ruler, k: "distance", v: route.km, unit: " km" },
   { icon: Descend, k: "descent", v: route.vertical.toLocaleString(), unit: " m" },
   { icon: Runs, k: "runs", v: route.distinctRuns },
 ];
 
 export const detailStats = (route) => [
   { icon: Descend, k: "descent", v: route.vertical.toLocaleString(), unit: " m" },
-  { icon: Ruler, k: "skied", v: route.km, unit: " km" },
+  { icon: Ruler, k: "distance", v: route.km, unit: " km" },
   { icon: Peak, k: "high point", v: route.highestAlt.toLocaleString(), unit: " m" },
   { icon: Lift, k: "lifts", v: route.lifts },
 ];
