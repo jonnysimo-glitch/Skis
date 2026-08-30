@@ -275,9 +275,11 @@ VITE_BASE=/Skis/ npm run build
 # copy dist/ onto the gh-pages branch, keeping .nojekyll and 404.html
 ```
 
-`.github/workflows/pages.yml` does the same thing through Actions and is set to
-manual-only. Use it instead if you switch the Pages source to "GitHub Actions" —
-running both would have them fight over the deployment.
+There is deliberately no Actions workflow. Pages can serve *either* from a
+branch *or* from an Actions artifact, never both, and having one of each meant
+the setting in the repo silently decided which of two mechanisms was live —
+with a 404 as the only symptom when they disagreed. One mechanism, no CI, and
+the served bytes are the ones the test suite ran against.
 
 **Locally**, which is the certain path:
 
