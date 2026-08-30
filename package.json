@@ -15,7 +15,8 @@
     "test:solver": "node src/solver.test.js",
     "test:map": "node scripts/validate-layers.mjs",
     "e2e": "npm run build && node scripts/e2e.mjs",
-    "e2e:only": "node scripts/e2e.mjs"
+    "e2e:only": "node scripts/e2e.mjs",
+    "dev:host": "vite --host"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.1",

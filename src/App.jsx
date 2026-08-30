@@ -92,7 +92,7 @@ export default function App() {
     defaultPlan(getResort(load("resortId")) || defaultResort, detectContext(nowMinutes()), nowMinutes())
   );
   // null | {state:'ok', key} | {state:'far', km} | {state:'denied'}
-  //      | {state:'unavailable'} | {state:'locating'}
+  //      | {state:'insecure'} | {state:'unavailable'} | {state:'locating'}
   const [gps, setGps] = useState(null);
 
   const setAbility = (value) => {
@@ -276,6 +276,14 @@ export default function App() {
   const onLocate = () => {
     if (!navigator.geolocation) {
       setGps({ state: "unavailable" });
+      return;
+    }
+    // Geolocation only works in a secure context. Over http on a LAN address —
+    // which is exactly how you test this on a phone — the browser reports a
+    // denied permission, and blaming the permission sends you to settings to
+    // toggle something that was never the problem.
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      setGps({ state: "insecure" });
       return;
     }
     setGps({ state: "locating" });

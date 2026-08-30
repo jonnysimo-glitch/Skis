@@ -28,6 +28,8 @@ function locateLabel(gps, resort) {
       return `You're ${gps.km} km from ${resort.name} — pick a start below`;
     case "denied":
       return "Location is off for this site — pick a start below";
+    case "insecure":
+      return "Location needs https — pick a start below";
     case "unavailable":
       return "Can't get a location here — pick a start below";
     default:

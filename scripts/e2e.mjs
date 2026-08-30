@@ -13,6 +13,7 @@
 import { chromium } from "playwright";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 
 const ROOT = new URL("../dist/", import.meta.url).pathname;
@@ -68,8 +69,9 @@ async function serve() {
       res.writeHead(404).end("not found");
     }
   });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  return { server, url: `http://127.0.0.1:${server.address().port}/` };
+  await new Promise((r) => server.listen(0, "0.0.0.0", r));
+  const port = server.address().port;
+  return { server, port, url: `http://127.0.0.1:${port}/` };
 }
 
 // ------------------------------------------------------------- page setup --
@@ -128,9 +130,42 @@ const solve = async (page) => {
 
 // ------------------------------------------------------------------- run --
 
-const { server, url } = await serve();
+const { server, port, url } = await serve();
+/**
+ * Find a Chromium to drive.
+ *
+ * Playwright's own lookup is right on a normal machine. Some sandboxes ship a
+ * pre-installed browser at a fixed path instead, so fall back to that before
+ * giving up — and when neither exists, say what to run rather than throwing a
+ * path that means nothing to the reader.
+ */
+function chromiumPath() {
+  try {
+    const found = chromium.executablePath();
+    if (found && existsSync(found)) return undefined; // let Playwright handle it
+  } catch {
+    /* not installed through Playwright */
+  }
+  for (const candidate of [
+    process.env.CHROMIUM_PATH,
+    "/opt/pw-browsers/chromium",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+  ]) {
+    if (candidate && existsSync(candidate)) return candidate;
+  }
+  console.error(
+    "\n  No Chromium found.\n" +
+      "  Run:  npx playwright install chromium\n" +
+      "  Or point CHROMIUM_PATH at an existing browser binary.\n"
+  );
+  process.exit(2);
+}
+
+const executablePath = chromiumPath();
 const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium",
+  ...(executablePath ? { executablePath } : {}),
   headless: !HEADED,
 });
 
@@ -890,6 +925,39 @@ try {
       const due = await page.$$eval(".metric__v", (n) => n.map((e) => e.textContent));
       check("due-back is a plausible ski time, not the middle of the night", due.some((d) => /^(0?9|1[0-6]):/.test(d)), due.join(" / "));
       check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+      await page.context_.close();
+    }
+  }
+
+  // ========================================== O. TESTING FROM A PHONE ==
+  if (section("O. Served over a LAN address, as it is when testing on a phone")) {
+    // Geolocation and service workers need a secure context. 127.0.0.1 counts;
+    // http://192.168.x.x does not. Blaming the permission in that case sends
+    // someone to settings to toggle something that was never the problem.
+    const { networkInterfaces } = await import("node:os");
+    const lan = Object.values(networkInterfaces())
+      .flat()
+      .find((i) => i && i.family === "IPv4" && !i.internal)?.address;
+
+    if (!lan) {
+      check("no non-loopback address available to test against", true, "skipped");
+    } else {
+      const page = await newPage(browser, {
+        geolocation: { latitude: 45.879, longitude: 7.818 },
+        permissions: ["geolocation"],
+      });
+      await toPlan(page, `http://${lan}:${port}/`);
+      check(
+        "a LAN address is an insecure context, as expected",
+        (await page.evaluate(() => window.isSecureContext)) === false
+      );
+      await page.click(".locate");
+      await page.waitForTimeout(1400);
+      const label = await page.$eval(".locate", (n) => n.textContent.trim());
+      check("and the app blames https, not the permission", /https/i.test(label), label);
+      check("the app is otherwise fully usable", (await page.$$eval("#p-start option", (n) => n.length)) > 1);
+      await solve(page);
+      check("including solving", (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
       await page.context_.close();
     }
   }
