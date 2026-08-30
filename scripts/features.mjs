@@ -622,10 +622,28 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   check("between the pill and the tab bar there is only map", ["canvas", "div"].includes(covered.hits), covered.hits);
   check("and that is most of the screen", covered.gap > 600, `${covered.gap}px`);
 
-  const planText = await page.$eval(".planbtn", (b) => b.textContent.trim());
-  check("there is one button and it says Plan", /Plan/.test(planText), planText);
-  const planBox = await page.$eval(".planbtn", (b) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
+  // Count, not just find. A duplicate rendered off-screen passes every check
+  // that reads the first match, which is exactly how one survived a rewrite.
+  const plans = await page.$$eval(".planbtn", (n) => n.map((b) => b.textContent.trim()));
+  check("there is exactly one Plan button", plans.length === 1, plans.join(" | ") || "none");
+  check("and it says Plan", /Plan/.test(plans[0] || ""), plans[0]);
+  const planBox = await page.$eval(".planbtn", (b) => {
+    const r = b.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), mid: r.top + r.height / 2, vh: window.innerHeight };
+  });
   check("it is a real target", planBox.h >= 44 && planBox.w >= 80, `${planBox.w}x${planBox.h}`);
+  // The thumb zone, not a top corner. This is a phone in one gloved hand.
+  check("and it is within thumb reach at the bottom", planBox.mid > planBox.vh * 0.75,
+    `centre at ${Math.round((planBox.mid / planBox.vh) * 100)}% down`);
+  check("it spans the screen rather than hiding in a corner", planBox.w > planBox.vh * 0.35, `${planBox.w}px wide`);
+
+  // And the map controls are not underneath it.
+  const overlap = await page.evaluate(() => {
+    const plan = document.querySelector(".planbtn").getBoundingClientRect();
+    const tools = document.querySelector(".maptools").getBoundingClientRect();
+    return Math.round(plan.top - tools.bottom);
+  });
+  check("the map controls stack above it, not behind it", overlap > 0, `${overlap}px clear`);
 
   check("the resort name is not truncated", await page.$eval(".resortpill__nm", (n) => n.scrollWidth <= n.clientWidth + 1),
     await page.$eval(".resortpill__nm", (n) => `${n.scrollWidth} in ${n.clientWidth}`));

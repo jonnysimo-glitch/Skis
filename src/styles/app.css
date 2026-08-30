@@ -886,8 +886,10 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 /* ------------------------------------------------------------- explore -- */
 /* Browse first, plan second. The resort is on screen before any form is. */
 
+/* Quiet, and only as wide as the name. Changing resort is something you do
+   once a trip; it does not deserve the width of the screen. */
 .resortpill {
-  flex: 1; min-width: 0;
+  flex: 0 1 auto; min-width: 0;
   height: var(--tap);
   padding: 0 var(--s-3);
   border-radius: var(--r-pill);
@@ -906,21 +908,26 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 
 /* The only saturated thing on the explore screen, because it is the only
-   thing on it that does anything. */
+   thing on it that does anything, and in the thumb zone rather than the top
+   corner: this is a phone held in one gloved hand on a chairlift. */
 .planbtn {
-  flex: none;
-  height: var(--tap);
-  padding: 0 var(--s-5);
+  position: absolute;
+  left: var(--gutter); right: var(--gutter);
+  bottom: calc(var(--sheet-floor, 0px) + var(--s-4));
+  z-index: 5;
+  height: 56px;
   border-radius: var(--r-pill);
   background: var(--accent);
   color: #fff;
   font-family: var(--display);
-  font-size: var(--t-headline); font-weight: 700;
-  display: flex; align-items: center; gap: var(--s-2);
-  box-shadow: var(--e-2);
+  font-size: var(--t-title-3); font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex; align-items: center; justify-content: center; gap: var(--s-2);
+  box-shadow: var(--e-3), 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
   transition: transform 0.1s var(--ease-std), background 0.14s var(--ease-std);
 }
-.planbtn:active { transform: scale(0.97); background: var(--accent-press); }
+.planbtn:active { transform: scale(0.985); background: var(--accent-press); }
+.planbtn--hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 
 /* ------------------------------------------------------------ navigate -- */
 /* Pinned, not draggable. You are moving and wearing gloves: the instruction

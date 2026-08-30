@@ -92,6 +92,9 @@ const TABBAR_H = 56;
 const NAV_HEAD_H = 210;
 const NAV_FOOT_H = 96;
 
+/** Plan's height; the map controls stack above it rather than behind it. */
+const PLAN_BUTTON_H = 56;
+
 
 
 /**
@@ -276,7 +279,7 @@ export default function App() {
   const chromeBottom = navigating
     ? NAV_FOOT_H
     : exploring
-      ? sheetFloor + 16
+      ? sheetFloor + PLAN_BUTTON_H + 32
       : Math.max(16, sheetHeight + sheetFloor + 14);
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const chromeHidden = sheetHeight > viewportH * 0.74;
@@ -511,14 +514,11 @@ export default function App() {
 
       <div className="topbar">
         {onMountain && screen === "explore" && (
-          <>
-            <button className="resortpill" onClick={() => setTab("home")}>
-              <Mountain width="17" height="17" />
-              <span className="resortpill__nm">{resort.name}</span>
-              <span className="resortpill__x">Change</span>
-            </button>
-            <PlanButton onPlan={() => setScreen("plan")} />
-          </>
+          <button className="resortpill" onClick={() => setTab("home")}>
+            <Mountain width="16" height="16" />
+            <span className="resortpill__nm">{resort.name}</span>
+            <span className="resortpill__x">Change</span>
+          </button>
         )}
         {!["explore", "plan", "solving", "summary", "navigate"].includes(screen) && (
           <button
@@ -574,6 +574,11 @@ export default function App() {
       {/* Only once the schematic is what you are actually going to be looking
           at. Without a key that is immediate; with one it means MapLibre gave
           up, and gating on that stops the note flashing while it loads. */}
+      {/* Plan sits in the thumb zone rather than a top corner. This is a phone
+          held in one gloved hand, and it is the one thing on this screen you
+          do every single time. */}
+      {exploring && <PlanButton onPlan={() => setScreen("plan")} />}
+
       {noteOpen && showSchematic && (!hasMapKey || mapBroken) && !chromeHidden &&
         screen === "plan" && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
