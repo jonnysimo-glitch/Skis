@@ -234,13 +234,25 @@ different emphasis, which the UI states plainly.
 
 ## Trying it
 
-**GitHub Pages** is wired up: `.github/workflows/pages.yml` builds and deploys
-on every push to the working branch, so there should be a live build at
+**GitHub Pages.** The `gh-pages` branch carries a prebuilt copy of the site, so
+there is no CI in the way. Turn it on once:
+
+**Settings → Pages → Source: Deploy from a branch → `gh-pages` / `(root)`**
+
+Then it is live at
 
     https://jonnysimo-glitch.github.io/Skis/
 
-If that 404s, check the repo's **Actions** tab — the first run has to enable
-Pages, and that needs Actions to be allowed on the repo.
+To publish a new build:
+
+```bash
+VITE_BASE=/Skis/ npm run build
+# copy dist/ onto the gh-pages branch, keeping .nojekyll and 404.html
+```
+
+`.github/workflows/pages.yml` does the same thing through Actions and is set to
+manual-only. Use it instead if you switch the Pages source to "GitHub Actions" —
+running both would have them fight over the deployment.
 
 **Locally**, which is the certain path:
 

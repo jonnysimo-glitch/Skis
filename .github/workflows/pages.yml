@@ -3,11 +3,15 @@
 # Pages serves from a subpath (/<repo>/), so the build needs a matching base.
 # VITE_BASE is read by vite.config.js and defaults to "/" everywhere else, so
 # local dev and a root deploy (Vercel, Netlify) are unaffected.
+#
+# MANUAL ONLY, on purpose. The live site is currently served from the gh-pages
+# branch, which carries a prebuilt copy and needs no CI at all — one less thing
+# between a push and a working URL. This workflow is here for when Pages is
+# switched to the "GitHub Actions" source instead; running it automatically
+# while the branch source is in use would just fight it.
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [claude/monterosa-ski-app-aeb8ex, main]
   workflow_dispatch:
 
 permissions:
