@@ -557,7 +557,10 @@ try {
     check("the app cold-loads with the radio off", (await page.$(".sheet")) !== null);
     check("the map still draws", (await page.$("canvas, .maplibregl-canvas")) !== null);
     check("the committed route survived", (await page.evaluate(() => !!JSON.parse(localStorage.getItem("skis.v1") || "{}").committed)));
+    // A reload lands back on the mountain, which is where the tab starts.
+    check("and it comes back to the resort, not mid-form", (await page.$(".planbtn")) !== null);
 
+    await page.click(".planbtn");
     await page.waitForSelector("#p-t1", { timeout: 10000 });
     await solve(page);
     const offlineRoutes = await routeCount(page);
