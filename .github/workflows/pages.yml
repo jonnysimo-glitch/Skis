@@ -1,0 +1,67 @@
+# Deploy the web build to GitHub Pages.
+#
+# Pages serves from a subpath (/<repo>/), so the build needs a matching base.
+# VITE_BASE is read by vite.config.js and defaults to "/" everywhere else, so
+# local dev and a root deploy (Vercel, Netlify) are unaffected.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [claude/monterosa-ski-app-aeb8ex, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; never cancel one midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Playwright is a devDependency for the e2e suite; the browser download
+      # is not needed to build.
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # Solver, geometry and map-layer checks. Fast, no browser.
+      - run: npm test
+
+      - id: pages
+        uses: actions/configure-pages@v5
+        with:
+          # Turn Pages on if it is not already, rather than failing with a
+          # setup error the first time this runs.
+          enablement: true
+
+      - run: npm run build
+        env:
+          VITE_BASE: ${{ steps.pages.outputs.base_path }}/
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
