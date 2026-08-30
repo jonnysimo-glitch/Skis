@@ -445,11 +445,6 @@ input[type="time"].control { font-variant-numeric: tabular-nums; font-weight: 50
   margin-top: 12px; padding-top: 11px;
   border-top: 1px solid var(--surface-3);
 }
-.pip { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.pip--blue { background: var(--piste-blue); }
-.pip--red { background: var(--piste-red); }
-.pip--black { background: var(--piste-black); }
-.pipn { font-size: 11.5px; color: var(--ink-3); margin-right: 7px; font-variant-numeric: tabular-nums; }
 .routecard__back {
   margin-left: auto;
   font-size: 12.5px; color: var(--ink-2);
@@ -652,16 +647,6 @@ input[type="time"].control { font-variant-numeric: tabular-nums; font-weight: 50
 }
 .spacer-sm { height: 12px; }
 .spacer { height: 18px; }
-.spacer-lg { height: 26px; }
-
-.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-3); }
-.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: 3px; }
-
-.sronly {
-  position: absolute; width: 1px; height: 1px;
-  padding: 0; margin: -1px; overflow: hidden;
-  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
 
 /* Desktop: the app is a phone-shaped surface on a terrain field. Same code
    path, no separate layout — Step 1 is the web build of a mobile product. */

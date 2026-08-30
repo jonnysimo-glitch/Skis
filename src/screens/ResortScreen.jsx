@@ -10,15 +10,19 @@ import { RESORTS } from "../resorts/index.js";
 import { Mountain, Arrow, Check } from "../ui/Icons.jsx";
 
 /**
- * Terrain illustration standing in for photography. Drawn from the resort's own
- * altitude range so a high, steep resort looks different to a low one — a real
- * photo goes here when there is one to use.
+ * Terrain illustration standing in for photography. Layered ridgelines with
+ * atmospheric recession, scaled by the resort's own vertical range so a high,
+ * steep resort looks different to a low one. A real photograph goes here when
+ * there is one to use.
  */
 function Ridge({ resort, hero }) {
   const top = resort.stats?.top ?? 3000;
   const bottom = resort.stats?.bottom ?? 1200;
-  const rel = Math.min(1, Math.max(0.2, (top - bottom) / 2200));
-  const peak = 46 - rel * 26;
+  // 0 = gentle and low, 1 = high and steep.
+  const rel = Math.min(1, Math.max(0.15, (top - bottom) / 2200));
+  const id = resort.id;
+  const h = (base, drop) => base - rel * drop;
+
   return (
     <svg
       className={hero ? "hero__art" : "resortcard__thumb"}
@@ -27,16 +31,48 @@ function Ridge({ resort, hero }) {
       aria-hidden="true"
     >
       <defs>
-        <linearGradient id={`sky-${resort.id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#3d6c8f" />
-          <stop offset="100%" stopColor="#9dc2d8" />
+        <linearGradient id={`sky-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#2f5f83" />
+          <stop offset="62%" stopColor="#7ba7c4" />
+          <stop offset="100%" stopColor="#c3dae7" />
+        </linearGradient>
+        <linearGradient id={`near-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#c9dae4" />
         </linearGradient>
       </defs>
-      <rect width="160" height="90" fill={`url(#sky-${resort.id})`} />
-      <path d={`M0 90 L26 ${58 - rel * 8} L48 ${72 - rel * 6} L74 ${peak + 12} L104 ${64 - rel * 8} L134 ${74 - rel * 6} L160 ${60} L160 90Z`} fill="#5c7f96" opacity="0.55" />
-      <path d={`M0 90 L22 ${66 - rel * 6} L44 ${78 - rel * 4} L78 ${peak} L112 ${70 - rel * 8} L160 ${82 - rel * 6} L160 90Z`} fill="#e9f1f6" />
-      <path d={`M78 ${peak} L92 ${peak + 20} L64 ${peak + 20} Z`} fill="#ffffff" />
-      <path d="M0 90 L34 78 L70 86 L108 76 L160 88 L160 90Z" fill="#415c53" opacity="0.8" />
+
+      <rect width="160" height="90" fill={`url(#sky-${id})`} />
+
+      {/* Far range, hazed back into the sky. */}
+      <path
+        d={`M0 90 L14 ${h(60, 10)} L34 ${h(70, 6)} L52 ${h(50, 16)} L70 ${h(66, 8)}
+            L92 ${h(44, 20)} L112 ${h(62, 10)} L134 ${h(52, 14)} L160 ${h(64, 8)} L160 90Z`}
+        fill="#8fb1c7"
+        opacity="0.62"
+      />
+
+      {/* Main massif — the summit sits off centre, ridges fall away unevenly. */}
+      <path
+        d={`M0 90 L18 ${h(74, 8)} L38 ${h(80, 4)} L56 ${h(62, 14)} L74 ${h(70, 8)}
+            L96 ${h(38, 24)} L106 ${h(50, 16)} L124 ${h(44, 20)} L142 ${h(68, 10)}
+            L160 ${h(60, 12)} L160 90Z`}
+        fill={`url(#near-${id})`}
+      />
+
+      {/* Rock showing through on the shaded flank of the summit. */}
+      <path
+        d={`M96 ${h(38, 24)} L106 ${h(50, 16)} L100 ${h(56, 13)} L92 ${h(48, 18)}Z`}
+        fill="#93a7b4"
+        opacity="0.5"
+      />
+
+      {/* Treeline and valley floor. */}
+      <path
+        d="M0 90 L22 79 L46 85 L72 77 L100 84 L128 76 L160 86 L160 90Z"
+        fill="#37524a"
+        opacity="0.88"
+      />
     </svg>
   );
 }

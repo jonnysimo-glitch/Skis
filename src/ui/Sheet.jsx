@@ -16,7 +16,6 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
   const target = SNAP[snap] ?? snap;
 
   const holder = useRef(null);
-  const bodyRef = useRef(null);
   const [height, setHeight] = useState(() =>
     Math.round((typeof window === "undefined" ? 800 : window.innerHeight) * target)
   );
@@ -55,14 +54,12 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
   );
 
   const onPointerDown = (e) => {
-    // Let the body scroll normally unless it is already at the top and the
-    // user is pulling down — then the gesture belongs to the sheet.
-    drag.current = {
-      id: e.pointerId,
-      y: e.clientY,
-      startHeight: height,
-      fromGrab: e.currentTarget.dataset.grab === "1",
-    };
+    // The grab bar and the header drag the sheet. The body scrolls, and the
+    // footer's buttons are buttons — starting a drag on either would fight the
+    // gesture the user actually meant.
+    const inScrollable = e.target.closest?.(".sheet__body, .sheet__foot");
+    if (inScrollable) return;
+    drag.current = { id: e.pointerId, y: e.clientY, startHeight: height };
     setAnimating(false);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -70,13 +67,8 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
   const onPointerMove = (e) => {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
-    const delta = d.y - e.clientY;
-    if (!d.fromGrab) {
-      const body = bodyRef.current;
-      const atTop = !body || body.scrollTop <= 0;
-      if (!(atTop && delta < 0)) return; // scrolling, not dragging
-    }
     e.preventDefault?.();
+    const delta = d.y - e.clientY;
     const next = Math.max(vh() * 0.16, Math.min(vh() * 0.92, d.startHeight + delta));
     setHeight(next);
   };
@@ -95,20 +87,15 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
       className={`sheet${animating ? " sheet--animating" : ""}`}
       style={{ height: `${height}px` }}
       onTransitionEnd={() => setAnimating(false)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
-      <div
-        className="sheet__grab"
-        data-grab="1"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        role="separator"
-        aria-label="Drag to resize the panel"
-      >
+      <div className="sheet__grab" role="separator" aria-label="Drag to resize the panel">
         <i />
       </div>
-      {typeof children === "function" ? children({ bodyRef, onPointerDown, onPointerMove, onPointerUp }) : children}
+      {children}
     </section>
   );
 }
