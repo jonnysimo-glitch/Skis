@@ -267,9 +267,6 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .chip[aria-pressed="true"] .chip__swatch { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
 .chip--busy { opacity: 0.5; }
 
-/* A tighter primary for inline pairs. Never below the 44pt floor. */
-.btn--sm { min-height: var(--tap); font-size: var(--t-subhead); }
-
 /* Primary action: 50pt tall, the iOS standard for a full-width button. */
 .btn {
   width: 100%;
@@ -295,6 +292,9 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-family: var(--ui); font-size: var(--t-callout); font-weight: 600;
 }
 .btn--quiet:active { background: var(--surface-2); }
+/* A tighter primary for inline pairs. Never below the 44pt floor. Declared
+   after .btn so it wins: both are one class, so source order decides. */
+.btn--sm { min-height: var(--tap); font-size: var(--t-callout); }
 
 /* iOS segmented control: two mutually exclusive modes, equal weight. */
 .segmented {

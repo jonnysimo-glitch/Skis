@@ -24,7 +24,7 @@ export default defineConfig(() => {
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icons/*.png"],
       manifest: {
-        name: "Skis — route planner",
+        name: "Skis, route planner",
         short_name: "Skis",
         description:
           "Plan a day's skiing around the time you have, not the shortest way down.",

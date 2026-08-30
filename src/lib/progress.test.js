@@ -6,9 +6,16 @@
  * advancing on a stray fix, and refusing to advance when they have plainly
  * arrived.
  */
-import { evaluateArrival, closestLeg, ARRIVAL_RADIUS_M, CONFIRMATIONS } from "./progress.js";
+import {
+  evaluateArrival,
+  closestLeg,
+  ARRIVAL_RADIUS_M,
+  CONFIRMATIONS,
+  DWELL_MS,
+} from "./progress.js";
 import { NODES, buildEdges } from "../resort.js";
 import { metresBetween } from "./geo.js";
+import { USABLE_ACCURACY_M } from "./useGeolocation.js";
 
 let failures = 0;
 function check(name, condition, detail = "") {
@@ -116,6 +123,36 @@ check(
   `picked leg ${closestLeg(at(route.segments[3].to), route.segments)}`
 );
 check("no fix falls back to the start", closestLeg(null, route.segments) === 0);
+
+/**
+ * The radius has to be small relative to the graph, or arrival is ambiguous.
+ *
+ * One fix inside the radius advances a leg once nothing contradicts it, so if
+ * two junctions could both be inside it at once the screen could walk itself
+ * down the route while the skier stands still. That cannot happen while the
+ * shortest leg is an order of magnitude longer than the radius, but nothing
+ * else in the code says so.
+ */
+console.log("\nTHE RADIUS IS SMALL RELATIVE TO THE MOUNTAIN");
+{
+  let shortest = Infinity;
+  let where = "";
+  for (const edge of buildEdges()) {
+    const a = NODES[edge.from];
+    const b = NODES[edge.to];
+    const m = metresBetween(a.lat, a.lon, b.lat, b.lon);
+    if (m < shortest) { shortest = m; where = `${a.name} to ${b.name}`; }
+  }
+  // Worst case the radius grows by half the fix's accuracy before it is rejected.
+  const widest = ARRIVAL_RADIUS_M + USABLE_ACCURACY_M / 2;
+  check(
+    "no two junctions can both be inside the arrival radius",
+    shortest > widest * 2,
+    `shortest leg ${Math.round(shortest)} m (${where}) vs ${widest} m`
+  );
+  check("the dwell is long enough for a second fix to arrive", DWELL_MS >= 5000, `${DWELL_MS} ms`);
+  check("and short enough not to feel broken", DWELL_MS <= 10000, `${DWELL_MS} ms`);
+}
 
 console.log("\n" + (failures ? `${failures} FAILING` : "all arrival checks passed"));
 process.exit(failures ? 1 : 0);

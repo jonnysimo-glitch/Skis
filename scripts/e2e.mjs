@@ -952,7 +952,17 @@ try {
     await page.waitForSelector(".modal", { timeout: 10000 });
     text += await collect();
 
-    const dashes = [...text.matchAll(/[^.]{0,40}—[^.]{0,40}/g)].map((m) => m[0].trim());
+    // The tab title and the installed app's name are interface too, and neither
+    // is in innerText, so they get checked explicitly rather than by accident.
+    const chrome = await page.evaluate(async () => {
+      const link = document.querySelector('link[rel="manifest"]')?.href;
+      let manifest = "";
+      if (link) {
+        try { manifest = JSON.stringify(await (await fetch(link)).json()); } catch { /* not built */ }
+      }
+      return `${document.title}\n${manifest}`;
+    });
+    const dashes = [...(text + chrome).matchAll(/[^.]{0,40}—[^.]{0,40}/g)].map((m) => m[0].trim());
     check("no em dashes anywhere in the interface", dashes.length === 0, dashes.slice(0, 3).join(" | "));
 
     // Nothing should be explaining the project to someone who came to ski.
