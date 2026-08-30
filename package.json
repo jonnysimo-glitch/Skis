@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/solver.test.js && node src/lib/geo.test.js && node scripts/validate-layers.mjs",
+    "test": "node src/solver.test.js && node src/lib/geo.test.js && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
     "bench": "node scripts/bench-solver.js",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:sync": "npm run build && npx cap sync ios",
@@ -17,7 +17,8 @@
     "e2e": "npm run build && node scripts/e2e.mjs",
     "e2e:only": "node scripts/e2e.mjs",
     "dev:host": "vite --host",
-    "build:single": "vite build --config vite.config.singlefile.js"
+    "build:single": "vite build --config vite.config.singlefile.js",
+    "test:palette": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",

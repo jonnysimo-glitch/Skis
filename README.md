@@ -29,7 +29,7 @@ npm run dev        # http://localhost:5173
 ```
 
 ```bash
-npm test           # solver, geometry and map-layer checks — no browser needed
+npm test           # solver, geometry, map-layer and palette checks — no browser
 npm run e2e        # 162 end-to-end checks in a real browser, including GPS
 npm run bench      # solve() timings, the measurement behind the worker decision
 npm run build      # production build to dist/
@@ -57,6 +57,8 @@ npm run e2e:only -- --headed        # watch it drive the browser
   mountain and the mistake is invisible until they are standing in the wrong
   valley.
 - **`scripts/validate-layers.mjs`** — map layer paint expressions.
+- **`scripts/check-contrast.mjs`** — text contrast and the distance between the
+  brand accent and the piste difficulty signals.
 
 `npm run e2e` builds, serves `dist/` and drives it in Chromium. It tests what
 would actually ship, not the dev server. Sections: resort selection, the three
@@ -190,10 +192,19 @@ AI-assistant aesthetic.
 - The elevation profile is a recurring motif: filled area, difficulty-coloured
   line, lifts dashed, x axis in **time** rather than distance.
 
-**Why orange and not Komoot's green.** Blue, red and black are reserved — they
-are European piste difficulty signals and are not ours to spend on branding.
-Green is out too: it is the beginner grade in France, and this app expands into
-France. A rescue orange is the strongest read left over both snow and rock.
+**The accent is a glacier blue** — ice and meltwater against snow.
+
+That needs care, because blue is also a piste grade, and an accent a skier
+could read as "blue run" is a safety problem rather than a taste one. So the
+accent sits deliberately on the cyan side while piste blue stays navy-leaning,
+and on the map a wide white halo separates the brand casing from the
+difficulty-coloured core.
+
+None of that is left to the eye. `npm run test:palette` asserts every text
+pair meets WCAG AA and that the accent stays a measured distance from each
+piste signal, in CIE Lab rather than RGB so the number tracks how different
+they actually look. It found two contrast failures in the previous palette the
+moment it was written.
 
 ---
 

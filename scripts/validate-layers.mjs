@@ -13,16 +13,14 @@
  * Run with: node scripts/validate-layers.mjs
  */
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
 const { validateStyleMin, latest, createExpression, isExpression } =
   require("@maplibre/maplibre-gl-style-spec");
 
-const layersSrc = readFileSync(new URL("../src/map/layers.js", import.meta.url), "utf8");
-const mod = await import(
-  "data:text/javascript;base64," + Buffer.from(layersSrc).toString("base64")
-);
+// Import the real module. It was previously read and re-imported as a data:
+// URL, which cannot resolve the module's own relative imports.
+const mod = await import(new URL("../src/map/layers.js", import.meta.url).href);
 
 // A stub map that records what it was asked to add.
 const added = [];

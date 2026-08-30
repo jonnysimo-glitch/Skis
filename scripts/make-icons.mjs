@@ -52,10 +52,10 @@ function png(width, height, rgba) {
   ]);
 }
 
-const INK = [11, 26, 36];
+const INK = [10, 25, 34];
 const SNOW = [233, 242, 247];
 const WHITE = [255, 255, 255];
-const ACCENT = [227, 82, 5];
+const ACCENT = [42, 196, 238];
 
 /** Signed distance to a rounded rectangle, for antialiased corners. */
 function roundRect(px, py, w, h, r) {

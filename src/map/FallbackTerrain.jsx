@@ -14,12 +14,16 @@
 import { useEffect, useRef } from "react";
 import { NODES, projector } from "../resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
+import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
+
+/** The casing, faded, for legs already skied. */
+const DIM_ACCENT = "rgba(42, 196, 238, 0.3)";
 
 const GRID = 60;
 const VERT_EXAGGERATION = 2.4;
 const SUN = normalise([-0.5, 0.66, -0.56]);
-const SKY_TOP = [88, 140, 184];
-const SKY_HORIZON = [206, 226, 238];
+const SKY_TOP = [104, 158, 196];
+const SKY_HORIZON = [216, 234, 244];
 
 function normalise(v) {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -411,17 +415,17 @@ export default function FallbackTerrain({
       }
       for (const l of lines) {
         const dim = l.props.i < done;
-        stroke(l.pts, dim ? "rgba(242,107,29,0.28)" : "#f26b1d", 9.5 * k);
+        stroke(l.pts, dim ? DIM_ACCENT : ACCENT_LINE, 9.5 * k);
       }
       for (const l of lines) {
         const dim = l.props.i < done;
-        stroke(l.pts, dim ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.95)", 5.6 * k);
+        stroke(l.pts, dim ? "rgba(255,255,255,0.3)" : "#ffffff", 7 * k);
       }
       for (const l of lines) {
         const dim = l.props.i < done;
         ctx.globalAlpha = dim ? 0.35 : 1;
-        if (l.props.kind === "lift") stroke(l.pts, "#2b4453", 2.4 * k, [5, 4]);
-        else stroke(l.pts, PISTE_COLOUR[l.props.difficulty] || "#7d95a5", 3.8 * k);
+        if (l.props.kind === "lift") stroke(l.pts, "#22323f", 2.4 * k, [5, 4]);
+        else stroke(l.pts, PISTE_COLOUR[l.props.difficulty] || "#7d95a5", 3.4 * k);
         ctx.globalAlpha = 1;
       }
     };
@@ -442,7 +446,7 @@ export default function FallbackTerrain({
         ctx.fill();
         ctx.beginPath();
         ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = role === "now" ? "#e35205" : role === "finish" ? "#0b1a24" : "#ffffff";
+        ctx.fillStyle = role === "now" ? ACCENT : role === "finish" ? INK : "#ffffff";
         ctx.fill();
         ctx.lineWidth = 2.5;
         ctx.strokeStyle = role === "start" ? "#0b1a24" : "#ffffff";
@@ -477,7 +481,7 @@ export default function FallbackTerrain({
 
         const sky = ctx.createLinearGradient(0, 0, 0, height);
         sky.addColorStop(0, `rgb(${SKY_TOP.join(",")})`);
-        sky.addColorStop(0.55, "rgb(158,193,217)");
+        sky.addColorStop(0.55, "rgb(170,203,224)");
         sky.addColorStop(1, `rgb(${SKY_HORIZON.join(",")})`);
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, width, height);

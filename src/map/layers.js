@@ -12,11 +12,14 @@
  * signals, not decoration — the casing is where the brand accent goes.
  */
 
+import { ACCENT_LINE } from "../lib/brand.js";
+
 const SRC_GRAPH = "skis-graph";
 const SRC_ROUTE = "skis-route";
 const SRC_PINS = "skis-pins";
 
-export const ACCENT = "#f26b1d";
+/** The route casing colour, re-exported so callers have one place to ask. */
+export const ACCENT = ACCENT_LINE;
 
 /**
  * Opacity expression that dims every segment already skied. Segment index is a
@@ -84,7 +87,7 @@ export function addRouteLayers(map, { graph, route, pins }) {
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": "#ffffff",
-        "line-width": w(4.5, 7, 10),
+        "line-width": w(5.5, 8.5, 12),
         "line-opacity": dimAfter(-1, 0.25, 0.9),
       },
     });
@@ -99,7 +102,7 @@ export function addRouteLayers(map, { graph, route, pins }) {
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": ["get", "colour"],
-        "line-width": w(2.6, 4.2, 6),
+        "line-width": w(2.4, 3.8, 5.4),
         "line-opacity": dimAfter(-1, 0.4, 1),
       },
     });

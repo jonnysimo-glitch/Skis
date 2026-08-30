@@ -10,6 +10,7 @@
  */
 import { altitudeSeries } from "../solver.js";
 import { PISTE_COLOUR, LIFT_COLOUR } from "../lib/geo.js";
+import { ACCENT } from "../lib/brand.js";
 
 export default function ElevationProfile({
   route,
@@ -138,7 +139,7 @@ export default function ElevationProfile({
               y1="0"
               x2={nowX.toFixed(1)}
               y2={height}
-              stroke="#e35205"
+              stroke={ACCENT}
               strokeWidth="1.2"
               strokeDasharray="2 2"
               opacity="0.6"
@@ -147,7 +148,7 @@ export default function ElevationProfile({
               cx={nowX.toFixed(1)}
               cy={y(alts[Math.min(doneThrough, alts.length - 1)]).toFixed(1)}
               r="4.2"
-              fill="#e35205"
+              fill={ACCENT}
               stroke="#fff"
               strokeWidth="2"
             />

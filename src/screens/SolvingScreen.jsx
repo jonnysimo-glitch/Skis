@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { SheetHead, SheetBody } from "../ui/Sheet.jsx";
+import { ACCENT } from "../lib/brand.js";
 
 const STEPS = [
   "Reading the lift graph",
@@ -34,7 +35,7 @@ export default function SolvingScreen() {
               className="solving__line"
               points="6,62 34,20 62,56 92,14 120,50 150,26 184,44"
               fill="none"
-              stroke="#e35205"
+              stroke={ACCENT}
               strokeWidth="3"
               strokeLinejoin="round"
               strokeLinecap="round"

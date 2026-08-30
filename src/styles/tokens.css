@@ -15,29 +15,35 @@
  */
 :root {
   /* --- Accent -------------------------------------------------------------
-     A rescue orange. It has to survive being drawn over white snow AND dark
-     rock, and it cannot be blue, red or black — those three are reserved as
-     European piste difficulty signals and are not ours to spend on branding. */
-  --accent: #e2540a;
-  --accent-press: #c44508;
-  --accent-tint: #fff2ea;
-  --accent-line: #f26b1d;   /* over terrain: brightness beats text contrast */
-  --accent-ink: #b03e07;    /* accent-coloured text on light backgrounds */
+     Glacier. Ice and meltwater against snow.
+
+     The obvious hazard is that blue is also a piste grade, and an accent a
+     skier could read as "blue run" is a safety problem rather than a taste
+     one. So this sits deliberately on the cyan side while piste blue stays
+     navy-leaning, and the gap between them is asserted in
+     scripts/check-contrast.mjs rather than eyeballed. */
+  --accent: #0077a3;        /* primary action; white text passes AA on it */
+  --accent-press: #005f84;
+  --accent-tint: #e8f5fb;
+  --accent-line: #2ac4ee;   /* over terrain: brightness beats text contrast */
+  --accent-ink: #036183;    /* accent-coloured text on light backgrounds */
 
   /* --- Neutrals -----------------------------------------------------------
-     Cool cast, like snow shadow. A single ramp so contrast is predictable. */
+     Snow and its shadow: a single ramp, cool throughout, so the whole surface
+     reads as ice rather than as grey. Contrast against white is checked, not
+     assumed — --n-50 used to be too light to carry text. */
   --n-00: #ffffff;
-  --n-05: #f5f8fa;
-  --n-10: #eaeff3;
-  --n-20: #dbe3e9;
-  --n-30: #c2cfd8;
-  --n-40: #9aabb7;
-  --n-50: #74899a;
-  --n-60: #54697a;
-  --n-70: #3a4d5c;
-  --n-80: #22333f;
-  --n-90: #142430;
-  --n-95: #0b1a24;
+  --n-05: #f2f7fb;
+  --n-10: #e6eef5;
+  --n-20: #d5e1ea;
+  --n-30: #b9cad8;
+  --n-40: #8ea5b6;
+  --n-50: #5f7789;   /* darkened: 3.6:1 on white was below AA */
+  --n-60: #4a6072;
+  --n-70: #35485a;
+  --n-80: #21323f;
+  --n-90: #132330;
+  --n-95: #0a1922;
 
   --ink: var(--n-95);
   --ink-2: var(--n-60);

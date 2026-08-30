@@ -32,9 +32,9 @@ function Ridge({ resort, hero }) {
     >
       <defs>
         <linearGradient id={`sky-${id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#2f5f83" />
-          <stop offset="62%" stopColor="#7ba7c4" />
-          <stop offset="100%" stopColor="#c3dae7" />
+          <stop offset="0%" stopColor="#1d4f70" />
+          <stop offset="62%" stopColor="#77aecb" />
+          <stop offset="100%" stopColor="#cbe4ef" />
         </linearGradient>
         <linearGradient id={`near-${id}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#ffffff" />
