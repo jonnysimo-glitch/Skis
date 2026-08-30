@@ -9,7 +9,7 @@
  * screen you see. Ability comes from the profile and appears as an overridable
  * chip; it is not asked for every session.
  */
-import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
+import { Back } from "../ui/Icons.jsx";
 import { NODES } from "../resort.js";
 import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES } from "../lib/plan.js";
 import { Clock, Arrow, Locate, Info } from "../ui/Icons.jsx";
@@ -75,11 +75,18 @@ export default function PlanScreen({
   const set = (patch) => setPlan({ ...plan, ...patch });
 
   return (
-    <>
-      <SheetHead>
+    <div className="page">
+      <header className="page__bar">
+        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label="Back to the resort">
+          <Back />
+        </button>
         <div className="eyebrow">
           <Clock width="14" height="14" /> {copy.eyebrow} · {resort.name}
         </div>
+        <span style={{ width: "var(--tap)" }} />
+      </header>
+
+      <div className="page__body">
         <h1 className="title">
           {copy.title.split("\n").map((line, i) => (
             <span key={i}>
@@ -88,9 +95,7 @@ export default function PlanScreen({
             </span>
           ))}
         </h1>
-      </SheetHead>
 
-      <SheetBody>
         {copy.hint && (
           <div className="context">
             <Locate className="context__icon" width="18" height="18" />
@@ -257,9 +262,9 @@ export default function PlanScreen({
               : "Last lifts are built in. Nothing will strand you."}
           </span>
         </div>
-      </SheetBody>
+      </div>
 
-      <SheetFoot>
+      <div className="page__foot">
         <button
           className="btn"
           disabled={span <= 0 || sameEnds}
@@ -268,10 +273,7 @@ export default function PlanScreen({
           {plan.mode === "direct" ? "Take me there" : "Find routes"}{" "}
           <Arrow width="18" height="18" />
         </button>
-        <button className="btn btn--quiet" onClick={onBack}>
-          Change resort
-        </button>
-      </SheetFoot>
-    </>
+      </div>
+    </div>
   );
 }

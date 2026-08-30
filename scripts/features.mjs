@@ -603,6 +603,8 @@ if (feature("8. The skiing tab opens on the mountain")) {
 
   check("it is not a form", (await page.$("#p-t1")) === null);
   check("the map is there", (await page.$("canvas")) !== null);
+  check("the resort card is fixed, not a sheet you drag",
+    (await page.$(".resortpanel")) !== null && (await page.$(".sheet__grab")) === null);
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body));
   // innerText returns text-transform: uppercase as uppercase.
@@ -624,7 +626,10 @@ if (feature("8. The skiing tab opens on the mountain")) {
   await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   check("Plan opens the form", (await where(page)) === "plan");
-  await page.click(".sheet__foot .btn--quiet");
+  check("and the form is a page, not a panel over the map",
+    (await page.$(".page")) !== null && (await page.$(".sheet")) === null);
+  // Back on a full page is the chevron in its bar, not a button in a footer.
+  await page.click('.page__bar .iconbtn');
   await page.waitForSelector(".planbtn", { timeout: 10000 });
   check("and backing out returns to the mountain, not out of the tab",
     (await page.$(".planbtn")) !== null && (await page.$eval('.tabbar__tab[aria-current="page"] span', (n) => n.textContent)) === "Skiing");

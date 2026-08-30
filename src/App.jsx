@@ -74,10 +74,6 @@ const MAX_SNAP_METRES = 6000;
 
 /** How tall the sheet opens for each screen. */
 const SNAP_FOR = {
-  // Enough to read the resort and its numbers without the fold landing in the
-  // middle of a label, which reads as a bug rather than as "there is more".
-  explore: 0.44,
-  plan: 0.7,
   solving: "peek",
   choose: 0.66,
   detail: 0.64,
@@ -95,6 +91,9 @@ const TABBAR_H = 56;
  */
 const NAV_HEAD_H = 210;
 const NAV_FOOT_H = 96;
+
+/** The fixed resort card's height, for framing the map above it. */
+const EXPLORE_PANEL_H = 300;
 
 /**
  * Why a straight transfer will not work. Different failures from a day plan:
@@ -234,7 +233,7 @@ export default function App() {
         bearing: resort.bearing,
         doneThrough: -1,
         padding: screen === "explore"
-          ? { top: 110, bottom: 260, left: 24, right: 24 }
+          ? { top: 110, bottom: EXPLORE_PANEL_H, left: 24, right: 24 }
           : undefined,
       };
     }
@@ -265,11 +264,19 @@ export default function App() {
   // Everything that floats over the map sits above the tab bar, except while
   // navigating, when the tab bar is out of the way.
   const navigating = onMountain && screen === "navigate";
+  // Two screens are not sheets. Explore is a fixed card over the mountain, and
+  // the plan form takes the whole screen: there is nothing to look at on the
+  // map while you are setting times, and a form deserves its own scroll.
+  const exploring = onMountain && screen === "explore";
+  const planning = onMountain && screen === "plan";
+  const sheetScreen = onMountain && !navigating && !exploring && !planning;
   const tabBarShown = !(onMountain && (screen === "navigate" || screen === "solving"));
   const sheetFloor = tabBarShown ? TABBAR_H : 0;
   const chromeBottom = navigating
     ? NAV_FOOT_H
-    : Math.max(16, sheetHeight + sheetFloor + 14);
+    : exploring
+      ? EXPLORE_PANEL_H + sheetFloor + 14
+      : Math.max(16, sheetHeight + sheetFloor + 14);
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const chromeHidden = sheetHeight > viewportH * 0.74;
 
@@ -490,7 +497,9 @@ export default function App() {
           pins={pins}
           camera={focus}
           controlRef={mapControl}
-          viewportBottom={navigating ? NAV_FOOT_H : sheetHeight}
+          viewportBottom={
+            navigating ? NAV_FOOT_H : exploring ? EXPLORE_PANEL_H : sheetHeight
+          }
           viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}
@@ -593,27 +602,25 @@ export default function App() {
         />
       )}
 
-      {onMountain && !navigating && (
+      {exploring && <ExploreScreen resort={resort} />}
+
+      {planning && (
+        <PlanScreen
+          resort={resort}
+          plan={plan}
+          setPlan={setPlan}
+          ability={ability}
+          setAbility={setAbility}
+          context={context}
+          gps={gps}
+          onLocate={onLocate}
+          onSolve={onSolve}
+          onBack={() => setScreen("explore")}
+        />
+      )}
+
+      {sheetScreen && (
       <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
-        {screen === "explore" && (
-          <ExploreScreen resort={resort} />
-        )}
-
-        {screen === "plan" && (
-          <PlanScreen
-            resort={resort}
-            plan={plan}
-            setPlan={setPlan}
-            ability={ability}
-            setAbility={setAbility}
-            context={context}
-            gps={gps}
-            onLocate={onLocate}
-            onSolve={onSolve}
-            onBack={() => setScreen("explore")}
-          />
-        )}
-
         {screen === "solving" && <SolvingScreen />}
 
         {screen === "choose" && opts && (

@@ -8,7 +8,6 @@
  *
  * This is the browse half of the app. Plan is the verb.
  */
-import { SheetHead, SheetBody } from "../ui/Sheet.jsx";
 import { listDays, dayLabel } from "../lib/history.js";
 import { hours } from "../ui/RouteBits.jsx";
 import { Plus, Mountain, Peak, Lift, Runs, Clock } from "../ui/Icons.jsx";
@@ -19,15 +18,15 @@ export default function ExploreScreen({ resort }) {
   const s = resort.stats;
 
   return (
-    <>
-      <SheetHead>
+    <section className="resortpanel">
+      <div className="resortpanel__head">
         <div className="eyebrow">
           <Mountain width="14" height="14" /> {resort.region}, {resort.country}
         </div>
         <h1 className="title title--sm">{resort.name}</h1>
-      </SheetHead>
+      </div>
 
-      <SheetBody>
+      <div className="resortpanel__body">
         <p className="lede lede--sm">{resort.blurb}</p>
 
         <div className="spacer-sm" />
@@ -56,22 +55,13 @@ export default function ExploreScreen({ resort }) {
         </div>
 
         {last && (
-          <>
-            <div className="spacer" />
-            <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>Last time here</div>
-            <ul className="daylist">
-              <li className="day">
-                <span className="day__when">{dayLabel(last.at)}</span>
-                <span className="day__title">{last.title}</span>
-                <span className="day__nums">
-                  {last.vertical.toLocaleString()} m · {last.km} km · {hours(last.minutes)}
-                </span>
-              </li>
-            </ul>
-          </>
+          <p className="resortpanel__last">
+            <b>{dayLabel(last.at)}</b>, {last.title.toLowerCase()}:{" "}
+            {last.vertical.toLocaleString()} m over {hours(last.minutes)}.
+          </p>
         )}
-      </SheetBody>
-    </>
+      </div>
+    </section>
   );
 }
 

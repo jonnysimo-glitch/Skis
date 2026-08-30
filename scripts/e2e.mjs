@@ -571,9 +571,11 @@ try {
 
   // ============================================================ I. SHEET ==
   if (section("I. The sheet and the map")) {
-    // The sheet lives on the skiing tab; home is a plain page with no map.
+    // The sheet is for the route screens. Explore is a fixed card and the plan
+    // form is a full page, so this has to solve first to have a sheet to drag.
     const page = await newPage(browser);
     await toPlan(page, url);
+    await solve(page);
 
     const height = () => page.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
     const rest = await height();

@@ -1082,3 +1082,28 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-size: var(--t-footnote); font-weight: 700;
   display: flex; align-items: center; gap: var(--s-1);
 }
+
+/* -------------------------------------------------------- resort panel -- */
+/* Fixed, not a sheet. There is nothing under it worth dragging it away to
+   see: the map above is already the point, and a card that moves when you
+   brush it is a card you have to think about. */
+
+.resortpanel {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: var(--sheet-floor, 0px);
+  z-index: 5;
+  background: var(--surface);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: var(--e-sheet);
+  padding-bottom: var(--s-5);
+}
+.resortpanel__head { padding: var(--s-5) var(--gutter) var(--s-2); }
+.resortpanel__body { padding: 0 var(--gutter); }
+.resortpanel__last {
+  margin-top: var(--s-4);
+  font-size: var(--t-footnote);
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.resortpanel__last b { color: var(--ink-2); font-weight: 600; }

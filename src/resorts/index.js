@@ -45,6 +45,30 @@ export const RESORTS = [
     },
     blurb: "Gressoney, Ayas and Alagna, linked over two high cols.",
   },
+  /**
+   * Coming, in the order their data is being built.
+   *
+   * `stats` here is only what has been verified from the resorts' own
+   * published figures. A resort with no altitudes falls back to a generic
+   * ridgeline rather than being given invented ones, which is the same rule
+   * the graphs follow: no number appears unless it came from somewhere.
+   */
+  {
+    id: "kronplatz",
+    name: "Kronplatz",
+    region: "South Tyrol",
+    country: "Italy",
+    available: false,
+    stats: { lifts: 32, top: 2275, bottom: 950 },
+  },
+  {
+    id: "paganella",
+    name: "Paganella Ski",
+    region: "Trentino",
+    country: "Italy",
+    available: false,
+    stats: { lifts: 15, runs: 31, top: 2125, bottom: 1028 },
+  },
   {
     id: "courmayeur",
     name: "Courmayeur",
