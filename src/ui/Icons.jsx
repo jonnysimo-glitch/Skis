@@ -81,3 +81,20 @@ export const Lift = (p) => (
 export const Peak = (p) => (
   <svg {...base} {...p}><path d="m2.5 16 5-8 2.5 4L14 5l4 11z" /><path d="M12 8.6 14 5l2 3.6z" fill="currentColor" stroke="none" /></svg>
 );
+
+/* Tab bar. Drawn at 24px, so slightly simpler than the inline icons above. */
+export const HomeIcon = (p) => (
+  <svg {...base} {...p}><path d="M3.5 8.5 10 3.2l6.5 5.3V16a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" /><path d="M8 17v-4.5h4V17" /></svg>
+);
+export const Chart = (p) => (
+  <svg {...base} {...p}><path d="M3.5 16.5h13" /><path d="M6 16.5V10M10 16.5V4.5M14 16.5v-4" /></svg>
+);
+export const Gear = (p) => (
+  <svg {...base} {...p}><circle cx="10" cy="10" r="2.6" /><path d="M10 2.6v1.8M10 15.6v1.8M17.4 10h-1.8M4.4 10H2.6M15.2 4.8l-1.3 1.3M6.1 13.9l-1.3 1.3M15.2 15.2l-1.3-1.3M6.1 6.1 4.8 4.8" /></svg>
+);
+export const Trash = (p) => (
+  <svg {...base} {...p}><path d="M4 6h12" /><path d="M8 6V4.5h4V6" /><path d="M5.5 6l.7 10a1 1 0 0 0 1 .9h5.6a1 1 0 0 0 1-.9l.7-10" /></svg>
+);
+export const Satellite = (p) => (
+  <svg {...base} {...p}><circle cx="10" cy="10" r="2.2" /><path d="M5.4 14.6a6.5 6.5 0 0 1 0-9.2M14.6 5.4a6.5 6.5 0 0 1 0 9.2" /><path d="M3 17a9.5 9.5 0 0 1 0-14M17 3a9.5 9.5 0 0 1 0 14" /></svg>
+);

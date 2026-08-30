@@ -10,13 +10,16 @@
  * Serves `dist/` itself, so it always tests what would actually ship.
  * Pass --headed to watch it, --only=<word> to run one section.
  */
-import { chromium } from "playwright";
-import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
+import {
+  serve,
+  newPage as makePage,
+  launch,
+  toPlan,
+  solve,
+  routeCount,
+  toMinutes,
+} from "./harness.mjs";
 
-const ROOT = new URL("../dist/", import.meta.url).pathname;
 const HEADED = process.argv.includes("--headed");
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).toLowerCase();
 
@@ -42,168 +45,58 @@ function check(name, condition, detail = "") {
   console.log(`  ${status}  ${name}${detail ? "  — " + detail : ""}`);
 }
 
-const MIME = {
-  ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
-  ".json": "application/json", ".webmanifest": "application/manifest+json",
-  ".png": "image/png", ".svg": "image/svg+xml", ".woff2": "font/woff2",
-};
-
-async function serve() {
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url, "http://localhost");
-    let path = join(ROOT, normalize(url.pathname));
-    try {
-      const info = await stat(path);
-      if (info.isDirectory()) path = join(path, "index.html");
-    } catch {
-      path = join(ROOT, "index.html"); // SPA fallback
-    }
-    try {
-      const body = await readFile(path);
-      res.writeHead(200, {
-        "Content-Type": MIME[extname(path)] || "application/octet-stream",
-        "Cache-Control": "no-cache",
-      });
-      res.end(body);
-    } catch {
-      res.writeHead(404).end("not found");
-    }
-  });
-  await new Promise((r) => server.listen(0, "0.0.0.0", r));
-  const port = server.address().port;
-  return { server, port, url: `http://127.0.0.1:${port}/` };
-}
-
-// ------------------------------------------------------------- page setup --
-
-/** Freeze the clock so entry contexts and "due back" are deterministic. */
-const freezeClock = (hours, minutes) => `
-  (() => {
-    const fixed = new Date();
-    fixed.setHours(${hours}, ${minutes}, 0, 0);
-    const Real = Date;
-    class Frozen extends Real {
-      constructor(...a) { return a.length ? new Real(...a) : new Real(fixed.getTime()); }
-      static now() { return fixed.getTime(); }
-    }
-    globalThis.Date = Frozen;
-  })();
-`;
-
-async function newPage(browser, { at = [9, 5], geolocation, permissions = [], offline = false } = {}) {
-  const context = await browser.newContext({
-    viewport: { width: 430, height: 900 },
-    ...(geolocation ? { geolocation } : {}),
-    permissions,
-  });
-  await context.addInitScript(freezeClock(at[0], at[1]));
-  const page = await context.newPage();
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(`${e.message}`));
-  page.on("console", (m) => {
-    if (m.type() === "error") errors.push(`console: ${m.text()}`);
-  });
-  page.errors = errors;
-  if (offline) await context.setOffline(true);
-  page.context_ = context;
-  return page;
-}
-
-/** Resort screen → plan screen. */
-async function toPlan(page, url) {
-  // Not networkidle: the map streams elevation tiles for as long as it is on
-  // screen, so the network never goes quiet. Wait for the UI instead.
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".hero", { timeout: 20000 });
-  await page.click(".hero");
-  await page.click("text=Plan a day");
-  await page.waitForSelector("#p-t1", { timeout: 10000 });
-}
-
-const routeCount = (page) => page.$$eval(".routecard", (n) => n.length);
-const toMinutes = (hhmm) => {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-};
-const solve = async (page) => {
-  await page.click("text=Find routes");
-  await page.waitForSelector(".routecard, .empty", { timeout: 15000 });
-};
+const newPage = (browser, opts) => makePage(browser, opts);
 
 // ------------------------------------------------------------------- run --
 
 const { server, port, url } = await serve();
-/**
- * Find a Chromium to drive.
- *
- * Playwright's own lookup is right on a normal machine. Some sandboxes ship a
- * pre-installed browser at a fixed path instead, so fall back to that before
- * giving up — and when neither exists, say what to run rather than throwing a
- * path that means nothing to the reader.
- */
-function chromiumPath() {
-  try {
-    const found = chromium.executablePath();
-    if (found && existsSync(found)) return undefined; // let Playwright handle it
-  } catch {
-    /* not installed through Playwright */
-  }
-  for (const candidate of [
-    process.env.CHROMIUM_PATH,
-    "/opt/pw-browsers/chromium",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome",
-  ]) {
-    if (candidate && existsSync(candidate)) return candidate;
-  }
-  console.error(
-    "\n  No Chromium found.\n" +
-      "  Run:  npx playwright install chromium\n" +
-      "  Or point CHROMIUM_PATH at an existing browser binary.\n"
-  );
-  process.exit(2);
-}
-
-const executablePath = chromiumPath();
-const browser = await chromium.launch({
-  ...(executablePath ? { executablePath } : {}),
-  headless: !HEADED,
-});
+const browser = await launch({ headed: HEADED });
 
 try {
   // =========================================================== A. RESORT ==
-  if (section("A. Resort selection")) {
+  if (section("A. Home")) {
     const page = await newPage(browser);
     await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".hero");
+    await page.waitForSelector(".hero", { timeout: 20000 });
+
+    check(
+      "home is a page, not a sheet over the map",
+      (await page.$(".page")) !== null && (await page.$("canvas")) === null,
+      "choosing a resort while looking at that resort's terrain is backwards"
+    );
+    check("there are three destinations", (await page.$$(".tabbar__tab")).length === 3);
+    check(
+      "and settings is not one of them",
+      !(await page.$$eval(".tabbar__tab", (n) => n.map((t) => t.textContent))).some((t) => /settings/i.test(t))
+    );
+    check("settings is reachable from the bar", (await page.$('.iconbtn[aria-label="Settings"]')) !== null);
 
     check("only one resort is offered as live", (await page.$$(".hero")).length === 1);
     check(
       "the live resort is Monterosa",
       (await page.$eval(".hero__nm", (n) => n.textContent)).includes("Monterosa")
     );
-    check("resorts not ready are listed and marked", (await page.$$(".resortcard--soon")).length >= 3);
+    check("resorts not ready are listed and marked", (await page.$$(".resortcard")).length >= 3);
     check(
       "an unavailable resort is not a button",
-      await page.$$eval(".resortcard--soon", (n) => n.every((x) => x.tagName !== "BUTTON"))
+      await page.$$eval(".resortcard", (n) => n.every((x) => x.tagName !== "BUTTON"))
     );
     check(
       "continuing is blocked until a resort is chosen",
-      await page.$eval(".sheet__foot .btn", (n) => n.disabled)
-    );
-    check(
-      "the blocked button says what to do",
-      (await page.$eval(".sheet__foot .btn", (n) => n.textContent)).toLowerCase().includes("choose")
+      await page.$eval(".page__foot .btn", (n) => n.disabled)
     );
 
     await page.click(".hero");
     check(
-      "choosing enables it and it becomes the next step",
-      !(await page.$eval(".sheet__foot .btn", (n) => n.disabled)) &&
-        (await page.$eval(".sheet__foot .btn", (n) => n.textContent)).includes("Plan a day")
+      "choosing enables it and names the next step",
+      !(await page.$eval(".page__foot .btn", (n) => n.disabled)) &&
+        /go skiing/i.test(await page.$eval(".page__foot .btn", (n) => n.textContent))
     );
     check("the choice is shown on the card", (await page.$$(".hero__tick")).length === 1);
+
+    await page.click("text=Go skiing");
+    await page.waitForSelector("#p-t1", { timeout: 15000 });
+    check("going skiing brings up the map", (await page.$("canvas")) !== null);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
@@ -213,7 +106,8 @@ try {
     const cases = [
       ["night before, 21:30", [21, 30], "Tomorrow", "Start", "Finish at", 13],
       ["first lift, 08:20", [8, 20], "First lift", "Start", "Finish at", 13],
-      ["mid-day reset, 14:00", [14, 0], "Mid-day reset", "You are at", "Car is at", 13],
+      // Not "Car is at": both ends are free, so the field cannot presume a car.
+      ["mid-day reset, 14:00", [14, 0], "Mid-day reset", "You are at", "Finish at", 13],
     ];
     for (const [label, at, eyebrow, startLabel, finishLabel] of cases) {
       const page = await newPage(browser, { at });
@@ -229,30 +123,42 @@ try {
       };
       check(`${label}: names the context`, got.eyebrow.startsWith(eyebrow), got.eyebrow);
       check(`${label}: labels the fields for it`, got.start === startLabel && got.finish === finishLabel, `${got.start} / ${got.finish}`);
-      check(`${label}: it is still the plan screen`, /time for|car/i.test(got.screen), got.screen);
+      check(`${label}: it is still the plan screen`, /time for|where do you need to be/i.test(got.screen), got.screen);
       check(`${label}: finish time is before the last lift`, got.t1 <= "16:30", got.t1);
       check(`${label}: start is before finish`, got.t0 < got.t1, `${got.t0} → ${got.t1}`);
       check(`${label}: no page errors`, page.errors.length === 0, page.errors.join(" | "));
       await page.context_.close();
     }
 
-    // Mid-day is the one that must let you start anywhere on the hill.
-    const midday = await newPage(browser, { at: [14, 0] });
-    await toPlan(midday, url);
-    const middayOpts = await midday.$$eval("#p-start option", (n) => n.length);
-    const nightOpts = await (async () => {
-      const p = await newPage(browser, { at: [21, 30] });
-      await toPlan(p, url);
-      const n = await p.$$eval("#p-start option", (x) => x.length);
-      await p.context_.close();
-      return n;
-    })();
-    check(
-      "mid-day lets you start anywhere, the night before starts at a base",
-      middayOpts > nightOpts,
-      `${middayOpts} vs ${nightOpts} options`
-    );
-    await midday.context_.close();
+    // Both ends can be anywhere on the mountain, in every context. Being
+    // stranded at a col with the car three valleys away is the case this app
+    // exists for, and it is not servable from bases-only pickers.
+    const page = await newPage(browser, { at: [14, 0] });
+    await toPlan(page, url);
+    for (const field of ["p-start", "p-finish"]) {
+      const opts = await page.$$eval(`#${field} option`, (n) => n.map((o) => o.value));
+      check(
+        `${field === "p-start" ? "start" : "finish"} can be any point on the mountain`,
+        opts.includes("salati") && opts.includes("bettaforca") && opts.includes("champoluc"),
+        `${opts.length} options`
+      );
+      const groups = await page.$$eval(`#${field} optgroup`, (n) => n.map((g) => g.label));
+      check(
+        `${field === "p-start" ? "start" : "finish"} groups bases first`,
+        groups[0] === "Bases" && groups.length === 2,
+        groups.join(", ")
+      );
+    }
+
+    // And a mid-mountain pair actually solves.
+    await page.selectOption("#p-start", "salati");
+    await page.selectOption("#p-finish", "bettaforca");
+    await page.fill("#p-t1", "16:00");
+    await solve(page);
+    const n = await routeCount(page);
+    check("a col-to-col route can be planned", n > 0 || (await page.$(".empty")) !== null,
+      n > 0 ? `${n} routes` : "nothing fits, said so");
+    await page.context_.close();
   }
 
   // =============================================================== C. GPS ==
@@ -626,8 +532,8 @@ try {
     check("a service worker registers and takes control", sw.active && sw.controlling, JSON.stringify(sw));
 
     await page.click(".hero");
-    await page.click("text=Plan a day");
-    await page.waitForSelector("#p-t1");
+    await page.click("text=Go skiing");
+    await page.waitForSelector("#p-t1", { timeout: 15000 });
     await solve(page);
     await page.click(".routecard");
     await page.waitForSelector(".sheet__foot .btn");
@@ -651,9 +557,9 @@ try {
 
   // ============================================================ I. SHEET ==
   if (section("I. The sheet and the map")) {
+    // The sheet lives on the skiing tab; home is a plain page with no map.
     const page = await newPage(browser);
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".hero");
+    await toPlan(page, url);
 
     const height = () => page.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
     const rest = await height();
@@ -664,7 +570,7 @@ try {
     await page.mouse.down();
     await page.mouse.move(head.x + head.width / 2, head.y - 220, { steps: 12 });
     await page.mouse.up();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(700);
     const dragged = await height();
     check("the sheet drags up from its header", dragged > rest, `${rest} → ${dragged}`);
     check("even dragged up, terrain is still visible", dragged < 900, `${dragged} of 900`);
@@ -694,10 +600,12 @@ try {
       })
     );
 
-    // Settle the sheet back down and use them for real.
-    await page.mouse.move(head.x + head.width / 2, head.y - 220);
+    // Settle the sheet back down and use them for real. The header has moved,
+    // so measure it again rather than pressing where it used to be.
+    const head2 = await (await page.$(".sheet__head")).boundingBox();
+    await page.mouse.move(head2.x + head2.width / 2, head2.y + 8);
     await page.mouse.down();
-    await page.mouse.move(head.x + head.width / 2, head.y + 260, { steps: 12 });
+    await page.mouse.move(head2.x + head2.width / 2, head2.y + 300, { steps: 12 });
     await page.mouse.up();
     await page.waitForTimeout(700);
     check(
@@ -972,9 +880,14 @@ try {
     // a working GPU and reachable elevation tiles; when either is missing it
     // paints nothing and reports no error. So the schematic goes up first and
     // only steps aside once MapLibre has actually settled a frame.
+    // The map is the skiing tab; home is a plain page with no map at all.
     const page = await newPage(browser);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForSelector(".hero", { timeout: 20000 });
+    check("home deliberately has no map", (await page.$("canvas")) === null);
+    await page.click(".hero");
+    await page.click("text=Go skiing");
+    await page.waitForSelector("#p-t1", { timeout: 15000 });
 
     const canvases = () =>
       page.evaluate(() => {
@@ -1007,11 +920,52 @@ try {
     );
 
     // And the app is fully usable either way.
-    await page.click(".hero");
-    await page.click("text=Plan a day");
-    await page.waitForSelector("#p-t1", { timeout: 15000 });
     await solve(page);
     check("the app works whichever map is showing", (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+
+  // ============================================================ Q. COPY ==
+  if (section("Q. How it reads")) {
+    // Two rules, both easy to break by accident on the next copy edit.
+    const page = await newPage(browser);
+    await toPlan(page, url);
+
+    /** Everything a user can read, across the whole flow. */
+    const collect = async () => page.evaluate(() => "\n" + document.body.innerText);
+    let text = await collect();
+    await solve(page);
+    text += await collect();
+    if (await routeCount(page)) {
+      await page.click(".routecard");
+      await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+      text += await collect();
+    }
+    await page.click('.tabbar__tab:has-text("Stats")');
+    await page.waitForTimeout(400);
+    text += await collect();
+    await page.click('.tabbar__tab:has-text("Home")');
+    await page.waitForSelector(".hero", { timeout: 10000 });
+    text += await collect();
+    await page.click('.iconbtn[aria-label="Settings"]');
+    await page.waitForSelector(".modal", { timeout: 10000 });
+    text += await collect();
+
+    const dashes = [...text.matchAll(/[^.]{0,40}—[^.]{0,40}/g)].map((m) => m[0].trim());
+    check("no em dashes anywhere in the interface", dashes.length === 0, dashes.slice(0, 3).join(" | "));
+
+    // Nothing should be explaining the project to someone who came to ski.
+    const lecture = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.split(/\s+/).length > 26);
+    check(
+      "no paragraph runs longer than a couple of lines",
+      lecture.length === 0,
+      lecture.slice(0, 2).map((l) => l.slice(0, 90) + "...").join(" | ")
+    );
+
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }

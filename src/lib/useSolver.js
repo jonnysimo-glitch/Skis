@@ -84,10 +84,18 @@ export function useSolver() {
           workerRef.current.postMessage({ id, opts });
         });
       } catch {
-        result = await onMainThread();
+        result = null;
       }
-    } else {
-      result = await onMainThread();
+    }
+    if (!result) {
+      // Never reject. A rejection here propagates to a caller that does not
+      // await it, so the solving screen would spin for the rest of the
+      // session. Report the failure instead and let the UI say so.
+      try {
+        result = await onMainThread();
+      } catch (error) {
+        result = { routes: [], ms: 0, failed: String(error?.message || error) };
+      }
     }
 
     if (latest.current !== id) return null; // superseded by a newer tap

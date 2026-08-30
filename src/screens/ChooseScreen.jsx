@@ -17,10 +17,11 @@
 import { useState } from "react";
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
-import { StatRow, routeStats } from "../ui/RouteBits.jsx";
+import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { REFINEMENTS, refinementApplies, backAt, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
 import { Info, Clock, Pin } from "../ui/Icons.jsx";
+import { NODES } from "../resort.js";
 
 /** Above roughly six a list stops being a choice and becomes homework. */
 const SHOWN_BY_DEFAULT = 3;
@@ -41,6 +42,10 @@ export default function ChooseScreen({
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? routes : routes.slice(0, SHOWN_BY_DEFAULT);
   const hidden = routes.length - visible.length;
+  // A refinement can rule out everything. The chips stay on screen because
+  // they are the way back: one tap undoes it. Sending the user to the empty
+  // screen here would leave the form as the only exit.
+  const ruledOut = routes.length === 0;
 
   const similar = routes.filter((r) => r.similar).length;
   // The solver returns fewer than asked when the terrain cannot support more.
@@ -52,30 +57,48 @@ export default function ChooseScreen({
     <>
       <SheetHead>
         <div className="eyebrow">
-          {routes.length === 1
-            ? "One route"
-            : hidden > 0
-              ? `${visible.length} of ${routes.length} routes`
-              : `${routes.length} routes`}
-          {opts.lunch ? " · lunch included" : ""}
+          {ruledOut
+            ? "Nothing left"
+            : routes.length === 1
+              ? "One route"
+              : hidden > 0
+                ? `${visible.length} of ${routes.length} routes`
+                : `${routes.length} routes`}
+          {opts.lunch && !ruledOut ? " · lunch included" : ""}
         </div>
-        <h1 className="title title--sm">Pick a shape for the day</h1>
+        <h1 className="title title--sm">
+          {ruledOut ? "That rules everything out" : "Pick a shape for the day"}
+        </h1>
       </SheetHead>
 
       <SheetBody>
+        {ruledOut && (
+          <div className="warn">
+            <Info className="warn__icon" width="17" height="17" />
+            <span>
+              <span className="warn__t">No day fits</span>
+              <span className="warn__p">
+                Nothing on {opts.ability === "blue" ? "blue" : `${opts.ability} and below`} fills{" "}
+                {hours(opts.budget)} from {NODES[plan.start].name}. Turn one of the
+                chips below back off and the options come straight back.
+              </span>
+            </span>
+          </div>
+        )}
+
         {similar > 0 && (
-          <div className="info" style={{ marginBottom: 14 }}>
+          <div className="info">
             <Info className="info__icon" width="17" height="17" />
             <span>
-              Not much {opts.ability} terrain here —{" "}
-              {similar === routes.length ? "these are" : `${similar} of these are`}{" "}
+              Not much {opts.ability} terrain here.{" "}
+              {similar === routes.length ? "These are" : `${similar} of these are`}{" "}
               <b>variations on the same runs</b>.
             </span>
           </div>
         )}
 
-        {short && similar === 0 && (
-          <div className="info" style={{ marginBottom: 14 }}>
+        {short && similar === 0 && !ruledOut && (
+          <div className="info">
             <Info className="info__icon" width="17" height="17" />
             <span>
               Only <b>{routes.length === 1 ? "one" : routes.length}</b> genuinely
@@ -123,7 +146,7 @@ export default function ChooseScreen({
         )}
 
         <div className="sectionrule">
-          <label className="flabel">Not quite?</label>
+          <label className="flabel">{ruledOut ? "Turn one back off" : "Not quite?"}</label>
           <div className="chips">
             {REFINEMENTS.map((r) => {
               const on = refine.has(r.id);
@@ -141,10 +164,11 @@ export default function ChooseScreen({
               );
             })}
           </div>
-          <p className="note" style={{ marginTop: 10 }}>
-            Each one re-solves against the same clock.
-            {refine.has("lunch") && ` Lunch takes ${LUNCH_MINUTES} minutes off the skiing.`}
-          </p>
+          {refine.has("lunch") && (
+            <p className="note" style={{ marginTop: "var(--s-3)" }}>
+              Lunch takes {LUNCH_MINUTES} minutes off the skiing.
+            </p>
+          )}
         </div>
       </SheetBody>
 

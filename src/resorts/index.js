@@ -43,7 +43,7 @@ export const RESORTS = [
       bottom: Math.min(...alts),
       valleys: 3,
     },
-    blurb: "Three valleys — Gressoney, Ayas and Alagna — linked over two high cols.",
+    blurb: "Gressoney, Ayas and Alagna, linked over two high cols.",
   },
   {
     id: "courmayeur",
@@ -54,14 +54,14 @@ export const RESORTS = [
   },
   {
     id: "cervinia",
-    name: "Cervinia — Zermatt",
+    name: "Cervinia / Zermatt",
     region: "Valle d'Aosta",
     country: "Italy / Switzerland",
     available: false,
   },
   {
     id: "lathuile",
-    name: "La Thuile — La Rosière",
+    name: "La Thuile / La Rosière",
     region: "Valle d'Aosta",
     country: "Italy / France",
     available: false,

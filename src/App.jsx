@@ -23,7 +23,10 @@ const MapCanvas = lazy(() =>
   import("./map/MapCanvas.jsx").catch(() => ({ default: () => null }))
 );
 
-import ResortScreen from "./screens/ResortScreen.jsx";
+import HomeScreen from "./screens/HomeScreen.jsx";
+import StatsScreen from "./screens/StatsScreen.jsx";
+import SettingsSheet from "./screens/SettingsSheet.jsx";
+import TabBar from "./ui/TabBar.jsx";
 import PlanScreen from "./screens/PlanScreen.jsx";
 import SolvingScreen from "./screens/SolvingScreen.jsx";
 import ChooseScreen from "./screens/ChooseScreen.jsx";
@@ -32,9 +35,11 @@ import NavigateScreen from "./screens/NavigateScreen.jsx";
 import SummaryScreen from "./screens/SummaryScreen.jsx";
 import EmptyScreen from "./screens/EmptyScreen.jsx";
 
-import { RESORTS, getResort, defaultResort } from "./resorts/index.js";
+import { getResort, defaultResort } from "./resorts/index.js";
+import { recordDay } from "./lib/history.js";
 import { NODES, buildEdges } from "./resort.js";
 import { useSolver } from "./lib/useSolver.js";
+import { directRoute } from "./lib/direct.js";
 import { load, save } from "./lib/persist.js";
 import {
   detectContext,
@@ -68,15 +73,47 @@ const MAX_SNAP_METRES = 6000;
 
 /** How tall the sheet opens for each screen. */
 const SNAP_FOR = {
-  resort: "half",
-  plan: 0.8,
+  plan: 0.7,
   solving: "peek",
-  choose: 0.68,
-  detail: 0.66,
+  choose: 0.66,
+  detail: 0.64,
   navigate: "half",
   summary: "half",
   empty: "half",
 };
+
+/** Tab bar height in CSS pixels; keep in step with --tabbar. */
+const TABBAR_H = 56;
+
+/**
+ * Why a straight transfer will not work. Different failures from a day plan:
+ * there may be no legal path at all, or one that exists but arrives late.
+ */
+function diagnoseDirect(plan, opts, route) {
+  const from = NODES[plan.start].name;
+  const to = NODES[plan.finish].name;
+  if (plan.start === plan.finish) {
+    return {
+      headline: "You are already there.",
+      body: `Pick somewhere other than ${from} to head for.`,
+      fixes: [],
+    };
+  }
+  if (!route) {
+    return {
+      headline: `No way from ${from} to ${to} today.`,
+      body:
+        `Every link is either above your grade or behind a lift that has already shut ` +
+        `for the day.`,
+      fixes: ["laterFinish", ...(opts.ability !== "black" ? ["harder"] : [])],
+    };
+  }
+  return {
+    headline: `${to} is further than that.`,
+    body: `The quickest way there takes ${route.minutes} minutes, which is more time than you have given yourself.`,
+    fixes: ["laterFinish"],
+  };
+}
 
 const nowMinutes = () => {
   const d = new Date();
@@ -86,7 +123,12 @@ const nowMinutes = () => {
 export default function App() {
   // ---- resort -------------------------------------------------------------
   const [resortId, setResortId] = useState(() => load("resortId"));
-  const [screen, setScreen] = useState(() => (load("resortId") ? "plan" : "resort"));
+  // Three places: home (where and what you have done), skiing (the mountain),
+  // stats (the record). `screen` is the step within skiing.
+  const [tab, setTab] = useState(() => (load("resortId") ? "skiing" : "home"));
+  const [screen, setScreen] = useState("plan");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const resort = getResort(resortId) || defaultResort;
 
   // ---- profile and plan ---------------------------------------------------
@@ -128,6 +170,10 @@ export default function App() {
   // empty rectangle where the mountain should be. MapLibre loads underneath
   // it and takes over once it is genuinely painting — real elevation, real
   // relief. If it never gets there, the schematic simply stays.
+  // The map is the skiing tab. Choosing a resort while already looking at that
+  // resort's terrain is backwards, and mounting MapLibre behind a page that
+  // never shows it is wasted battery.
+  const onMountain = tab === "skiing";
   const showSchematic = mapBroken || !mapLive;
   // MapLibre spawns its own workers for tile parsing, which cannot be
   // constructed from a file:// page's opaque origin. It would fail four times
@@ -135,7 +181,7 @@ export default function App() {
   // — which is the whole point of having one.
   const canRunMapLibre =
     typeof location === "undefined" || location.protocol !== "file:";
-  const tryMapLibre = !mapBroken && canRunMapLibre;
+  const tryMapLibre = onMountain && !mapBroken && canRunMapLibre;
 
   const chosen = routes[pickIndex] || null;
   const shownRoute =
@@ -144,9 +190,6 @@ export default function App() {
   const routeGeo = useMemo(() => routeToGeoJSON(shownRoute), [shownRoute]);
 
   const pins = useMemo(() => {
-    if (screen === "resort") {
-      return nodesToGeoJSON(resort.bases, () => ({ role: "base" }));
-    }
     if (!shownRoute) {
       return nodesToGeoJSON([plan.start, plan.finish].filter((v, i, a) => a.indexOf(v) === i), (key) => ({
         role: key === plan.finish ? "finish" : "start",
@@ -168,10 +211,10 @@ export default function App() {
             ? { role: "finish" }
             : { role: "start" }
     );
-  }, [screen, shownRoute, step, plan.start, plan.finish, resort.bases]);
+  }, [screen, shownRoute, step, plan.start, plan.finish]);
 
   const focus = useMemo(() => {
-    if (screen === "resort" || screen === "plan" || screen === "empty") {
+    if (screen === "plan" || screen === "empty") {
       return {
         kind: "point",
         center: resort.center,
@@ -202,14 +245,18 @@ export default function App() {
   // Floating map chrome sits just above the sheet. When the sheet is dragged up
   // over most of the map there is nothing left to control, so it gets out of
   // the way rather than stacking on top of the header.
-  const chromeBottom = Math.max(16, sheetHeight + 14);
+  // Everything that floats over the map sits above the tab bar, except while
+  // navigating, when the tab bar is out of the way.
+  const tabBarShown = !(onMountain && (screen === "navigate" || screen === "solving"));
+  const sheetFloor = tabBarShown ? TABBAR_H : 0;
+  const chromeBottom = Math.max(16, sheetHeight + sheetFloor + 14);
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const chromeHidden = sheetHeight > viewportH * 0.74;
 
   // ---- actions ------------------------------------------------------------
 
   const runSolve = useCallback(
-    async (nextPlan, nextAbility, nextRefine, { showSolving = false } = {}) => {
+    async (nextPlan, nextAbility, nextRefine, { showSolving = false, fromRefine = false } = {}) => {
       const solverOpts = toSolverOpts({
         plan: nextPlan,
         ability: nextAbility,
@@ -218,8 +265,30 @@ export default function App() {
       setOpts(solverOpts);
 
       if (showSolving) setScreen("solving");
-
       const started = performance.now();
+
+      // "Straight there" is a different question: not how to fill a day, but
+      // how to get from here to there. One answer, found exactly rather than
+      // sampled, so there is nothing to rank.
+      if (nextPlan.mode === "direct") {
+        const route = directRoute(solverOpts);
+        if (showSolving) {
+          const held = performance.now() - started;
+          if (held < 700) await new Promise((r) => setTimeout(r, 700 - held));
+        }
+        if (!route || route.minutes > solverOpts.budget) {
+          setRoutes([]);
+          setDiagnosis(diagnoseDirect(nextPlan, solverOpts, route));
+          setScreen("empty");
+        } else {
+          setRoutes([route]);
+          setPickIndex(0);
+          setPreviewIndex(0);
+          setScreen("detail");
+        }
+        return;
+      }
+
       const result = await solve(solverOpts);
       if (!result) return; // superseded by a newer request
 
@@ -235,7 +304,23 @@ export default function App() {
       setPickIndex(0);
       setPreviewIndex(0);
 
-      if (!result.routes.length) {
+      if (result.failed) {
+        // The planner itself broke. Saying "nothing fits" here would be a lie
+        // about the mountain, and leaving the spinner up is worse than both.
+        setDiagnosis({
+          eyebrow: "Not your plan",
+          title: "That didn't work",
+          headline: "The planner stopped short.",
+          body: "Something went wrong working out your day, so there is nothing to show. Trying again usually clears it.",
+          fixes: [],
+        });
+        setScreen("empty");
+      } else if (!result.routes.length && fromRefine) {
+        // A chip that empties the list must not throw the user onto a screen
+        // whose only way out is the form. The chips are the way back, so stay
+        // where they are and say which one did it.
+        setScreen("choose");
+      } else if (!result.routes.length) {
         // The refined ability is what actually constrained the search.
         setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts));
         setScreen("empty");
@@ -249,9 +334,11 @@ export default function App() {
   const onSolve = () => runSolve(plan, ability, refine, { showSolving: true });
 
   const onRefine = (id) => {
+    if (plan.mode === "direct") return;
     const next = toggleRefinement(refine, id);
     setRefine(next);
-    runSolve(plan, ability, next); // re-solves in place, never back to the form
+    // Re-solves in place, never back to the form.
+    runSolve(plan, ability, next, { fromRefine: true });
   };
 
   const onFix = (id) => {
@@ -328,8 +415,21 @@ export default function App() {
   const chooseResort = (id) => {
     setResortId(id);
     save("resortId", id);
+    setRoutes([]);
+    setRefine(new Set());
+    setPickIndex(0);
+    setPreviewIndex(0);
+    setStep(0);
     const next = getResort(id);
     setPlan(defaultPlan(next, context, nowMinutes(), gps?.state === "ok" ? gps.key : null));
+    setScreen("plan");
+  };
+
+  /** Finishing a day is the only thing that writes to the record. */
+  const finishDay = () => {
+    if (chosen) recordDay({ route: chosen, resortId: resort.id });
+    setHistoryVersion((v) => v + 1);
+    setScreen("summary");
   };
 
   const dismissNote = () => {
@@ -363,7 +463,7 @@ export default function App() {
           />
         </Suspense>
       )}
-      {showSchematic && (
+      {onMountain && showSchematic && (
         <FallbackTerrain
           route={routeGeo}
           graph={GRAPH_GEOJSON}
@@ -377,38 +477,28 @@ export default function App() {
   );
 
   return (
-    <div className="app">
+    <div className="app" style={{ "--sheet-floor": `${sheetFloor}px` }}>
       {MapLayer}
 
       <div className="topbar">
-        {screen !== "resort" && (
+        {!["plan", "solving", "summary"].includes(screen) && (
           <button
             className="iconbtn"
             aria-label="Back"
             onClick={() =>
               setScreen(
-                screen === "plan"
-                  ? "resort"
-                  : screen === "choose" || screen === "empty"
+                screen === "detail"
+                  ? plan.mode === "direct"
                     ? "plan"
-                    : screen === "detail"
-                      ? "choose"
-                      : screen === "navigate"
-                        ? "detail"
-                        : "choose"
+                    : "choose"
+                  : screen === "navigate"
+                    ? "detail"
+                    : "plan"
               )
             }
           >
             <Back />
           </button>
-        )}
-        {/* The wordmark is for the first screen. Once there is a back button
-            the user knows where they are, and two pieces of chrome competing
-            over the map is one too many. */}
-        {screen === "resort" && (
-          <span className="wordmark">
-            <i className="wordmark__dot" /> Skis
-          </span>
         )}
         <span className="topbar__spacer" />
       </div>
@@ -444,25 +534,34 @@ export default function App() {
         </button>
       </div>
 
-      {noteOpen && showSchematic && !chromeHidden && screen === "resort" && (
+      {noteOpen && showSchematic && !chromeHidden && screen === "plan" && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
-          <span className="mapnote__t">Simplified terrain — drag to orbit</span>
+          <span className="mapnote__t">Simplified terrain. Drag to orbit.</span>
           <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">
             <Close width="16" height="16" />
           </button>
         </div>
       )}
 
-      <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
-        {screen === "resort" && (
-          <ResortScreen
-            selected={resortId}
-            onSelect={chooseResort}
-            onContinue={() => setScreen("plan")}
-          />
-        )}
+      {tab === "home" && (
+        <HomeScreen
+          selected={resortId}
+          onSelect={chooseResort}
+          onGoSkiing={() => setTab("skiing")}
+          onSettings={() => setSettingsOpen(true)}
+        />
+      )}
 
+      {tab === "stats" && (
+        <StatsScreen
+          version={historyVersion}
+          onChanged={() => setHistoryVersion((v) => v + 1)}
+        />
+      )}
+
+      {onMountain && (
+      <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
         {screen === "plan" && (
           <PlanScreen
             resort={resort}
@@ -474,7 +573,7 @@ export default function App() {
             gps={gps}
             onLocate={onLocate}
             onSolve={onSolve}
-            onBack={() => setScreen("resort")}
+            onBack={() => setTab("home")}
           />
         )}
 
@@ -520,7 +619,7 @@ export default function App() {
               setStep(0);
               setScreen("navigate");
             }}
-            onBack={() => setScreen("choose")}
+            onBack={() => setScreen(plan.mode === "direct" ? "plan" : "choose")}
           />
         )}
 
@@ -531,7 +630,7 @@ export default function App() {
             plan={plan}
             step={step}
             onStep={setStep}
-            onFinish={() => setScreen("summary")}
+            onFinish={finishDay}
             onReplan={onReplan}
             onAbandon={() => setScreen("detail")}
           />
@@ -546,10 +645,30 @@ export default function App() {
               setRefine(new Set());
               setScreen("plan");
             }}
-            onDone={() => setScreen("detail")}
+            onDone={() => setTab("stats")}
           />
         )}
       </Sheet>
+      )}
+
+      {/* Navigating is full screen: the tab bar is somewhere to go afterwards,
+          not while you are looking for the next junction. */}
+      <TabBar
+        tab={tab}
+        onChange={(next) => {
+          setTab(next);
+          if (next === "skiing" && screen === "summary") setScreen("plan");
+        }}
+        hidden={!tabBarShown}
+      />
+
+      {settingsOpen && (
+        <SettingsSheet
+          ability={ability}
+          setAbility={setAbility}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 }

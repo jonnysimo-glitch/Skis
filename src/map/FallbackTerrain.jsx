@@ -20,6 +20,20 @@ import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 const DIM_ACCENT = "rgba(42, 196, 238, 0.3)";
 
 const GRID = 60;
+
+/**
+ * Pitch limits.
+ *
+ * Past roughly 80 degrees the camera is level with the slope and then below
+ * it, and you end up looking at the underside of the terrain — which is not a
+ * view of anything. MapLibre caps its own pitch for the same reason; this is
+ * the equivalent for the schematic view.
+ */
+/** How fast a flick bleeds off. 0.92 settles in about half a second at 60fps. */
+const GLIDE_DECAY = 0.92;
+
+const MIN_PITCH = 0;
+const MAX_PITCH = 78;
 const VERT_EXAGGERATION = 2.4;
 const SUN = normalise([-0.5, 0.66, -0.56]);
 const SKY_TOP = [104, 158, 196];
@@ -173,14 +187,45 @@ export default function FallbackTerrain({
 }) {
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
-  const view = useRef({ bearing: -28, pitch: 56, zoom: 1, targetZoom: 1 });
+  // panX/panY are a screen-space offset applied after the camera has framed
+  // its target, so dragging moves the mountain rather than re-aiming at it.
+  const view = useRef({
+    bearing: -28, pitch: 56, zoom: 1, targetZoom: 1, panX: 0, panY: 0,
+  });
   const dirty = useRef(true);
   const propsRef = useRef({ route, graph, pins, camera, viewportBottom });
 
   if (!fieldRef.current) fieldRef.current = buildField();
 
+  // A screen change re-frames the camera on something new, so any pan the user
+  // had applied to the previous view is meaningless — keep it and the new
+  // subject arrives off screen.
+  const framedOn = useRef(null);
+  const frameKey = `${camera?.kind}:${camera?.center?.join(",") ?? camera?.bbox?.join(",") ?? ""}`;
+  if (framedOn.current !== frameKey) {
+    framedOn.current = frameKey;
+    view.current.panX = 0;
+    view.current.panY = 0;
+  }
+
   propsRef.current = { route, graph, pins, camera, viewportBottom };
   dirty.current = true;
+
+  // Test hook. Camera state lives in a ref and never reaches the DOM, so a
+  // gesture test has no other way to tell panning from rotating. Opt-in via
+  // ?maptest=1 so it is never exposed to an ordinary visitor.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!window.location.search.includes("maptest=1")) return undefined;
+    const tick = setInterval(() => {
+      window.__skisView = { ...view.current };
+    }, 60);
+    window.__skisSetPitch = (deg) => {
+      view.current.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, deg));
+      dirty.current = true;
+    };
+    return () => clearInterval(tick);
+  }, []);
 
   useEffect(() => {
     if (!controlRef) return;
@@ -189,6 +234,8 @@ export default function FallbackTerrain({
       resetNorth: () => {
         view.current.bearing = 0;
         view.current.pitch = 56;
+        view.current.panX = 0;
+        view.current.panY = 0;
         dirty.current = true;
       },
       flat: () => {
@@ -305,8 +352,8 @@ export default function FallbackTerrain({
 
       return {
         f,
-        ox: padX + availW / 2 - f * (u0 + u1) / 2,
-        oy: padTop + availH / 2 - f * (v0 + v1) / 2,
+        ox: padX + availW / 2 - (f * (u0 + u1)) / 2 + v.panX,
+        oy: padTop + availH / 2 - (f * (v0 + v1)) / 2 + v.panY,
       };
     };
 
@@ -463,6 +510,14 @@ export default function FallbackTerrain({
       }
     };
 
+    // Motion carried between a gesture and the render loop. Declared here, above
+    // the loop that reads them, rather than relying on the first frame landing
+    // after the gesture block has run.
+    /** Pixels per frame, smoothed, so one jittery sample cannot fling the map. */
+    const velocity = { x: 0, y: 0 };
+    /** Remaining momentum after a flick. */
+    const glide = { x: 0, y: 0 };
+
     // ---- loop ------------------------------------------------------------
     let raf = 0;
     const frame = () => {
@@ -471,6 +526,17 @@ export default function FallbackTerrain({
       if (Math.abs(gap) > 0.001) {
         v.zoom += gap * 0.14;
         dirty.current = true;
+      }
+
+      if (Math.hypot(glide.x, glide.y) > 0.15) {
+        v.panX += glide.x;
+        v.panY += glide.y;
+        glide.x *= GLIDE_DECAY;
+        glide.y *= GLIDE_DECAY;
+        dirty.current = true;
+      } else if (glide.x || glide.y) {
+        glide.x = 0;
+        glide.y = 0;
       }
 
       // Redraw only when something moved. 3,600 filled quads a frame is not a
@@ -495,35 +561,119 @@ export default function FallbackTerrain({
     };
     raf = requestAnimationFrame(frame);
 
-    // ---- orbit -----------------------------------------------------------
-    let dragging = false;
-    let lastX = 0;
-    let lastY = 0;
+    // ---- gestures --------------------------------------------------------
+    // The conventions every map app shares, and the ones MapLibre implements
+    // for the real map, so the two views behave identically:
+    //
+    //   one finger drag    pan
+    //   two finger pinch   zoom
+    //   two finger twist   rotate
+    //   two finger drag    tilt
+    //   double tap         zoom in
+    //
+    // The previous version put rotate and tilt on a one-finger drag, which is
+    // what made it feel wrong: dragging re-aimed the camera instead of moving
+    // the map under your thumb.
+    const pointers = new Map();
+    let gesture = null;
+
+    const centroid = () => {
+      const pts = [...pointers.values()];
+      return {
+        x: pts.reduce((a, p) => a + p.x, 0) / pts.length,
+        y: pts.reduce((a, p) => a + p.y, 0) / pts.length,
+      };
+    };
+    const spread = () => {
+      const [a, b] = [...pointers.values()];
+      return { dist: Math.hypot(b.x - a.x, b.y - a.y), angle: Math.atan2(b.y - a.y, b.x - a.x) };
+    };
+
+    const startGesture = () => {
+      const c = centroid();
+      gesture = { x: c.x, y: c.y, ...(pointers.size >= 2 ? spread() : {}) };
+    };
+
+    let lastTap = 0;
     const down = (e) => {
-      dragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      startGesture();
+      // A new touch stops a glide, so the map is always grabbable.
+      glide.x = 0;
+      glide.y = 0;
+      velocity.x = 0;
+      velocity.y = 0;
+
+      if (pointers.size === 1) {
+        const now = performance.now();
+        if (now - lastTap < 300) {
+          const v = view.current;
+          v.targetZoom = Math.min(3.4, v.targetZoom * 1.6);
+          dirty.current = true;
+        }
+        lastTap = now;
+      }
       canvas.style.cursor = "grabbing";
     };
+
     const move = (e) => {
-      if (!dragging) return;
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const v = view.current;
-      v.bearing += (e.clientX - lastX) * 0.36;
-      v.pitch = Math.max(2, Math.min(85, v.pitch + (e.clientY - lastY) * 0.22));
-      lastX = e.clientX;
-      lastY = e.clientY;
+      const c = centroid();
+
+      if (pointers.size === 1) {
+        const dx = c.x - gesture.x;
+        const dy = c.y - gesture.y;
+        v.panX += dx;
+        v.panY += dy;
+        velocity.x = velocity.x * 0.7 + dx * 0.3;
+        velocity.y = velocity.y * 0.7 + dy * 0.3;
+      } else if (pointers.size >= 2) {
+        const { dist, angle } = spread();
+        if (gesture.dist > 0) {
+          v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * (dist / gesture.dist)));
+          v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
+        }
+        v.bearing += ((angle - gesture.angle) * 180) / Math.PI;
+        // Both fingers travelling together tilts; the pinch and twist above
+        // have already taken their share of the movement.
+        v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - (c.y - gesture.y) * 0.4));
+        gesture.dist = dist;
+        gesture.angle = angle;
+      }
+
+      gesture.x = c.x;
+      gesture.y = c.y;
       dirty.current = true;
     };
+
     const up = (e) => {
-      dragging = false;
-      canvas.style.cursor = "grab";
+      const wasPanning = pointers.size === 1;
+      pointers.delete(e.pointerId);
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+      if (pointers.size) {
+        startGesture();
+        return;
+      }
+      canvas.style.cursor = "grab";
+      // Let go mid-flick and the map should keep going and settle, the way it
+      // does in every map app. Without this a drag stops dead under your
+      // thumb, which is the single thing that makes a map feel cheap.
+      if (wasPanning && Math.hypot(velocity.x, velocity.y) > 0.4) {
+        glide.x = velocity.x;
+        glide.y = velocity.y;
+        dirty.current = true;
+      }
     };
+
     const wheel = (e) => {
       e.preventDefault();
       const v = view.current;
-      v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+      // Trackpad pinch arrives as a wheel event with ctrlKey set.
+      const factor = e.ctrlKey ? 1 - e.deltaY * 0.01 : e.deltaY > 0 ? 0.92 : 1.08;
+      v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * factor));
       dirty.current = true;
     };
 

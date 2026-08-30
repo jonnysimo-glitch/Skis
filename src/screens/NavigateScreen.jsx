@@ -12,13 +12,26 @@
  * problem the app exists for, arriving mid-route.
  */
 import { useEffect, useRef, useState } from "react";
+import { useGeolocation, kmh } from "../lib/useGeolocation.js";
+import { evaluateArrival } from "../lib/progress.js";
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile from "../ui/ElevationProfile.jsx";
 import { LegList, Metrics } from "../ui/RouteBits.jsx";
 import { LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
 import { NODES } from "../resort.js";
-import { Arrow, Warning, Restart, Check } from "../ui/Icons.jsx";
+import { Arrow, Warning, Restart, Check, Satellite, Locate } from "../ui/Icons.jsx";
+
+/** Why the screen is not following along, in words a skier can act on. */
+function gpsExplanation(state) {
+  switch (state) {
+    case "locating": return "Finding you\u2026";
+    case "denied": return "Location is off, so tap when you arrive.";
+    case "insecure": return "Location needs https, so tap when you arrive.";
+    case "unavailable": return "No location here, so tap when you arrive.";
+    default: return "";
+  }
+}
 
 const nowMinutes = () => {
   const d = new Date();
@@ -54,6 +67,31 @@ export default function NavigateScreen({
   const next = route.segments[step + 1];
   const last = step === route.segments.length - 1;
 
+  // --- following along ----------------------------------------------------
+  // The phone should notice you have reached the junction. Tapping through 43
+  // legs by hand is not navigation, it is data entry with gloves on.
+  const gps = useGeolocation(true);
+  const streak = useRef(0);
+  const [toJunction, setToJunction] = useState(null);
+
+  useEffect(() => {
+    // A new leg starts a fresh count; the previous leg's confirmations say
+    // nothing about this one.
+    streak.current = 0;
+    setToJunction(null);
+  }, [step]);
+
+  useEffect(() => {
+    if (!gps.fix || last) return;
+    const result = evaluateArrival({ fix: gps.fix, leg, streak: streak.current });
+    streak.current = result.streak;
+    setToJunction(result.metres);
+    if (result.arrived) onStep(step + 1);
+  }, [gps.fix, leg, last, step, onStep]);
+
+  const speed = kmh(gps.fix?.speed);
+  const following = gps.state === "live";
+
   // Planned vs actual, both in minutes of the day.
   const plannedElapsed = route.segments
     .slice(0, step)
@@ -88,7 +126,7 @@ export default function NavigateScreen({
           <div className="banner__s">
             {next
               ? `then ${next.kind === "lift" ? "ride" : "ski"} ${next.name}`
-              : `last one — finishes at ${junction.name}`}
+              : `last one, finishes at ${junction.name}`}
           </div>
         </div>
 
@@ -97,28 +135,54 @@ export default function NavigateScreen({
         <Metrics
           three
           items={[
-            {
-              k: "to junction",
-              v: leg.kind === "lift" ? leg.ride : leg.min,
-              unit: " min",
-            },
-            {
-              k: leg.kind === "lift" ? "metres up" : "metres down",
-              v: leg.kind === "lift" ? leg.gain : leg.drop,
-            },
+            // Once there is a fix, how far away the junction is beats how long
+            // the plan said the leg would take.
+            toJunction !== null
+              ? {
+                  k: "to junction",
+                  v: toJunction >= 1000 ? (toJunction / 1000).toFixed(1) : Math.round(toJunction),
+                  unit: toJunction >= 1000 ? " km" : " m",
+                }
+              : {
+                  k: "to junction",
+                  v: leg.kind === "lift" ? leg.ride : leg.min,
+                  unit: " min",
+                },
+            speed !== null && speed > 0
+              ? { k: "speed", v: speed, unit: " km/h" }
+              : {
+                  k: leg.kind === "lift" ? "metres up" : "metres down",
+                  v: leg.kind === "lift" ? leg.gain : leg.drop,
+                },
             { k: "due back", v: minutesToClock(projectedFinish) },
           ]}
         />
 
-        <p className="note" style={{ marginTop: 9 }}>
-          Next junction is <b>{junction.name}</b>, {junction.alt.toLocaleString()} m.
-          {!live && " Times are from your plan — start this on the hill for live timing."}
+        <p className="note" style={{ marginTop: "var(--s-3)", display: "flex", gap: "var(--s-2)", alignItems: "center" }}>
+          {following ? (
+            <>
+              <Satellite width="15" height="15" style={{ flex: "none", color: "var(--accent-ink)" }} />
+              <span>
+                Following you. <b>{junction.name}</b> is next, at{" "}
+                {junction.alt.toLocaleString()} m.
+              </span>
+            </>
+          ) : (
+            <>
+              <Locate width="15" height="15" style={{ flex: "none" }} />
+              <span>
+                {gpsExplanation(gps.state)} Next junction is <b>{junction.name}</b>,{" "}
+                {junction.alt.toLocaleString()} m.
+                {!live && " Times are from your plan."}
+              </span>
+            </>
+          )}
         </p>
 
         <div className="spacer" />
 
         {overrun > 0 ? (
-          <div className="warn" style={{ marginBottom: 14 }}>
+          <div className="warn">
             <Warning className="warn__icon" width="18" height="18" />
             <span>
               <span className="warn__t">
@@ -136,7 +200,7 @@ export default function NavigateScreen({
           </div>
         ) : (
           drift < -4 && (
-            <div className="info" style={{ marginBottom: 14 }}>
+            <div className="info">
               <Check className="info__icon" width="17" height="17" />
               <span>
                 {Math.abs(drift)} minutes ahead of the plan. Back at{" "}
@@ -159,7 +223,10 @@ export default function NavigateScreen({
             <Check width="18" height="18" /> Finish
           </button>
         ) : (
-          <button className="btn" onClick={() => onStep(step + 1)}>
+          <button
+            className={following ? "btn btn--ghost" : "btn"}
+            onClick={() => onStep(step + 1)}
+          >
             Reached {junction.name} <Arrow width="18" height="18" />
           </button>
         )}

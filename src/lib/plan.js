@@ -13,6 +13,19 @@ export { minutesToClock, clockToMinutes };
 
 export const LUNCH_MINUTES = 45;
 
+/**
+ * Two things you can ask for.
+ *
+ * `day` is the orienteering problem the solver exists for: fill the time I
+ * have and get me back. `direct` is the opposite and much simpler: I am here,
+ * I need to be there, take me. Meeting someone, retrieving a car, or getting
+ * off the wrong side of the mountain before the lifts shut.
+ */
+export const MODES = [
+  { id: "day", label: "Plan a day" },
+  { id: "direct", label: "Straight there" },
+];
+
 /** Three entry contexts change DEFAULTS, not screens. */
 export function detectContext(nowMinutes) {
   if (nowMinutes >= 10 * 60 && nowMinutes < 16 * 60) return "midday";
@@ -36,10 +49,10 @@ export const CONTEXT_COPY = {
   },
   midday: {
     eyebrow: "Mid-day reset",
-    title: "Where are you,\nand when's the car?",
+    title: "Where are you,\nwhere do you need to be?",
     hint: {
       t: "Half the day is gone",
-      s: "Start is where you are, finish is where the car is.",
+      s: "Set both ends to anywhere on the mountain.",
     },
   },
 };
@@ -60,6 +73,7 @@ export function defaultPlan(resort, context, at, here) {
       t1: resort.lastDown,
       noDrags: false,
       lunch: false,
+      mode: "day",
     };
   }
   if (context === "firstlift") {
@@ -70,6 +84,7 @@ export function defaultPlan(resort, context, at, here) {
       t1: resort.lastDown,
       noDrags: false,
       lunch: false,
+      mode: "day",
     };
   }
   return {
@@ -79,6 +94,7 @@ export function defaultPlan(resort, context, at, here) {
     t1: 16 * 60,
     noDrags: false,
     lunch: false,
+    mode: "day",
   };
 }
 
@@ -143,6 +159,24 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
   let noDrags = plan.noDrags;
   let lunch = plan.lunch;
   let emphasis = null;
+
+  // Refinements shape a day. A transfer is not a day: you asked to be somewhere
+  // by a time, and quietly cutting that budget to 60% because "Shorter" was
+  // still set from an earlier plan would declare a reachable place unreachable.
+  // Same for lunch, which has no meaning when the answer is one path.
+  if (plan.mode === "direct") {
+    return {
+      start: plan.start,
+      finish: plan.finish,
+      ability,
+      budget,
+      startClock: plan.t0,
+      noDrags: plan.noDrags,
+      lunch: false,
+      emphasis: null,
+      count: 1,
+    };
+  }
 
   if (refine.has("shorter")) budget = Math.round(budget * 0.6);
   if (refine.has("longer")) budget = Math.round(budget * 1.15);

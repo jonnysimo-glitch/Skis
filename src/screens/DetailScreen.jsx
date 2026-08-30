@@ -50,7 +50,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
 
         <div className="spacer" />
 
-        <div className="info" style={{ marginBottom: 14 }}>
+        <div className="info">
           <Clock className="info__icon" width="17" height="17" />
           <span>
             Down at <b>{finishName}</b> by <b>{minutesToClock(back)}</b>, on{" "}
@@ -59,7 +59,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
         </div>
 
         {slack < 20 && (
-          <div className="warn" style={{ marginBottom: 14 }}>
+          <div className="warn">
             <Warning className="warn__icon" width="18" height="18" />
             <span>
               <span className="warn__t">Tight</span>
@@ -72,7 +72,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
         )}
 
         {opts.lunch && (
-          <div className="info" style={{ marginBottom: 14 }}>
+          <div className="info">
             <Check className="info__icon" width="17" height="17" />
             <span>
               Passes a rifugio. The {LUNCH_MINUTES} minutes for lunch are already
@@ -107,7 +107,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
         </button>
         <p className="note" style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", justifyContent: "center" }}>
           <Wifi width="14" height="14" style={{ flex: "none" }} />
-          Saved to your phone — works with no signal
+          Saved to your phone. Works with no signal.
         </p>
       </SheetFoot>
     </>

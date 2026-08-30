@@ -11,7 +11,7 @@
  */
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import { NODES } from "../resort.js";
-import { minutesToClock, clockToMinutes, CONTEXT_COPY } from "../lib/plan.js";
+import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES } from "../lib/plan.js";
 import { Clock, Arrow, Locate, Info } from "../ui/Icons.jsx";
 
 /**
@@ -23,15 +23,15 @@ function locateLabel(gps, resort) {
     case "locating":
       return "Finding you…";
     case "ok":
-      return `Using your position — nearest is ${NODES[gps.key].name}`;
+      return `Using your position. Nearest is ${NODES[gps.key].name}`;
     case "far":
-      return `You're ${gps.km} km from ${resort.name} — pick a start below`;
+      return `You're ${gps.km} km from ${resort.name}. Pick a start below`;
     case "denied":
-      return "Location is off for this site — pick a start below";
+      return "Location is off. Pick a start below";
     case "insecure":
-      return "Location needs https — pick a start below";
+      return "Location needs https. Pick a start below";
     case "unavailable":
-      return "Can't get a location here — pick a start below";
+      return "No location here. Pick a start below";
     default:
       return "Use my position";
   }
@@ -56,18 +56,21 @@ export default function PlanScreen({
   onBack,
 }) {
   const copy = CONTEXT_COPY[context];
-  const window = plan.t1 - plan.t0;
+  const span = plan.t1 - plan.t0;
   const bases = resort.bases;
+  // A transfer to where you already are is not a question. Say so rather than
+  // greying the button and leaving the user to guess which end is wrong.
+  const sameEnds = plan.mode === "direct" && plan.start === plan.finish;
 
-  // Mid-day starts from wherever you are standing; the other contexts start at
-  // a base. Either way the list must contain whatever `plan.start` currently
-  // is — a GPS fix can put you at a mountain station in any context, and a
-  // select that cannot show its own value displays one place while the solver
-  // routes from another.
-  const contextOptions = context === "midday" ? Object.keys(NODES) : bases;
-  const startOptions = contextOptions.includes(plan.start)
-    ? contextOptions
-    : [plan.start, ...contextOptions];
+  // Both ends can be anywhere on the mountain. Being stranded at a col with
+  // the car three valleys away is the case this app exists for, and it is not
+  // servable if the pickers only offer valley stations. Bases are grouped
+  // first because they are still the common answer.
+  const mountain = Object.keys(NODES).filter((k) => !NODES[k].base);
+  const groups = [
+    { label: "Bases", keys: bases },
+    { label: "On the mountain", keys: mountain },
+  ];
 
   const set = (patch) => setPlan({ ...plan, ...patch });
 
@@ -98,6 +101,21 @@ export default function PlanScreen({
           </div>
         )}
 
+        <div className="field">
+          <div className="segmented" role="group" aria-label="What you want">
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                className="segmented__opt"
+                aria-pressed={(plan.mode ?? "day") === m.id}
+                onClick={() => set({ mode: m.id })}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="field pair">
           <div>
             <label className="flabel" htmlFor="p-start">
@@ -109,16 +127,20 @@ export default function PlanScreen({
               value={plan.start}
               onChange={(e) => set({ start: e.target.value })}
             >
-              {startOptions.map((key) => (
-                <option key={key} value={key}>
-                  {NODES[key].name}
-                </option>
+              {groups.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.keys.map((key) => (
+                    <option key={key} value={key}>
+                      {NODES[key].name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
           <div>
             <label className="flabel" htmlFor="p-finish">
-              {context === "midday" ? "Car is at" : "Finish at"}
+              {plan.mode === "direct" ? "Take me to" : "Finish at"}
             </label>
             <select
               id="p-finish"
@@ -126,10 +148,14 @@ export default function PlanScreen({
               value={plan.finish}
               onChange={(e) => set({ finish: e.target.value })}
             >
-              {bases.map((key) => (
-                <option key={key} value={key}>
-                  {NODES[key].name}
-                </option>
+              {groups.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.keys.map((key) => (
+                    <option key={key} value={key}>
+                      {NODES[key].name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -161,7 +187,7 @@ export default function PlanScreen({
           </div>
           <div>
             <label className="flabel" htmlFor="p-t1">
-              Down by
+              {plan.mode === "direct" ? "By" : "Down by"}
             </label>
             <input
               id="p-t1"
@@ -173,10 +199,12 @@ export default function PlanScreen({
           </div>
         </div>
 
-        <p className="note" style={{ marginTop: -8, marginBottom: 16 }}>
-          {window > 0
-            ? `That's ${Math.floor(window / 60)}h ${String(window % 60).padStart(2, "0")}m on the hill.`
-            : "Finish time needs to be after the start."}
+        <p className="note" style={{ marginTop: "calc(var(--s-2) * -1)", marginBottom: "var(--s-5)" }}>
+          {span <= 0
+            ? "Finish time needs to be after the start."
+            : plan.mode === "direct"
+              ? `${Math.floor(span / 60)}h ${String(span % 60).padStart(2, "0")}m to get there.`
+              : `That's ${Math.floor(span / 60)}h ${String(span % 60).padStart(2, "0")}m on the hill.`}
         </p>
 
         <div className="field">
@@ -209,29 +237,36 @@ export default function PlanScreen({
             >
               No drag lifts
             </button>
-            <button
-              className="chip"
-              aria-pressed={plan.lunch}
-              onClick={() => set({ lunch: !plan.lunch })}
-            >
-              Sit-down lunch
-            </button>
+            {plan.mode !== "direct" && (
+              <button
+                className="chip"
+                aria-pressed={plan.lunch}
+                onClick={() => set({ lunch: !plan.lunch })}
+              >
+                Sit-down lunch
+              </button>
+            )}
           </div>
         </div>
 
         <div className="info">
           <Info className="info__icon" width="17" height="17" />
           <span>
-            Last lifts and closures are built in. Nothing will be suggested that
-            leaves you above a shut lift — options that do not fit are removed,
-            not flagged after the fact.
+            {sameEnds
+              ? `You are already at ${NODES[plan.finish].name}. Pick somewhere else to head for.`
+              : "Last lifts are built in. Nothing will strand you."}
           </span>
         </div>
       </SheetBody>
 
       <SheetFoot>
-        <button className="btn" disabled={window <= 0} onClick={onSolve}>
-          Find routes <Arrow width="18" height="18" />
+        <button
+          className="btn"
+          disabled={span <= 0 || sameEnds}
+          onClick={onSolve}
+        >
+          {plan.mode === "direct" ? "Take me there" : "Find routes"}{" "}
+          <Arrow width="18" height="18" />
         </button>
         <button className="btn btn--quiet" onClick={onBack}>
           Change resort

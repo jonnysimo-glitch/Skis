@@ -75,7 +75,9 @@ export default function MapCanvas({
       zoom: resort.zoom,
       pitch: resort.pitch,
       bearing: resort.bearing,
-      maxPitch: 80,
+      // Past ~75 degrees the camera is level with the slope and then under it.
+      // Matches the ceiling the schematic view uses.
+      maxPitch: 75,
       attributionControl: { compact: true },
       // Terrain queries are expensive; this keeps panning smooth on a phone.
       maxTileCacheSize: 400,
@@ -145,10 +147,12 @@ export default function MapCanvas({
       onReady?.(map);
     });
 
-    // Two-finger drag pitches, one finger rotates: orbiting the mountain is
-    // the whole point of the 3D view.
-    map.touchZoomRotate.enable({ around: "center" });
-    map.dragRotate.enable();
+    // MapLibre's defaults are the conventions every map app shares — one finger
+    // pans, two fingers pinch to zoom, twist to rotate and drag to tilt — so
+    // they are left alone rather than overridden. `around: "center"` in
+    // particular made pinches zoom about the middle of the screen instead of
+    // about the fingers, which is what makes a pinch feel like it is fighting
+    // you.
 
     /**
      * Watchdog.

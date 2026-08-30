@@ -33,9 +33,11 @@ export default function EmptyScreen({ diagnosis, plan, resort, onFix, onBack }) 
     <>
       <SheetHead>
         <div className="eyebrow">
-          <Warning width="14" height="14" /> No route
+          <Warning width="14" height="14" /> {diagnosis.eyebrow || "No route"}
         </div>
-        <h1 className="title title--sm">That won't fit</h1>
+        {/* Not every empty state is a clock problem, so the heading is the
+            diagnosis's to set when "That won't fit" would be untrue. */}
+        <h1 className="title title--sm">{diagnosis.title || "That won't fit"}</h1>
       </SheetHead>
 
       <SheetBody>
@@ -44,7 +46,7 @@ export default function EmptyScreen({ diagnosis, plan, resort, onFix, onBack }) 
           <p className="empty__p">{diagnosis.body}</p>
 
           <ul className="fixlist">
-            {diagnosis.fixes.map((id) => {
+            {(diagnosis.fixes || []).map((id) => {
               const fix = FIXES[id]?.(plan, resort);
               if (!fix) return null;
               return (

@@ -125,7 +125,8 @@ input, select { font: inherit; color: inherit; }
 
 .sheet {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
+  left: 0; right: 0;
+  bottom: var(--sheet-floor, 0px);
   z-index: 5;
   background: var(--surface);
   border-radius: var(--r-sheet) var(--r-sheet) 0 0;
@@ -134,7 +135,6 @@ input, select { font: inherit; color: inherit; }
   touch-action: none;
   will-change: height;
 }
-.sheet--animating { transition: height 0.4s var(--ease-out); }
 
 .sheet__grab {
   flex: none;
@@ -233,7 +233,8 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .chips { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
 .chip {
-  min-height: 38px;
+  /* 44pt is the iOS floor, and this app gets used in gloves. */
+  min-height: 44px;
   font-size: var(--t-subhead);
   font-weight: 500;
   padding: 0 var(--s-4);
@@ -285,6 +286,30 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-family: var(--ui); font-size: var(--t-callout); font-weight: 600;
 }
 .btn--quiet:active { background: var(--surface-2); }
+
+/* iOS segmented control: two mutually exclusive modes, equal weight. */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+}
+.segmented__opt {
+  min-height: 44px;
+  border-radius: calc(var(--r-md) - 3px);
+  font-size: var(--t-subhead);
+  font-weight: 600;
+  color: var(--ink-2);
+  transition: background 0.14s var(--ease-std), color 0.14s var(--ease-std);
+}
+.segmented__opt[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--e-1);
+}
 
 /* -------------------------------------------------------------- context -- */
 
@@ -398,13 +423,13 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-size: var(--t-callout); font-weight: 600; line-height: 1.2;
   color: var(--ink-2);
 }
-.resortcard__loc { display: block; font-size: var(--t-footnote); color: var(--ink-4); margin-top: 1px; }
+.resortcard__loc { display: block; font-size: var(--t-footnote); color: var(--ink-3); margin-top: 2px; }
 .resortcard__soon {
   margin-left: auto; flex: none;
   align-self: center;
   font-size: var(--t-caption-2); font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--ink-4);
+  color: var(--ink-3);
 }
 
 /* ---------------------------------------------------------------- route -- */
@@ -482,6 +507,13 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   margin-top: var(--s-1);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Four big numbers do not fit across a 393px phone: "6h 42m" at 26px alone is
+   wider than a quarter of the gutter width. Two up, two down. */
+.stats--lg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-4) var(--s-3);
+}
 .stats--lg .stat__v { font-size: 26px; }
 .stats--lg .stat__u { font-size: var(--t-subhead); }
 
@@ -558,6 +590,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   display: flex; gap: var(--s-2); align-items: flex-start;
   font-size: var(--t-footnote); line-height: 1.4;
 }
+.warn:not(:last-child), .info:not(:last-child) { margin-bottom: var(--s-4); }
 .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
 .warn__icon { color: var(--warn); flex: none; margin-top: 1px; }
 .warn__t {
@@ -617,7 +650,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .profile__svg { display: block; width: 100%; }
 .profile__scale {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-size: var(--t-caption); color: var(--ink-4);
+  font-size: var(--t-caption); color: var(--ink-3);
   margin-top: var(--s-2);
 }
 .profile__scale span:nth-child(2) { font-weight: 600; color: var(--ink-2); }
@@ -674,3 +707,167 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   }
   body { background: #16303f; display: block; }
 }
+
+
+/* ------------------------------------------------------------- tab bar -- */
+/* Three destinations. Settings is not one of them — it is somewhere you go
+   once, so it does not deserve a quarter of the most valuable strip of screen
+   on the phone. */
+
+.tabbar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  height: calc(var(--tabbar) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  border-top: 1px solid var(--line);
+  transition: transform 0.3s var(--ease-out), opacity 0.2s var(--ease-std);
+}
+.tabbar--hidden { transform: translateY(100%); opacity: 0; pointer-events: none; }
+
+.tabbar__tab {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: color 0.14s var(--ease-std);
+}
+.tabbar__tab[aria-current="page"] { color: var(--accent); font-weight: 600; }
+.tabbar__tab:active { opacity: 0.6; }
+
+/* ---------------------------------------------------------------- page -- */
+/* Home and Stats are full pages, not sheets: there is no map behind them, so
+   nothing to float over. */
+
+.page {
+  position: absolute;
+  inset: 0;
+  bottom: calc(var(--tabbar) + var(--safe-bottom));
+  background: var(--surface);
+  display: flex; flex-direction: column;
+  z-index: 6;
+}
+.page__bar {
+  flex: none;
+  padding: calc(var(--safe-top) + var(--s-3)) var(--gutter) var(--s-2);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.page__body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--s-2) var(--gutter) var(--s-6);
+}
+.page__foot {
+  flex: none;
+  padding: var(--s-3) var(--gutter);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+/* Home has its own bar, so its body starts right below it. Stats has none. */
+.page > .page__body:first-child { padding-top: calc(var(--safe-top) + var(--s-5)); }
+/* The title introduces the content below it; it should not be touching it. */
+.page__body > .title { margin-bottom: var(--s-5); }
+
+.wordmark--dark {
+  color: var(--ink);
+  text-shadow: none;
+}
+.iconbtn--flat::before { background: var(--surface-2); box-shadow: none; }
+
+/* --------------------------------------------------------------- days -- */
+
+.daylist { list-style: none; display: grid; gap: var(--s-1); }
+.day {
+  display: block;
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.day:last-child { border-bottom: 0; }
+.day__when {
+  display: block;
+  font-size: var(--t-caption-2); font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+.day__title {
+  display: block;
+  font-family: var(--display);
+  font-size: var(--t-title-3); font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+.day__nums { display: block; font-size: var(--t-footnote); color: var(--ink-2); margin-top: var(--s-1); }
+.day__mix { display: flex; gap: var(--s-3); margin-top: var(--s-2); font-size: var(--t-caption); color: var(--ink-3); }
+.pipdot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 2px; margin-right: var(--s-1); vertical-align: 0;
+}
+.pipdot--blue { background: var(--piste-blue); }
+.pipdot--red { background: var(--piste-red); }
+.pipdot--black { background: var(--piste-black); }
+
+/* --------------------------------------------------------------- rows -- */
+
+.rows { list-style: none; }
+.row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-4);
+  min-height: var(--tap);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--surface-3);
+  font-size: var(--t-callout);
+}
+.row:last-child { border-bottom: 0; }
+.row__v { color: var(--ink-3); text-align: right; }
+
+/* --------------------------------------------------------------- blank -- */
+
+.blank { text-align: center; padding: var(--s-12) var(--s-5); }
+.blank__icon { color: var(--ink-4); }
+.blank__t {
+  font-family: var(--display);
+  font-size: var(--t-title-2); font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-top: var(--s-4);
+}
+.blank__s { font-size: var(--t-callout); color: var(--ink-3); margin-top: var(--s-2); line-height: 1.45; }
+
+/* --------------------------------------------------------------- modal -- */
+
+.modal { position: absolute; inset: 0; z-index: 30; }
+.modal__scrim {
+  position: absolute; inset: 0;
+  background: rgba(10, 25, 34, 0.4);
+  backdrop-filter: blur(2px);
+  animation: fade 0.2s var(--ease-std);
+}
+.modal__panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  max-height: 88%;
+  background: var(--surface);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: var(--e-sheet);
+  display: flex; flex-direction: column;
+  animation: rise 0.34s var(--ease-out);
+}
+.modal__bar {
+  flex: none;
+  padding: var(--s-5) var(--gutter) var(--s-3);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal__body {
+  flex: 1; overflow-y: auto;
+  padding: 0 var(--gutter) calc(var(--safe-bottom) + var(--s-6));
+}
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { transform: translateY(100%); } }

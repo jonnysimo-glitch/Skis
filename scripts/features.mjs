@@ -1,0 +1,478 @@
+/**
+ * Per-feature depth. Run with: npm run features
+ *
+ * `e2e.mjs` walks the product once and asks whether each screen works.
+ * This asks a harder question of a smaller surface: for one feature, what are
+ * the twenty ways it goes wrong? Empty inputs, both ends the same, state left
+ * over from the last time, a permission denied halfway, a tap that arrives
+ * before the last one finished.
+ *
+ * Pass --only=<word> to run one feature.
+ */
+import {
+  serve,
+  newPage,
+  launch,
+  toPlan,
+  solve,
+  routeCount,
+  toMinutes,
+} from "./harness.mjs";
+
+const HEADED = process.argv.includes("--headed");
+const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).toLowerCase();
+
+let failures = 0;
+let ran = 0;
+const counts = new Map();
+let current = "";
+
+function feature(name) {
+  current = name;
+  if (ONLY && !name.toLowerCase().includes(ONLY)) return false;
+  console.log(`\n${name.toUpperCase()}`);
+  counts.set(name, 0);
+  return true;
+}
+
+function check(name, condition, detail = "") {
+  ran++;
+  counts.set(current, (counts.get(current) || 0) + 1);
+  if (!condition) failures++;
+  console.log(`  ${condition ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`);
+}
+
+/** Where the flow currently is, read off the DOM rather than guessed. */
+const where = (page) =>
+  page.evaluate(() => {
+    const tab = document.querySelector('.tabbar__tab[aria-current="page"] span')?.textContent;
+    if (tab === "Home") return "home";
+    if (tab === "Stats") return "stats";
+    if (document.querySelector(".empty")) return "empty";
+    if (document.querySelector(".banner")) return "navigate";
+    if (document.querySelector(".solving")) return "solving";
+    if (document.querySelector(".routecard")) return "choose";
+    if (document.querySelector("#p-t1")) return "plan";
+    if (document.querySelector(".legs")) return "detail";
+    if (document.querySelector(".sheet")) return "summary";
+    return "?";
+  });
+
+const text = (page) => page.evaluate(() => document.body.innerText);
+
+const { server, url } = await serve();
+const browser = await launch({ headed: HEADED });
+
+try {
+
+// ==================================================== 1. STRAIGHT THERE ==
+if (feature("1. Straight there: getting to one place, now")) {
+  const page = await newPage(browser, { at: [14, 0] });
+  await toPlan(page, url);
+
+  const modes = await page.$$eval(".segmented__opt", (n) => n.map((b) => b.textContent.trim()));
+  check("the two questions are offered as one control", modes.length === 2, modes.join(" / "));
+  check("planning a day is the default", await page.$eval('.segmented__opt', (b) => b.getAttribute("aria-pressed")) === "true");
+
+  await page.click('.segmented__opt:has-text("Straight there")');
+  check("switching modes stays on the same screen", (await where(page)) === "plan");
+  check(
+    "the finish field stops being a finish and becomes a destination",
+    (await page.$eval('label[for="p-finish"]', (n) => n.textContent.trim())) === "Take me to"
+  );
+  check(
+    "the deadline is a deadline, not a time on the hill",
+    (await page.$eval('label[for="p-t1"]', (n) => n.textContent.trim())) === "By"
+  );
+  check(
+    "the action says what it does",
+    /Take me there/.test(await page.$eval(".sheet__foot .btn", (n) => n.textContent))
+  );
+  check(
+    "lunch is not offered for a transfer",
+    !(await text(page)).includes("Sit-down lunch")
+  );
+  check(
+    "no drags still is, because a drag can be impassable",
+    (await text(page)).includes("No drag lifts")
+  );
+
+  // Both ends the same.
+  const startVal = await page.$eval("#p-start", (n) => n.value);
+  await page.selectOption("#p-finish", startVal);
+  check(
+    "asking to be taken where you already are is refused",
+    await page.$eval(".sheet__foot .btn", (n) => n.disabled)
+  );
+  check(
+    "and it says which end to change rather than greying out in silence",
+    /already at/.test(await text(page)),
+    (await text(page)).match(/You are already at [^.]*\./)?.[0] || "no reason given"
+  );
+
+  // A real transfer.
+  await page.selectOption("#p-start", "salati");
+  await page.selectOption("#p-finish", "champoluc");
+  check("picking two different ends re-enables it", !(await page.$eval(".sheet__foot .btn", (n) => n.disabled)));
+
+  await page.click("text=Take me there");
+  await page.waitForSelector(".legs, .empty", { timeout: 20000 });
+  check("it goes straight to the route, with nothing to choose between", (await where(page)) === "detail");
+
+  const body = await text(page);
+  check("the route is named for where it is going", /To Champoluc/.test(body), body.split("\n")[1] || "");
+  check("it is not dressed up as one of several options", !body.includes("Most vertical"));
+
+  const legs = await page.$$eval(".leg", (n) => n.length);
+  check("it has legs to follow", legs > 0, `${legs} legs`);
+
+  // Back from a transfer goes to the form, not to a route list that never existed.
+  await page.click('.iconbtn[aria-label="Back"]');
+  await page.waitForTimeout(300);
+  check("back from a transfer returns to the form", (await where(page)) === "plan");
+  check("and the mode is still Straight there", await page.$eval('.segmented__opt:nth-child(2)', (b) => b.getAttribute("aria-pressed")) === "true");
+
+  // Not enough time.
+  await page.fill("#p-t1", "14:05");
+  await page.click("text=Take me there");
+  await page.waitForSelector(".empty", { timeout: 20000 });
+  const empty = await text(page);
+  check("a transfer that cannot be made in time says so", (await where(page)) === "empty");
+  check("and says how long it would actually take", /\d+ minutes/.test(empty), empty.split("\n").slice(0, 4).join(" | "));
+  check("and offers more time as the fix", /Give yourself until/.test(empty));
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// =============================== 2. A TRANSFER IGNORES A DAY'S REFINEMENTS ==
+if (feature("2. A transfer is not a refined day")) {
+  // The discriminating case. Salati to Champoluc is 54 minutes on red and does
+  // not exist at all on blue. So a leftover "Easier" from a day plan does not
+  // merely shade the answer, it turns a real transfer into "no way there".
+  const page = await newPage(browser, { at: [11, 0] });
+  await toPlan(page, url);
+  await page.fill("#p-t0", "11:00");
+  await page.fill("#p-t1", "16:00");
+  await solve(page);
+  check("a day plan solves first", (await routeCount(page)) > 0);
+
+  const easier = await page.$('.chip:text-is("Easier")');
+  check("the day can be refined easier", easier !== null && !(await easier.isDisabled()));
+  await easier.click();
+  await page.waitForTimeout(600);
+  const shorter = await page.$('.chip:text-is("Shorter")');
+  await shorter.click();
+  await page.waitForTimeout(600);
+  const refined = await page.$$eval('.chip[aria-pressed="true"]', (n) => n.map((b) => b.textContent.trim()));
+  check("two refinements are on", refined.length === 2, refined.join(", "));
+
+  await page.click('.iconbtn[aria-label="Back"]');
+  await page.waitForSelector("#p-t1", { timeout: 10000 });
+  await page.click('.segmented__opt:has-text("Straight there")');
+  await page.selectOption("#p-start", "salati");
+  await page.selectOption("#p-finish", "champoluc");
+  await page.fill("#p-t0", "11:00");
+  await page.fill("#p-t1", "12:20");
+  await page.click("text=Take me there");
+  await page.waitForSelector(".legs, .empty", { timeout: 20000 });
+
+  check(
+    "the transfer is found on the ability you actually set",
+    (await where(page)) === "detail",
+    await where(page)
+  );
+  const body = await text(page);
+  check("it goes where you asked", /To Champoluc/.test(body));
+  check(
+    "an 80 minute window is not quietly cut to 48 by a stale Shorter",
+    !/further than that/.test(body)
+  );
+
+  // And the plan screen shows no refinement state for a transfer.
+  await page.click('.iconbtn[aria-label="Back"]');
+  await page.waitForSelector("#p-t1", { timeout: 10000 });
+  // The ability chip is legitimately pressed here; refine chips must not exist.
+  const REFINE_LABELS = ["Shorter", "Longer", "Easier", "Harder", "More vertical"];
+  const chips = await page.$$eval(".chip", (n) => n.map((b) => b.textContent.trim()));
+  const leaked = chips.filter((c) => REFINE_LABELS.includes(c));
+  check("no day refinements are shown on a transfer form", leaked.length === 0, leaked.join(", ") || "none");
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ================================================ 3. BOTH ENDS ARE FREE ==
+if (feature("3. Route between any two points")) {
+  for (const [label, at] of [["night before", [21, 30]], ["first lift", [8, 20]], ["mid-day", [14, 0]]]) {
+    const page = await newPage(browser, { at });
+    await toPlan(page, url);
+    const starts = await page.$$eval("#p-start option", (n) => n.length);
+    const finishes = await page.$$eval("#p-finish option", (n) => n.length);
+    const groups = await page.$$eval("#p-start optgroup", (n) => n.map((g) => g.label));
+    check(`${label}: the start can be anywhere on the mountain`, starts > 4, `${starts} options`);
+    check(`${label}: so can the finish`, finishes === starts, `${finishes} options`);
+    check(`${label}: bases are grouped apart from mid-mountain`, groups.join("/") === "Bases/On the mountain", groups.join("/"));
+    check(
+      `${label}: the finish field does not presume a car`,
+      !/car/i.test(await page.$eval('label[for="p-finish"]', (n) => n.textContent))
+    );
+    await page.context_.close();
+  }
+
+  // A day that starts and ends at two different mid-mountain points.
+  const page = await newPage(browser, { at: [11, 30] });
+  await toPlan(page, url);
+  await page.selectOption("#p-start", "salati");
+  await page.selectOption("#p-finish", "gabiet");
+  await page.fill("#p-t0", "11:30");
+  await page.fill("#p-t1", "16:00");
+  await solve(page);
+  const n = await routeCount(page);
+  check("a day between two mid-mountain points solves", n > 0, `${n} routes`);
+
+  if (n > 0) {
+    await page.click(".routecard");
+    await page.waitForSelector(".legs", { timeout: 15000 });
+    const ends = await page.evaluate(() => {
+      const legs = [...document.querySelectorAll(".leg")];
+      return legs.length ? document.body.innerText : "";
+    });
+    check("the route it gives actually ends at the point asked for", /Gabiet/.test(ends));
+    check("and starts from the point asked for", /Salati/.test(ends));
+  }
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ================================================== 4. REFINE IN PLACE ==
+if (feature("4. Refine never sends you back to the form")) {
+  const page = await newPage(browser, { at: [9, 0] });
+  await toPlan(page, url);
+  await solve(page);
+  const before = await page.$$eval(".routecard", (n) => n.map((c) => c.textContent.trim().slice(0, 40)));
+  check("there are routes to refine", before.length > 0, `${before.length}`);
+
+  const chips = await page.$$eval(".sheet .chip", (n) => n.map((b) => b.textContent.trim()));
+  check("the refine chips are one tap away", chips.length >= 6, chips.join(", "));
+  for (const want of ["Shorter", "Longer", "Easier", "Harder", "More vertical", "No drags", "Lunch"]) {
+    check(`"${want}" is offered`, chips.includes(want));
+  }
+
+  // Each chip re-solves in place.
+  for (const chip of ["Shorter", "More vertical", "No drags"]) {
+    const btn = await page.$(`.sheet .chip:text-is("${chip}")`);
+    if (!btn || (await btn.isDisabled())) { check(`"${chip}" is tappable`, false, "disabled"); continue; }
+    await btn.click();
+    await page.waitForTimeout(700);
+    check(`"${chip}" keeps you on the options`, (await where(page)) === "choose", await where(page));
+    check(`"${chip}" is now on`, (await btn.getAttribute("aria-pressed")) === "true");
+  }
+
+  // Opposites cancel rather than stacking.
+  const longer = await page.$('.sheet .chip:text-is("Longer")');
+  await longer.click();
+  await page.waitForTimeout(700);
+  const shorterOn = await page.$eval('.sheet .chip:text-is("Shorter")', (b) => b.getAttribute("aria-pressed"));
+  check("turning on Longer turns Shorter off rather than stacking", shorterOn !== "true", `shorter=${shorterOn}`);
+
+  // Tapping twice in quick succession must not leave a stale answer on screen.
+  // Selectors rather than handles: a re-solve re-renders the row underneath.
+  const routesBefore = await routeCount(page);
+  await page.click('.sheet .chip:text-is("Easier")');
+  await page.click('.sheet .chip:text-is("Harder")', { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const easierOn = await page.$eval('.sheet .chip:text-is("Easier")', (x) => x.getAttribute("aria-pressed"));
+  const harderOn = await page.$eval('.sheet .chip:text-is("Harder")', (x) => x.getAttribute("aria-pressed"));
+  check(
+    "opposites never end up both on",
+    !(easierOn === "true" && harderOn === "true"),
+    `easier=${easierOn} harder=${harderOn}`
+  );
+  check("the list settles rather than emptying", (await routeCount(page)) > 0, `${await routeCount(page)} (was ${routesBefore})`);
+  check("and it is not left spinning", !(await page.$(".chip--busy")), "still busy");
+
+  check("still on the options after all of that", (await where(page)) === "choose");
+  check("never once back at the form", (await page.$("#p-t1")) === null);
+
+  // The chip that rules everything out is the make-or-break case: it must not
+  // throw the user onto a screen whose only exit is the form.
+  for (const chip of ["Shorter", "More vertical", "No drags", "Longer", "Easier"]) {
+    const el = await page.$(`.sheet .chip:text-is("${chip}")`);
+    if (el && !(await el.isDisabled()) && (await el.getAttribute("aria-pressed")) !== "true") {
+      await el.click();
+      await page.waitForTimeout(800);
+    }
+  }
+  const emptied = (await routeCount(page)) === 0;
+  check("stacking every refinement can rule the day out", emptied, `${await routeCount(page)} routes`);
+  if (emptied) {
+    check("and it says so rather than showing an empty list", /rules everything out/i.test(await text(page)));
+    check("it is not the dead-end empty screen", (await where(page)) === "choose", await where(page));
+    check("the chips are still there to undo it", (await page.$$(".sheet .chip")).length > 0);
+    check("the offending chip is still tappable", !(await page.$eval('.sheet .chip:text-is("Easier")', (b) => b.disabled)));
+    check("the budget is stated as time, not raw minutes", !/\b\d{3,} minutes\b/.test(await text(page)));
+    await page.click('.sheet .chip:text-is("Easier")');
+    await page.waitForTimeout(1200);
+    check("undoing it brings the options straight back", (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
+    check("without ever passing through the form", (await page.$("#p-t1")) === null);
+  }
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ============================================ 5. FOLLOWING YOU ON THE HILL ==
+if (feature("5. Navigation follows the GPS")) {
+  const staffal = { latitude: 45.8869, longitude: 7.8244 };
+  const page = await newPage(browser, {
+    at: [9, 30],
+    geolocation: staffal,
+    permissions: ["geolocation"],
+  });
+  await toPlan(page, url);
+  await solve(page);
+  check("a day to navigate", (await routeCount(page)) > 0);
+  await page.click(".routecard");
+  await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".banner", { timeout: 20000 });
+  check("navigation starts", (await where(page)) === "navigate");
+
+  const first = await text(page);
+  check("it opens on leg one", /Leg 1 of \d+/.test(first), first.split("\n")[0]);
+  check("it names the next junction, not the next turn", /junction/i.test(first));
+  check("it never says 'turn'", !/next turn/i.test(first));
+  check("it says it is following you", /Following you/.test(first), first.match(/Following you[^.]*\./)?.[0] || "not following");
+  check("the tab bar is out of the way while navigating", await page.$eval(".tabbar", (n) => n.className.includes("hidden")));
+
+  // Walk the phone to the end of leg one. The screen should advance itself.
+  const target = await page.evaluate(() => {
+    const m = document.body.innerText.match(/Reached ([^\n]+?)\s*$/m);
+    return m ? m[1].trim() : null;
+  });
+  check("the manual fallback names where you are going", target !== null, target || "");
+
+  const legBefore = await page.$eval(".eyebrow", (n) => n.textContent);
+  // Two fixes at the junction: one confirmation is not enough on purpose.
+  const junction = await page.evaluate(() => window.__nextJunction || null);
+  await page.context_.setGeolocation({ latitude: 45.9012, longitude: 7.8318 });
+  await page.waitForTimeout(1500);
+  const distanceShown = /to junction/i.test(await text(page));
+  check("distance to the junction replaces the planned minutes once there is a fix", distanceShown);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ==================================== 6. LOCATION THAT DOES NOT WORK ==
+if (feature("6. Every location failure says something")) {
+  // Denied.
+  {
+    const page = await newPage(browser, { at: [9, 0] });
+    await page.context_.grantPermissions([]);
+    await toPlan(page, url);
+    await page.click(".locate");
+    await page.waitForTimeout(1200);
+    const body = await text(page);
+    check("a denied permission is stated", /Location is off|Location needs https|No location/.test(body), body.match(/Location[^\n]*/)?.[0] || "silent");
+    check("and it still says what to do instead", /Pick a start below/.test(body));
+    check("the button is not left spinning", !/Finding you/.test(body));
+    check("the form still works", !(await page.$eval(".sheet__foot .btn", (n) => n.disabled)));
+    await solve(page);
+    check("and solving is unaffected", (await routeCount(page)) > 0);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+
+  // Somewhere else entirely.
+  {
+    const page = await newPage(browser, {
+      at: [9, 0],
+      geolocation: { latitude: 48.8566, longitude: 2.3522 }, // Paris
+      permissions: ["geolocation"],
+    });
+    await toPlan(page, url);
+    await page.click(".locate");
+    await page.waitForTimeout(1500);
+    const body = await text(page);
+    check("a fix in another country is refused, not snapped", /km from Monterosa/.test(body), body.match(/You're[^\n]*/)?.[0] || "snapped anyway");
+    check("and the distance is given so it is obviously right", /\d+ km/.test(body));
+    check("the start is left where it was", (await page.$eval("#p-start", (n) => n.value)).length > 0);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+
+  // Actually there.
+  {
+    const page = await newPage(browser, {
+      at: [9, 0],
+      geolocation: { latitude: 45.8869, longitude: 7.8244 },
+      permissions: ["geolocation"],
+    });
+    await toPlan(page, url);
+    await page.click(".locate");
+    await page.waitForTimeout(1500);
+    const body = await text(page);
+    check("a fix on the hill is used", /Using your position/.test(body), body.match(/Using[^\n]*/)?.[0] || "not used");
+    const startVal = await page.$eval("#p-start", (n) => n.value);
+    const options = await page.$$eval("#p-start option", (n) => n.map((o) => o.value));
+    check("and the start it picks is one the picker actually offers", options.includes(startVal), `${startVal} in [${options.length}]`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
+// ================================================ 7. THE RECORD OF A DAY ==
+if (feature("7. Finishing a day writes it down, once")) {
+  const page = await newPage(browser, { at: [9, 0] });
+  await toPlan(page, url);
+  await solve(page);
+  await page.click(".routecard");
+  await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".banner", { timeout: 20000 });
+
+  for (let i = 0; i < 120; i++) {
+    const b = await page.$('.sheet__foot .btn:has-text("Reached")');
+    if (!b) break;
+    await b.click();
+    await page.waitForTimeout(20);
+  }
+  const finish = await page.$('button:has-text("Finish")');
+  check("the last leg offers a finish", finish !== null);
+  await finish.click();
+  await page.waitForTimeout(800);
+  check("finishing shows the summary", /Down at|Back at/.test(await text(page)));
+
+  const days = () => page.evaluate(() => JSON.parse(localStorage.getItem("skis.days") || "[]").length);
+  check("the day is written to the record", (await days()) === 1, `${await days()} days`);
+
+  // The one that used to double-count: back out of the summary and finish again.
+  check("there is no way back out of a finished day", (await page.$('.iconbtn[aria-label="Back"]')) === null);
+
+  await page.click('.tabbar__tab:has-text("Stats")');
+  await page.waitForTimeout(600);
+  const stats = await text(page);
+  check("stats shows the day", (await where(page)) === "stats");
+  check("with a distance", /\d+(\.\d+)?\s*km/i.test(stats), stats.slice(0, 80).replace(/\n/g, " "));
+  check("with a vertical", /\bm\b/.test(stats));
+  check("and exactly one day, not two", (await days()) === 1, `${await days()}`);
+
+  // Clearing is confirmed rather than instant.
+  const clear = await page.$('button:has-text("Clear")');
+  if (clear) {
+    await clear.click();
+    await page.waitForTimeout(400);
+    check("clearing the record asks first", /sure|permanent|cannot be undone|Delete/i.test(await text(page)));
+    check("and the day is still there until confirmed", (await days()) === 1);
+  }
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+} finally {
+  await browser.close();
+  server.close();
+}
+
+console.log(`\n  ${[...counts].map(([k, v]) => `${v} in "${k.split(":")[0]}"`).join(", ")}`);
+console.log(failures ? `\n  ${failures} FAILING of ${ran} checks\n` : `\n  all ${ran} feature checks passed\n`);
+process.exit(failures ? 1 : 0);

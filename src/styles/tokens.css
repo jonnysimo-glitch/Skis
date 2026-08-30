@@ -38,7 +38,7 @@
   --n-20: #d5e1ea;
   --n-30: #b9cad8;
   --n-40: #8ea5b6;
-  --n-50: #5f7789;   /* darkened: 3.6:1 on white was below AA */
+  --n-50: #5c7385;   /* AA on the tinted card surface, not just on white */
   --n-60: #4a6072;
   --n-70: #35485a;
   --n-80: #21323f;
@@ -104,6 +104,8 @@
   --gutter: 16px;
   /** Minimum comfortable touch target. */
   --tap: 44px;
+  /** Tab bar height, excluding the home indicator. */
+  --tabbar: 56px;
 
   /* --- Radii -------------------------------------------------------------- */
   --r-xs: 6px;
