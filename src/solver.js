@@ -32,7 +32,24 @@
 
 import { NODES, DIFFICULTY_RANK, SHORT_NAMES, buildEdges } from "./resort.js";
 
-const EDGES = buildEdges();
+/**
+ * The mountain, as a value rather than an import.
+ *
+ * A resort is a set of nodes, the edges between them, and the short names the
+ * titles read better with. Difficulty ranking is not part of it: blue is
+ * easier than red everywhere in the Alps.
+ *
+ * Every entry point takes an optional graph and falls back to Monterosa, so
+ * adding a second resort is a caller-side change and this file's behaviour on
+ * the first one is unchanged.
+ */
+export const asGraph = ({ NODES: nodes, SHORT_NAMES: shortNames = {}, buildEdges: edges }) => ({
+  NODES: nodes,
+  SHORT_NAMES: shortNames,
+  EDGES: edges(),
+});
+
+const MONTEROSA = asGraph({ NODES, SHORT_NAMES, buildEdges });
 
 /** Sampling effort. Higher finds better routes and costs linear time. */
 const SAMPLES = 3500;
@@ -69,17 +86,17 @@ function isAllowed(edge, opts) {
   return true;
 }
 
-function buildAdjacency(opts) {
+function buildAdjacency(g, opts) {
   const adj = {};
-  for (const key in NODES) adj[key] = [];
-  for (const edge of EDGES) if (isAllowed(edge, opts)) adj[edge.from].push(edge);
+  for (const key in g.NODES) adj[key] = [];
+  for (const edge of g.EDGES) if (isAllowed(edge, opts)) adj[edge.from].push(edge);
   return adj;
 }
 
 /** Dijkstra over reversed edges: minutes from every node back to `finish`. */
-function timesHome(adj, finish) {
+function timesHome(g, adj, finish) {
   const dist = {}, via = {}, reversed = {};
-  for (const key in NODES) { dist[key] = Infinity; reversed[key] = []; }
+  for (const key in g.NODES) { dist[key] = Infinity; reversed[key] = []; }
   dist[finish] = 0;
   for (const key in adj) for (const edge of adj[key]) reversed[edge.to].push(edge);
 
@@ -113,7 +130,7 @@ function pathHome(via, from, finish) {
 }
 
 /** One randomised walk. Returns null if it cannot be made legal. */
-function sampleWalk(opts, adj, home, rng, caps) {
+function sampleWalk(g, opts, adj, home, rng, caps) {
   const repeatCap = edge => (edge.kind === "run" ? caps.run : caps.lift);
   const { dist, via } = home;
   if (dist[opts.start] === Infinity) return null;
@@ -163,13 +180,13 @@ function sampleWalk(opts, adj, home, rng, caps) {
 
   if (!segments.length) return null;
   if (elapsed > opts.budget || elapsed < opts.budget * MIN_BUDGET_FILL) return null;
-  if (opts.lunch && !segments.some(e => NODES[e.to].rifugio)) return null;
+  if (opts.lunch && !segments.some(e => g.NODES[e.to].rifugio)) return null;
 
   return { segments, minutes: elapsed };
 }
 
 /** Derive the numbers the UI shows. */
-export function measure(route) {
+export function measure(route, g = MONTEROSA) {
   let km = 0, vertical = 0, lifts = 0, dragLifts = 0;
   const runIds = new Set(), areas = new Set();
   const counts = { blue: 0, red: 0, black: 0 };
@@ -177,12 +194,12 @@ export function measure(route) {
   // A "descent" is a maximal run of consecutive runs with no lift between them.
   // Skiers care about this: 900m unbroken skis very differently to three 300m
   // pitches split by chairlifts.
-  let highestAlt = NODES[route.segments[0].from].alt;
+  let highestAlt = g.NODES[route.segments[0].from].alt;
   let longestDescent = 0, currentDescent = 0;
 
   for (const edge of route.segments) {
-    areas.add(NODES[edge.to].area);
-    highestAlt = Math.max(highestAlt, NODES[edge.to].alt);
+    areas.add(g.NODES[edge.to].area);
+    highestAlt = Math.max(highestAlt, g.NODES[edge.to].alt);
     if (edge.kind === "run") {
       km += edge.km;
       vertical += edge.drop;
@@ -210,12 +227,12 @@ export function measure(route) {
   };
 }
 
-const shortName = key => SHORT_NAMES[key] || NODES[key].name;
+const shortName = (g, key) => g.SHORT_NAMES[key] || g.NODES[key].name;
 
-function highestPoint(route) {
+function highestPoint(g, route) {
   let best = route.segments[0].from;
   for (const edge of route.segments) {
-    if (NODES[edge.to].alt > NODES[best].alt) best = edge.to;
+    if (g.NODES[edge.to].alt > g.NODES[best].alt) best = edge.to;
   }
   return best;
 }
@@ -224,16 +241,16 @@ function highestPoint(route) {
  * Objectives are labelled by CHARACTER, not by raw stats. A skier cannot tell
  * you their objective function, but they can tell you they want a cruisy day.
  */
-function objectives(opts) {
+function objectives(g, opts) {
   const list = [
     {
       label: "Most vertical",
-      title: r => `The ${shortName(highestPoint(r))} circuit`,
+      title: r => `The ${shortName(g, highestPoint(g, r))} circuit`,
       score: r => r.vertical,
     },
     {
       label: "Most variety",
-      title: r => r.areas > 2 ? "Three valleys" : `The ${shortName(highestPoint(r))} loop`,
+      title: r => r.areas > 2 ? "Three valleys" : `The ${shortName(g, highestPoint(g, r))} loop`,
       score: r => r.distinctRuns * 100 + r.areas * 160,
     },
     {
@@ -253,14 +270,14 @@ function objectives(opts) {
     },
     {
       label: "Highest point",
-      title: r => `Up to ${shortName(highestPoint(r))}`,
+      title: r => `Up to ${shortName(g, highestPoint(g, r))}`,
       score: r => r.highestAlt * 10 + r.vertical * 0.1,
     },
   ];
   if (opts.emphasis === "vertical") {
     list.unshift({
       label: "Biggest descent",
-      title: r => `The ${shortName(highestPoint(r))} drop`,
+      title: r => `The ${shortName(g, highestPoint(g, r))} drop`,
       score: r => r.vertical * 2,
     });
   }
@@ -293,14 +310,16 @@ function overlap(a, b) {
  * @param {number} [opts.count=3]  how many routes to offer
  * @param {number} [opts.maxOverlap=0.7] reject a route sharing more than this
  *                 fraction of its runs with one already chosen
+ * @param {object} [opts.graph]    the resort to solve on; defaults to Monterosa
  * @returns {Array} up to `count` routes, each measured and labelled
  */
 export function solve(opts) {
   const count = opts.count ?? 3;
   const maxOverlap = opts.maxOverlap ?? 0.7;
 
-  const adj = buildAdjacency(opts);
-  const home = timesHome(adj, opts.finish);
+  const g = opts.graph ?? MONTEROSA;
+  const adj = buildAdjacency(g, opts);
+  const home = timesHome(g, adj, opts.finish);
   const caps = repeatCaps(adj, opts);
 
   let seed = 20260829;
@@ -311,10 +330,10 @@ export function solve(opts) {
 
   const found = new Map();
   for (let i = 0; i < SAMPLES; i++) {
-    const walk = sampleWalk(opts, adj, home, rng, caps);
+    const walk = sampleWalk(g, opts, adj, home, rng, caps);
     if (!walk) continue;
     const key = walk.segments.map(e => e.id).join(">");
-    if (!found.has(key)) found.set(key, measure(walk));
+    if (!found.has(key)) found.set(key, measure(walk, g));
   }
 
   const all = [...found.values()];
@@ -325,7 +344,7 @@ export function solve(opts) {
   // is useful; offering six variations of the same day is noise.
   const chosen = [];
   const fill = (threshold, flagSimilar, limit) => {
-    for (const objective of objectives(opts)) {
+    for (const objective of objectives(g, opts)) {
       if (chosen.length >= limit) break;
       if (chosen.some(c => c.label === objective.label)) continue;
       const ranked = [...all].sort((a, b) => objective.score(b) - objective.score(a));
@@ -359,9 +378,9 @@ export function solve(opts) {
 }
 
 /** Altitude at each vertex of a route, including the start. Used by the 3D layer and the profile. */
-export function altitudeSeries(route) {
-  const alts = [NODES[route.segments[0].from].alt];
-  for (const edge of route.segments) alts.push(NODES[edge.to].alt);
+export function altitudeSeries(route, g = MONTEROSA) {
+  const alts = [g.NODES[route.segments[0].from].alt];
+  for (const edge of route.segments) alts.push(g.NODES[edge.to].alt);
   return alts;
 }
 

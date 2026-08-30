@@ -44,10 +44,12 @@ Not done, in priority order:
 
 1. **Replace `src/resort.js` with real OSM data.** See "Replacing the resort
    data" below. Everything else is downstream of this.
-2. Second resort. `src/resorts/index.js` is the registry; the solver still
-   imports its graph directly from `resort.js`, and that is the one change
-   needed — pass the graph into `solve()`. Deliberately not abstracted before a
-   second real dataset exists.
+2. Second resort. `src/resorts/index.js` is the registry. The solver now takes
+   a graph (`solve({ ...opts, graph })`, `asGraph()` builds one) and falls back
+   to Monterosa when none is passed, so the code side is done and covered by
+   `src/lib/graph.test.js`. What is missing is a real dataset: a resort needs
+   every node's lat/lon/altitude and every run's length, drop and endpoints,
+   which only OSM has. See "Replacing the resort data".
 3. iOS wrapper. Capacitor is configured; `npx cap add ios` needs macOS.
 
 ## Already built and tested — do not redesign these
