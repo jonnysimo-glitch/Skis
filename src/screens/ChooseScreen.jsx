@@ -43,14 +43,20 @@ export default function ChooseScreen({
   const hidden = routes.length - visible.length;
 
   const similar = routes.filter((r) => r.similar).length;
-  const askedFor = opts.count ?? 3;
-  const short = routes.length < askedFor;
+  // The solver returns fewer than asked when the terrain cannot support more.
+  // Worth saying out loud only once the list is genuinely thin — being told
+  // "only four different days" when four are on offer is noise.
+  const short = routes.length < SHOWN_BY_DEFAULT + 1;
 
   return (
     <>
       <SheetHead>
         <div className="eyebrow">
-          {routes.length === 1 ? "One route" : `${routes.length} routes`}
+          {routes.length === 1
+            ? "One route"
+            : hidden > 0
+              ? `${visible.length} of ${routes.length} routes`
+              : `${routes.length} routes`}
           {opts.lunch ? " · lunch included" : ""}
         </div>
         <h1 className="title">

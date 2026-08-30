@@ -77,6 +77,7 @@ input, select { font: inherit; color: inherit; }
 .iconbtn[disabled] { opacity: 0.45; cursor: default; }
 
 .maptools {
+  transition: opacity 0.22s ease, bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   position: absolute;
   right: 14px;
   display: flex; flex-direction: column; gap: 8px;
@@ -237,7 +238,11 @@ input[type="time"].control { font-variant-numeric: tabular-nums; font-weight: 50
   color: #fff;
 }
 .chip[disabled] { opacity: 0.4; cursor: default; }
-.chip__swatch { width: 9px; height: 9px; border-radius: 2.5px; flex: none; }
+.chip__swatch {
+  width: 10px; height: 10px; border-radius: 3px; flex: none;
+  box-shadow: 0 0 0 1px rgba(11, 26, 36, 0.12);
+}
+.chip[aria-pressed="true"] .chip__swatch { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9); }
 .chip--busy { opacity: 0.55; }
 
 .btn {

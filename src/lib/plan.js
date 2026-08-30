@@ -127,7 +127,17 @@ export function toggleRefinement(refine, id) {
  * Note the budget is net of lunch: the solver plans skiing minutes and the
  * sit-down is added back when we report what time you are down.
  */
-export function toSolverOpts({ plan, ability, refine, count = 3 }) {
+/**
+ * How many routes to ask for.
+ *
+ * Three is what gets shown. Asking for five lets genuinely different fourth and
+ * fifth days surface behind a "more options" tap when the mountain supports
+ * them — and the solver returns fewer rather than padding when it does not, so
+ * asking wide costs nothing but a few milliseconds.
+ */
+export const ROUTE_COUNT = 5;
+
+export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
   let budget = plan.t1 - plan.t0;
   let level = ability;
   let noDrags = plan.noDrags;

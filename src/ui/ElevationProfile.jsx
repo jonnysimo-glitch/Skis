@@ -64,25 +64,47 @@ export default function ElevationProfile({
 
   const peaks = [];
   if (markers) {
+    // A day with twenty laps has twenty local maxima. Dot every one, but only
+    // label the highest, and only where the label has room — overlapping
+    // numbers are worse than no numbers.
+    const candidates = [];
     alts.forEach((alt, i) => {
-      const isPeak = i > 0 && i < alts.length - 1 && alts[i - 1] < alt && alt > alts[i + 1];
-      if (!isPeak) return;
+      if (i > 0 && i < alts.length - 1 && alts[i - 1] < alt && alt > alts[i + 1]) {
+        candidates.push({ i, alt, x: xs[i] });
+      }
+    });
+    const MIN_GAP = 30; // viewBox units, roughly the width of a four-digit label
+    const labelled = [];
+    for (const c of [...candidates].sort((a, b) => b.alt - a.alt)) {
+      if (labelled.every((l) => Math.abs(l.x - c.x) >= MIN_GAP)) labelled.push(c);
+    }
+    const labelledSet = new Set(labelled.map((l) => l.i));
+
+    for (const c of candidates) {
+      const isLabelled = labelledSet.has(c.i);
       peaks.push(
-        <g key={`pk${i}`}>
-          <circle cx={xs[i].toFixed(1)} cy={y(alt).toFixed(1)} r="2.4" fill="#0b1a24" />
-          <text
-            x={xs[i].toFixed(1)}
-            y={(y(alt) - 5.5).toFixed(1)}
-            fontSize="8.5"
-            fontWeight="600"
-            fill="#7d95a5"
-            textAnchor="middle"
-          >
-            {alt}
-          </text>
+        <g key={`pk${c.i}`}>
+          <circle
+            cx={c.x.toFixed(1)}
+            cy={y(c.alt).toFixed(1)}
+            r={isLabelled ? 2.6 : 1.7}
+            fill={isLabelled ? "#0b1a24" : "#a8bcc8"}
+          />
+          {isLabelled && (
+            <text
+              x={Math.max(14, Math.min(W - 14, c.x)).toFixed(1)}
+              y={(y(c.alt) - 6).toFixed(1)}
+              fontSize="9"
+              fontWeight="600"
+              fill="#7d95a5"
+              textAnchor="middle"
+            >
+              {c.alt.toLocaleString()}
+            </text>
+          )}
         </g>
       );
-    });
+    }
   }
 
   let nowX = null;

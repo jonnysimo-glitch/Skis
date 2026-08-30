@@ -56,7 +56,7 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 /** How tall the sheet opens for each screen. */
 const SNAP_FOR = {
   resort: "half",
-  plan: "tall",
+  plan: 0.8,
   solving: "peek",
   choose: "half",
   detail: "half",
@@ -169,8 +169,12 @@ export default function App() {
     return null;
   }, [screen, shownRoute, step, resort]);
 
-  // Floating map chrome sits just above the sheet.
+  // Floating map chrome sits just above the sheet. When the sheet is dragged up
+  // over most of the map there is nothing left to control, so it gets out of
+  // the way rather than stacking on top of the header.
   const chromeBottom = Math.max(16, sheetHeight + 14);
+  const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
+  const chromeHidden = sheetHeight > viewportH * 0.74;
 
   // ---- actions ------------------------------------------------------------
 
@@ -342,7 +346,11 @@ export default function App() {
         <span className="topbar__spacer" />
       </div>
 
-      <div className="maptools" style={{ bottom: chromeBottom }}>
+      <div
+        className="maptools"
+        style={{ bottom: chromeBottom, opacity: chromeHidden ? 0 : 1, pointerEvents: chromeHidden ? "none" : "auto" }}
+        aria-hidden={chromeHidden}
+      >
         <button
           className="iconbtn"
           aria-label="Face north and tilt"
@@ -365,7 +373,7 @@ export default function App() {
         </button>
       </div>
 
-      {noteOpen && useFallback && (
+      {noteOpen && useFallback && !chromeHidden && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           <span className="mapnote__t">

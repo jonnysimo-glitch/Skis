@@ -35,13 +35,20 @@ export default function NavigateScreen({
   onReplan,
   onAbandon,
 }) {
-  const anchor = useRef(nowMinutes());
-  const [clock, setClock] = useState(nowMinutes());
+  // Are we actually on the hill? If the wall clock is nowhere near the window
+  // that was planned — looking at tomorrow's route from the sofa, or replaying
+  // a finished day — then live timing is meaningless and pretending otherwise
+  // produces nonsense like "29 minutes ahead, back at 06:49". In that case the
+  // screen runs off the plan's own clock and says so.
+  const startedAt = useRef(nowMinutes());
+  const live = startedAt.current >= plan.t0 - 60 && startedAt.current <= plan.t1 + 60;
+  const [wall, setWall] = useState(nowMinutes());
 
   useEffect(() => {
-    const timer = setInterval(() => setClock(nowMinutes()), 15000);
+    if (!live) return undefined;
+    const timer = setInterval(() => setWall(nowMinutes()), 15000);
     return () => clearInterval(timer);
-  }, []);
+  }, [live]);
 
   const leg = route.segments[step];
   const next = route.segments[step + 1];
@@ -54,8 +61,9 @@ export default function NavigateScreen({
   const remaining = route.segments
     .slice(step)
     .reduce((sum, e) => sum + e.min, 0);
-  const actualElapsed = Math.max(0, clock - anchor.current);
-  const drift = actualElapsed - plannedElapsed;
+
+  const clock = live ? wall : opts.startClock + plannedElapsed;
+  const drift = live ? Math.max(0, wall - startedAt.current) - plannedElapsed : 0;
   const projectedFinish = clock + remaining + (opts.lunch ? LUNCH_MINUTES : 0);
   const overrun = projectedFinish - plan.t1;
 
@@ -90,7 +98,7 @@ export default function NavigateScreen({
           three
           items={[
             {
-              k: "to next junction",
+              k: "to junction",
               v: leg.kind === "lift" ? leg.ride : leg.min,
               unit: " min",
             },
@@ -103,7 +111,8 @@ export default function NavigateScreen({
         />
 
         <p className="note" style={{ marginTop: 9 }}>
-          Next junction is <b>{junction.name}</b>, {junction.alt} m.
+          Next junction is <b>{junction.name}</b>, {junction.alt.toLocaleString()} m.
+          {!live && " Times are from your plan — start this on the hill for live timing."}
         </p>
 
         <div className="spacer" />
