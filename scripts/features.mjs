@@ -605,6 +605,8 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   check("the map is there", (await page.$("canvas")) !== null);
   check("there is no panel over it", (await page.$(".sheet, .resortpanel")) === null);
   check("and nothing to drag", (await page.$(".sheet__grab")) === null);
+  check("the map has its controls here, where there is a map",
+    (await page.$$(".maptools .iconbtn")).length === 4);
 
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body), body.replace(/\n/g, " ").slice(0, 60));
@@ -720,6 +722,46 @@ if (feature("9. Navigating is pinned, not dragged")) {
   await page.click(".nav__stop");
   await page.waitForTimeout(500);
   check("stopping returns to the route", (await page.$(".sheet")) !== null);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ================================ 10. NO CONTROLS FOR A MAP THAT IS NOT THERE ==
+if (feature("10. Map chrome only where there is a map")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  const chrome = () => page.$$eval(".maptools .iconbtn, .mapnote__x", (n) => n.length);
+  const focusable = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".maptools button, .mapnote button")].filter(
+        (b) => !b.closest("[inert]") && b.offsetParent !== null
+      ).length
+    );
+
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  check("home has no map, so no map controls", (await chrome()) === 0, `${await chrome()}`);
+  check("and none of them in the tab order", (await focusable()) === 0, `${await focusable()}`);
+
+  await page.click(".hero");
+  await page.click('.iconbtn[aria-label="Settings"]');
+  await page.waitForSelector(".modal", { timeout: 10000 });
+  check("nor behind the settings sheet", (await chrome()) === 0, `${await chrome()}`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  await page.click('.tabbar__tab:has-text("Stats")');
+  await page.waitForTimeout(400);
+  check("stats has no map either", (await chrome()) === 0, `${await chrome()}`);
+
+  await page.click('.tabbar__tab:has-text("Home")');
+  await page.waitForTimeout(300);
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  check("the mountain does, and they are all there", (await chrome()) >= 4, `${await chrome()}`);
+
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  check("the plan form covers the map, so they go away again", (await chrome()) === 0, `${await chrome()}`);
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }

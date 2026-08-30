@@ -267,10 +267,11 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .chip[aria-pressed="true"] .chip__swatch { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
 .chip--busy { opacity: 0.5; }
 
-/* Primary action: 50pt tall, the iOS standard for a full-width button. */
+/* Primary action: one height, every screen. 52 clears the 44pt floor with
+   room for a glove, and does not turn a six-control form into a wall. */
 .btn {
   width: 100%;
-  min-height: 50px;
+  min-height: 52px;
   font-family: var(--display);
   font-size: var(--t-headline);
   font-weight: 700;
@@ -288,7 +289,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .btn--ghost:active { background: var(--surface-3); }
 .btn--quiet {
   background: transparent; color: var(--ink-2);
-  min-height: var(--tap);
+  min-height: 48px;
   font-family: var(--ui); font-size: var(--t-callout); font-weight: 600;
 }
 .btn--quiet:active { background: var(--surface-2); }
@@ -915,7 +916,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   left: var(--gutter); right: var(--gutter);
   bottom: calc(var(--sheet-floor, 0px) + var(--s-4));
   z-index: 5;
-  height: 56px;
+  height: 52px;
   border-radius: var(--r-pill);
   background: var(--accent);
   color: #fff;
@@ -1016,11 +1017,12 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 
 .nav__foot {
   margin-top: auto;
-  padding: var(--s-3) var(--gutter) calc(var(--safe-bottom) + var(--s-3));
+  padding: var(--s-3) var(--gutter) calc(var(--safe-bottom) + var(--s-5));
   background: linear-gradient(to top, rgba(11, 26, 36, 0.6), rgba(11, 26, 36, 0));
 }
-/* Bigger than the standard primary. This one gets tapped with a mitten on. */
-.btn--nav { flex: 1; min-height: 56px; box-shadow: var(--e-2); }
+/* Same height as every other primary; the shadow is what separates it from
+   the terrain behind it. */
+.btn--nav { flex: 1; box-shadow: var(--e-2); }
 .btn--nav-quiet { background: rgba(255, 255, 255, 0.92); color: var(--ink); }
 .btn--nav-quiet:active { background: #fff; }
 

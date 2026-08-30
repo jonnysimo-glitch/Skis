@@ -93,7 +93,7 @@ const NAV_HEAD_H = 210;
 const NAV_FOOT_H = 96;
 
 /** Plan's height; the map controls stack above it rather than behind it. */
-const PLAN_BUTTON_H = 56;
+const PLAN_BUTTON_H = 52;
 
 
 
@@ -274,6 +274,9 @@ export default function App() {
   const exploring = onMountain && screen === "explore";
   const planning = onMountain && screen === "plan";
   const sheetScreen = onMountain && !navigating && !exploring && !planning;
+  // The map is only on screen on the skiing tab, and the plan form covers it.
+  // Chrome for a map you cannot see is dead weight in the tab order.
+  const mapShowing = onMountain && !planning;
   const tabBarShown = !(onMountain && (screen === "navigate" || screen === "solving"));
   const sheetFloor = tabBarShown ? TABBAR_H : 0;
   const chromeBottom = navigating
@@ -540,6 +543,7 @@ export default function App() {
         {screen !== "explore" && <span className="topbar__spacer" />}
       </div>
 
+      {mapShowing && (
       <div
         className={`maptools${chromeHidden ? " maptools--hidden" : ""}`}
         style={{ bottom: chromeBottom }}
@@ -570,6 +574,7 @@ export default function App() {
           <Minus />
         </button>
       </div>
+      )}
 
       {/* Only once the schematic is what you are actually going to be looking
           at. Without a key that is immediate; with one it means MapLibre gave
@@ -579,7 +584,7 @@ export default function App() {
           do every single time. */}
       {exploring && <PlanButton onPlan={() => setScreen("plan")} />}
 
-      {noteOpen && showSchematic && (!hasMapKey || mapBroken) && !chromeHidden &&
+      {noteOpen && mapShowing && showSchematic && (!hasMapKey || mapBroken) && !chromeHidden &&
         screen === "plan" && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
