@@ -33,8 +33,14 @@ export function useSolver() {
         else entry.resolve({ routes, ms });
       };
       worker.onerror = () => {
-        // Fall back to the main thread rather than leaving the app dead.
+        // Fall back to the main thread rather than leaving the app dead — and
+        // reject anything in flight, or the caller awaits a promise that can
+        // never settle and the solving screen never goes away.
         workerRef.current = null;
+        for (const entry of pending.current.values()) {
+          entry.reject(new Error("solver worker failed"));
+        }
+        pending.current.clear();
       };
       workerRef.current = worker;
     } catch {
@@ -52,17 +58,25 @@ export function useSolver() {
     latest.current = id;
     setSolving(true);
 
-    let result;
-    if (workerRef.current) {
-      result = await new Promise((resolve, reject) => {
-        pending.current.set(id, { resolve, reject });
-        workerRef.current.postMessage({ id, opts });
-      });
-    } else {
+    const onMainThread = async () => {
       const { solve } = await import("../solver.js");
       const started = performance.now();
       const routes = solve(opts);
-      result = { routes, ms: Math.round(performance.now() - started) };
+      return { routes, ms: Math.round(performance.now() - started) };
+    };
+
+    let result;
+    if (workerRef.current) {
+      try {
+        result = await new Promise((resolve, reject) => {
+          pending.current.set(id, { resolve, reject });
+          workerRef.current.postMessage({ id, opts });
+        });
+      } catch {
+        result = await onMainThread();
+      }
+    } else {
+      result = await onMainThread();
     }
 
     if (latest.current !== id) return null; // superseded by a newer tap

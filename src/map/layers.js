@@ -18,6 +18,14 @@ const SRC_PINS = "skis-pins";
 
 export const ACCENT = "#f26b1d";
 
+/**
+ * Opacity expression that dims every segment already skied. Segment index is a
+ * feature property, so this is one expression rather than a re-render.
+ */
+const dimAfter = (doneThrough, dim, live) => [
+  "case", ["<", ["get", "i"], doneThrough], dim, live,
+];
+
 /** Widths interpolate with zoom so the route stays legible framed or close in. */
 const w = (a, b, c) => [
   "interpolate", ["linear"], ["zoom"],
@@ -60,7 +68,7 @@ export function addRouteLayers(map, { graph, route, pins }) {
       paint: {
         "line-color": ACCENT,
         "line-width": w(7, 11, 16),
-        "line-opacity": ["case", ["get", "done"], 0.22, 0.95],
+        "line-opacity": dimAfter(-1, 0.22, 0.95),
         "line-blur": 0.4,
       },
     });
@@ -77,7 +85,7 @@ export function addRouteLayers(map, { graph, route, pins }) {
       paint: {
         "line-color": "#ffffff",
         "line-width": w(4.5, 7, 10),
-        "line-opacity": ["case", ["get", "done"], 0.25, 0.9],
+        "line-opacity": dimAfter(-1, 0.25, 0.9),
       },
     });
   }
@@ -92,7 +100,7 @@ export function addRouteLayers(map, { graph, route, pins }) {
       paint: {
         "line-color": ["get", "colour"],
         "line-width": w(2.6, 4.2, 6),
-        "line-opacity": ["case", ["get", "done"], 0.4, 1],
+        "line-opacity": dimAfter(-1, 0.4, 1),
       },
     });
   }
@@ -108,7 +116,7 @@ export function addRouteLayers(map, { graph, route, pins }) {
         "line-color": "#33505f",
         "line-width": w(1.6, 2.4, 3.2),
         "line-dasharray": [1.6, 1.6],
-        "line-opacity": ["case", ["get", "done"], 0.4, 1],
+        "line-opacity": dimAfter(-1, 0.4, 1),
       },
     });
   }
@@ -166,13 +174,16 @@ export function setData(map, which, data) {
 }
 
 /** Dim everything already skied. Used by navigate. */
+const OPACITIES = {
+  "route-casing": [0.22, 0.95],
+  "route-halo": [0.25, 0.9],
+  "route-runs": [0.4, 1],
+  "route-lifts": [0.4, 1],
+};
+
 export function markProgress(map, doneThrough) {
-  for (const layer of ["route-casing", "route-halo", "route-runs", "route-lifts"]) {
+  for (const [layer, [dim, live]] of Object.entries(OPACITIES)) {
     if (!map.getLayer(layer)) continue;
-    const key = layer === "route-casing" ? 0.22 : layer === "route-halo" ? 0.25 : 0.4;
-    const live = layer === "route-casing" ? 0.95 : layer === "route-halo" ? 0.9 : 1;
-    map.setPaintProperty(layer, "line-opacity", [
-      "case", ["<", ["get", "i"], doneThrough], key, live,
-    ]);
+    map.setPaintProperty(layer, "line-opacity", dimAfter(doneThrough, dim, live));
   }
 }

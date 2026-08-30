@@ -206,7 +206,8 @@ export default function App() {
       setPreviewIndex(0);
 
       if (!result.routes.length) {
-        setDiagnosis(diagnose(nextPlan, nextAbility, solverOpts));
+        // The refined ability is what actually constrained the search.
+        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts));
         setScreen("empty");
       } else {
         setScreen("choose");

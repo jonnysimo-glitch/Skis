@@ -18,7 +18,6 @@ import { Back, Download, Warning, Check, Wifi, Clock } from "../ui/Icons.jsx";
 
 export default function DetailScreen({ route, opts, plan, resortId, onStart, onBack }) {
   const [progress, setProgress] = useState(null);
-  const [saved, setSaved] = useState(null);
 
   const back = backAt(route, opts);
   const slack = plan.t1 - back;
@@ -27,13 +26,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
 
   const save = async () => {
     setProgress({ done: 0, total: 1, phase: "route" });
-    const result = await commitRoute({
-      route,
-      opts,
-      resortId,
-      onProgress: setProgress,
-    });
-    setSaved(result);
+    await commitRoute({ route, opts, resortId, onProgress: setProgress });
     setProgress(null);
     onStart();
   };

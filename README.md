@@ -29,7 +29,9 @@ npm run dev        # http://localhost:5173
 ```
 
 ```bash
-npm test           # 27 solver checks — must pass before any commit touching the solver
+npm test           # 27 solver checks + map layer expression checks
+npm run test:solver  # just the solver — must pass before any commit touching it
+npm run test:map     # just the map layers (see below)
 npm run bench      # solve() timings, the measurement behind the worker decision
 npm run build      # production build to dist/
 npm run preview    # serve the production build
@@ -54,6 +56,16 @@ lift lines. The UI says so plainly rather than pretending.
 
 MapLibre is code-split, so a visitor without a key never downloads the 800KB
 they cannot use.
+
+Because the keyed path is the one least likely to be exercised in development,
+`npm run test:map` checks the route layer paint expressions without a browser —
+it parses them *and* evaluates them against representative features. Parsing
+alone is not enough: an expression like `["case", ["get", "done"], …]` parses
+cleanly, then throws a type error on every feature, which MapLibre catches and
+replaces with the property default. The route still draws, so nothing looks
+broken; the dimming of already-skied segments just silently stops working. The
+check uses `evaluateWithoutErrorHandling` precisely to see what MapLibre would
+swallow.
 
 ---
 
