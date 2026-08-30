@@ -426,6 +426,20 @@ npm run resort -- kronplatz          # fetch, build, validate, write
 npm run resort -- --all              # every config in scripts/resorts/
 npm run resort -- kronplatz --dry    # report without writing
 npm run resort:query -- kronplatz    # print the Overpass query and stop
+npm run resort:turbo -- kronplatz    # a link that runs it in a browser
+```
+
+### If this environment cannot reach Overpass
+
+Some sandboxes deny it at the egress proxy, which shows up as
+`connect_rejected` for every mirror. Elevation tiles are usually still
+reachable, so only the OSM half needs fetching by hand:
+
+```bash
+npm run resort:turbo -- kronplatz          # prints a link
+# open it, press Run, then Export -> data -> raw data directly from Overpass API
+# save the download as data/osm/kronplatz.json
+npm run resort -- kronplatz --offline      # builds the rest here
 ```
 
 `scripts/resorts/<id>.json` holds the things that are specific to one resort
@@ -444,6 +458,15 @@ The pipeline is `scripts/osm/`:
   bilinear between pixels. Every gradient and vertical total depends on this,
   so it is measured rather than assumed, and a missing tile is a hard error
   rather than a shrug.
+
+  Spot-checked against two villages at their published coordinates: Champoluc
+  reads 1,572 m against a published 1,570, and Alagna Valsesia 1,193 against
+  1,191. Both within 2 m, which is finer than the app needs.
+
+  Running the same check against `src/resort.js` is the clearest argument for
+  replacing it. Its Champoluc is about 1.4 km from the real one, far enough up
+  the valley side that the ground there is 558 m higher, so the 3D map is
+  currently drawing that node most of a Munro up the wrong slope.
 - **`graph.mjs`** turns ways into nodes and edges. This is where the mess is
   handled: endpoints within a tolerance become one place, lifts are stored
   uphill and runs downhill whichever way the mapper drew them, `piste:difficulty`

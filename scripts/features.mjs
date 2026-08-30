@@ -593,7 +593,7 @@ if (feature("7. Finishing a day writes it down, once")) {
 }
 
 // ============================================ 8. BROWSE BEFORE YOU PLAN ==
-if (feature("8. The skiing tab opens on the mountain")) {
+if (feature("8. The skiing tab is the mountain and one button")) {
   const page = await newPage(browser, { at: [9, 30] });
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });
@@ -603,14 +603,24 @@ if (feature("8. The skiing tab opens on the mountain")) {
 
   check("it is not a form", (await page.$("#p-t1")) === null);
   check("the map is there", (await page.$("canvas")) !== null);
-  check("the resort card is fixed, not a sheet you drag",
-    (await page.$(".resortpanel")) !== null && (await page.$(".sheet__grab")) === null);
+  check("there is no panel over it", (await page.$(".sheet, .resortpanel")) === null);
+  check("and nothing to drag", (await page.$(".sheet__grab")) === null);
+
   const body = await text(page);
-  check("it names the resort", /Monterosa Ski/.test(body));
-  // innerText returns text-transform: uppercase as uppercase.
-  check("and says where that is", /valle d'aosta/i.test(body), body.match(/VALLE[^\n]*/i)?.[0] || "");
-  check("it shows what the mountain has", /lifts/i.test(body) && /runs/i.test(body), body.match(/\d+\s*\n?LIFTS/i)?.[0] || "");
-  check("including when the lifts stop", /last down/i.test(body));
+  check("it names the resort", /Monterosa Ski/.test(body), body.replace(/\n/g, " ").slice(0, 60));
+  // The resort's statistics belong on Home, where you are choosing between
+  // resorts and they mean something. Here they would just cover the mountain.
+  check("but does not restate its statistics over the map", !/lifts/i.test(body) && !/last down/i.test(body));
+
+  // The map really does get the whole screen.
+  const covered = await page.evaluate(() => {
+    const tab = document.querySelector(".tabbar").getBoundingClientRect().top;
+    const pill = document.querySelector(".resortpill").getBoundingClientRect().bottom;
+    const mid = document.elementFromPoint(window.innerWidth / 2, (pill + tab) / 2);
+    return { hits: mid?.tagName.toLowerCase(), gap: Math.round(tab - pill) };
+  });
+  check("between the pill and the tab bar there is only map", ["canvas", "div"].includes(covered.hits), covered.hits);
+  check("and that is most of the screen", covered.gap > 600, `${covered.gap}px`);
 
   const planText = await page.$eval(".planbtn", (b) => b.textContent.trim());
   check("there is one button and it says Plan", /Plan/.test(planText), planText);

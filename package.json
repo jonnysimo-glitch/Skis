@@ -24,7 +24,8 @@
     "resort": "node scripts/build-resort.mjs",
     "resort:query": "node scripts/build-resort.mjs --query",
     "icons": "node scripts/make-icons.mjs",
-    "preflight": "node scripts/preflight.mjs"
+    "preflight": "node scripts/preflight.mjs",
+    "resort:turbo": "node scripts/build-resort.mjs --turbo"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",

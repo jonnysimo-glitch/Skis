@@ -110,6 +110,18 @@ async function buildOne(id) {
     return true;
   }
 
+  if (flag("turbo")) {
+    // overpass-turbo takes the query in the URL, so this is a link rather than
+    // a copy-and-paste. Run it, then Export -> raw data -> download, and save
+    // the file where the message says.
+    const url = `https://overpass-turbo.eu/?Q=${encodeURIComponent(query(config.bbox))}&R`;
+    console.log(`\n  Open this, press Run, then Export -> data -> "raw data directly from Overpass API":\n`);
+    console.log(`  ${url}\n`);
+    console.log(`  Save the download as:  data/osm/${config.id}.json`);
+    console.log(`  Then:                  npm run resort -- ${config.id} --offline\n`);
+    return true;
+  }
+
   const osm = await fetchResort(config, { offline: flag("offline"), force: flag("force") });
   console.log(`  osm         ${osm.elements.length} elements from ${osm.source}`);
 
@@ -154,7 +166,7 @@ const targets = flag("all")
   : ids;
 
 if (!targets.length) {
-  console.error("Usage: npm run resort -- <id> [--all] [--offline] [--dry] [--query]");
+  console.error("Usage: npm run resort -- <id> [--all] [--offline] [--dry] [--query] [--turbo]");
   process.exit(2);
 }
 

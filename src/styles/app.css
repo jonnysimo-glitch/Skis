@@ -922,32 +922,6 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .planbtn:active { transform: scale(0.97); background: var(--accent-press); }
 
-.lede--sm { font-size: var(--t-callout); }
-
-.facts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
-.fact {
-  background: var(--surface-2);
-  border-radius: var(--r-md);
-  padding: var(--s-3) var(--s-4);
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-areas: "icon value" "icon key";
-  column-gap: var(--s-3);
-  align-items: center;
-}
-.fact__icon { grid-area: icon; color: var(--ink-3); }
-.fact__v {
-  grid-area: value;
-  font-family: var(--display);
-  font-size: var(--t-title-3); font-weight: 700; line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-.fact__k {
-  grid-area: key;
-  font-size: var(--t-caption-2); color: var(--ink-3);
-  letter-spacing: 0.05em; text-transform: uppercase;
-}
-
 /* ------------------------------------------------------------ navigate -- */
 /* Pinned, not draggable. You are moving and wearing gloves: the instruction
    stays exactly where you last saw it. */
@@ -1082,28 +1056,3 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-size: var(--t-footnote); font-weight: 700;
   display: flex; align-items: center; gap: var(--s-1);
 }
-
-/* -------------------------------------------------------- resort panel -- */
-/* Fixed, not a sheet. There is nothing under it worth dragging it away to
-   see: the map above is already the point, and a card that moves when you
-   brush it is a card you have to think about. */
-
-.resortpanel {
-  position: absolute;
-  left: 0; right: 0;
-  bottom: var(--sheet-floor, 0px);
-  z-index: 5;
-  background: var(--surface);
-  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-  box-shadow: var(--e-sheet);
-  padding-bottom: var(--s-5);
-}
-.resortpanel__head { padding: var(--s-5) var(--gutter) var(--s-2); }
-.resortpanel__body { padding: 0 var(--gutter); }
-.resortpanel__last {
-  margin-top: var(--s-4);
-  font-size: var(--t-footnote);
-  color: var(--ink-3);
-  line-height: 1.4;
-}
-.resortpanel__last b { color: var(--ink-2); font-weight: 600; }

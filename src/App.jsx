@@ -34,7 +34,7 @@ import DetailScreen from "./screens/DetailScreen.jsx";
 import NavigateScreen from "./screens/NavigateScreen.jsx";
 import SummaryScreen from "./screens/SummaryScreen.jsx";
 import EmptyScreen from "./screens/EmptyScreen.jsx";
-import ExploreScreen, { PlanButton } from "./screens/ExploreScreen.jsx";
+import PlanButton from "./ui/PlanButton.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
@@ -92,8 +92,7 @@ const TABBAR_H = 56;
 const NAV_HEAD_H = 210;
 const NAV_FOOT_H = 96;
 
-/** The fixed resort card's height, for framing the map above it. */
-const EXPLORE_PANEL_H = 300;
+
 
 /**
  * Why a straight transfer will not work. Different failures from a day plan:
@@ -232,8 +231,10 @@ export default function App() {
         pitch: resort.pitch,
         bearing: resort.bearing,
         doneThrough: -1,
+        // Nothing covers the map here, so the resort gets the whole screen
+        // apart from the pill and the tab bar.
         padding: screen === "explore"
-          ? { top: 110, bottom: EXPLORE_PANEL_H, left: 24, right: 24 }
+          ? { top: 110, bottom: 90, left: 24, right: 24 }
           : undefined,
       };
     }
@@ -264,9 +265,9 @@ export default function App() {
   // Everything that floats over the map sits above the tab bar, except while
   // navigating, when the tab bar is out of the way.
   const navigating = onMountain && screen === "navigate";
-  // Two screens are not sheets. Explore is a fixed card over the mountain, and
-  // the plan form takes the whole screen: there is nothing to look at on the
-  // map while you are setting times, and a form deserves its own scroll.
+  // Two screens are not sheets. Explore is the bare mountain with one button
+  // on it, and the plan form takes the whole screen: there is nothing to look
+  // at on the map while you are setting times, and a form wants its own scroll.
   const exploring = onMountain && screen === "explore";
   const planning = onMountain && screen === "plan";
   const sheetScreen = onMountain && !navigating && !exploring && !planning;
@@ -275,7 +276,7 @@ export default function App() {
   const chromeBottom = navigating
     ? NAV_FOOT_H
     : exploring
-      ? EXPLORE_PANEL_H + sheetFloor + 14
+      ? sheetFloor + 16
       : Math.max(16, sheetHeight + sheetFloor + 14);
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
   const chromeHidden = sheetHeight > viewportH * 0.74;
@@ -497,9 +498,7 @@ export default function App() {
           pins={pins}
           camera={focus}
           controlRef={mapControl}
-          viewportBottom={
-            navigating ? NAV_FOOT_H : exploring ? EXPLORE_PANEL_H : sheetHeight
-          }
+          viewportBottom={navigating ? NAV_FOOT_H : exploring ? 0 : sheetHeight}
           viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}
@@ -601,8 +600,6 @@ export default function App() {
           onChanged={() => setHistoryVersion((v) => v + 1)}
         />
       )}
-
-      {exploring && <ExploreScreen resort={resort} />}
 
       {planning && (
         <PlanScreen
