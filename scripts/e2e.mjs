@@ -813,14 +813,15 @@ try {
     // --- on the hill, but far too late to finish the route -------------
     {
       const page = await startNavigatingAt([14, 30]);
-      const body = await page.$eval(".sheet__body", (b) => b.textContent);
+      const body = await page.$eval(".nav", (b) => b.textContent);
       check("timings are live, not read off the plan", !/Times are from your plan/.test(body));
-      check("being unable to finish in time is stated", /minutes? over/i.test(body), body.match(/\d+ minutes? over/)?.[0] ?? "no overrun warning");
+      check("being unable to finish in time is stated", /min over/i.test(body), body.match(/\d+ min over/)?.[0] ?? "no overrun warning");
 
-      const replan = await page.$('button:has-text("Re-plan from")');
+      const replan = await page.$(".nav__replan");
       check("and the fix offered is to re-solve from where you are", replan !== null);
+      check("which says where that is", /Re-planning from \w/.test(body), body.match(/Re-planning from [^.]*/)?.[0] ?? "unnamed");
       if (replan) {
-        const from = (await replan.textContent()).trim();
+        const from = body.match(/Re-planning from ([^ ]+)/)?.[1] ?? "here";
         await replan.click();
         await page.waitForSelector(".routecard, .empty", { timeout: 15000 });
         const n = await routeCount(page);
@@ -842,14 +843,14 @@ try {
     // --- not on the hill at all: previewing tomorrow from the sofa -----
     {
       const page = await startNavigatingAt([22, 15]);
-      const body = await page.$eval(".sheet__body", (b) => b.textContent);
+      const body = await page.$eval(".nav", (b) => b.textContent);
       check("previewing outside the window says the times come from the plan", /Times are from your plan/.test(body));
       check(
         "and does not invent an overrun from the wrong clock",
-        !/minutes? over/i.test(body),
-        body.match(/\d+ minutes? over/)?.[0] ?? "none, correct"
+        !/min over/i.test(body),
+        body.match(/\d+ min over/)?.[0] ?? "none, correct"
       );
-      const due = await page.$$eval(".metric__v", (n) => n.map((e) => e.textContent));
+      const due = await page.$$eval(".navmetric__v", (n) => n.map((e) => e.textContent));
       check("due-back is a plausible ski time, not the middle of the night", due.some((d) => /^(0?9|1[0-6]):/.test(d)), due.join(" / "));
       check("no page errors", page.errors.length === 0, page.errors.join(" | "));
       await page.context_.close();

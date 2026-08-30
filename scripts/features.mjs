@@ -364,7 +364,7 @@ if (feature("5. Navigation follows the GPS")) {
   check("the manual fallback names where you are going", target !== null, target || "");
 
   const legNumber = async () =>
-    Number((await page.$eval(".sheet .eyebrow", (n) => n.textContent)).match(/(\d+) of/i)?.[1] || 0);
+    Number((await page.$eval(".nav__legcount", (n) => n.textContent)).match(/(\d+) of/i)?.[1] || 0);
   check("the leg counter reads one", (await legNumber()) === 1, `${await legNumber()}`);
 
   // The headline behaviour: walk the phone to the junction and the screen
@@ -373,15 +373,30 @@ if (feature("5. Navigation follows the GPS")) {
   check("the junction is a real node with coordinates", !!here, target || "unknown");
 
   if (here) {
-    const distanceShown = () => text(page).then((t) => /to junction/i.test(t));
+    // With a fix the first metric is a real distance rather than the planned
+    // minutes, because metres are checkable against what you can see. This
+    // page has had a fix since it loaded, so the thing to assert is that the
+    // distance is real: it shrinks as the phone moves to the junction.
+    const distance = () =>
+      page.evaluate(() => {
+        const cell = document.querySelector(".navmetric");
+        const unit = cell.querySelector(".navmetric__u").textContent.trim();
+        const value = parseFloat(cell.querySelector(".navmetric__v").textContent);
+        return { unit, metres: unit === "km" ? value * 1000 : value };
+      });
+    const far = await distance();
+    check("with a fix it shows a distance, not the planned minutes", ["m", "km"].includes(far.unit), far.unit);
+
     await page.context_.setGeolocation({ latitude: here.lat, longitude: here.lon });
     // One fix is deliberately not enough; two consecutive ones are.
     await page.waitForTimeout(1600);
-    check("distance to the junction replaces the planned minutes", await distanceShown());
+    const near = await distance();
+    check("and it shrinks as you get there", near.metres < far.metres,
+      `${Math.round(far.metres)} m to ${Math.round(near.metres)} m`);
 
     // Two fixes advance immediately; one fix and silence takes the dwell.
     await page.waitForFunction(
-      () => /leg 2 of/i.test(document.querySelector(".sheet .eyebrow")?.textContent || ""),
+      () => /leg 2 of/i.test(document.querySelector(".nav__legcount")?.textContent || ""),
       { timeout: 15000 }
     ).catch(() => {});
     check("arriving at the junction advances the leg without a tap", (await legNumber()) === 2, `on leg ${await legNumber()}`);

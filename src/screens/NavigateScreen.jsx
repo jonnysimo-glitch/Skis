@@ -206,6 +206,7 @@ export default function NavigateScreen({
             <span>
               <b>{overrun} min over.</b> Finishing as planned puts you back at{" "}
               {minutesToClock(projectedFinish)}, past your {minutesToClock(plan.t1)}.
+              Re-planning from {NODES[leg.from].name} uses the time you have.
             </span>
             <button className="nav__replan" onClick={() => onReplan(leg.from)}>
               <Restart width="16" height="16" /> Re-plan
