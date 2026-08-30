@@ -14,6 +14,27 @@ import { NODES } from "../resort.js";
 import { minutesToClock, clockToMinutes, CONTEXT_COPY } from "../lib/plan.js";
 import { Clock, Arrow, Locate, Info } from "../ui/Icons.jsx";
 
+/**
+ * What the locate button says. Every branch says something: a tap that quietly
+ * does nothing reads as a broken button.
+ */
+function locateLabel(gps, resort) {
+  switch (gps?.state) {
+    case "locating":
+      return "Finding you…";
+    case "ok":
+      return `Using your position — nearest is ${NODES[gps.key].name}`;
+    case "far":
+      return `You're ${gps.km} km from ${resort.name} — pick a start below`;
+    case "denied":
+      return "Location is off for this site — pick a start below";
+    case "unavailable":
+      return "Can't get a location here — pick a start below";
+    default:
+      return "Use my position";
+  }
+}
+
 const ABILITIES = [
   { v: "blue", label: "Blue", swatch: "#1d6fcc" },
   { v: "red", label: "Blue and red", swatch: "#c22b37" },
@@ -27,16 +48,24 @@ export default function PlanScreen({
   ability,
   setAbility,
   context,
-  gpsNode,
+  gps,
   onLocate,
-  locating,
   onSolve,
   onBack,
 }) {
   const copy = CONTEXT_COPY[context];
   const window = plan.t1 - plan.t0;
   const bases = resort.bases;
-  const startOptions = context === "midday" ? Object.keys(NODES) : bases;
+
+  // Mid-day starts from wherever you are standing; the other contexts start at
+  // a base. Either way the list must contain whatever `plan.start` currently
+  // is — a GPS fix can put you at a mountain station in any context, and a
+  // select that cannot show its own value displays one place while the solver
+  // routes from another.
+  const contextOptions = context === "midday" ? Object.keys(NODES) : bases;
+  const startOptions = contextOptions.includes(plan.start)
+    ? contextOptions
+    : [plan.start, ...contextOptions];
 
   const set = (patch) => setPlan({ ...plan, ...patch });
 
@@ -106,17 +135,12 @@ export default function PlanScreen({
 
         {onLocate && (
           <button
-            className="btn btn--quiet"
-            style={{ marginTop: -8, marginBottom: 14, justifyContent: "flex-start", padding: "4px 2px" }}
+            className={`locate${gps && gps.state !== "ok" && gps.state !== "locating" ? " locate--warn" : ""}`}
             onClick={onLocate}
-            disabled={locating}
+            disabled={gps?.state === "locating"}
           >
             <Locate width="16" height="16" />
-            {locating
-              ? "Finding you…"
-              : gpsNode
-                ? `Using your position — nearest is ${NODES[gpsNode].name}`
-                : "Use my position"}
+            <span>{locateLabel(gps, resort)}</span>
           </button>
         )}
 

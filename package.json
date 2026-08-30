@@ -8,12 +8,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/solver.test.js && node scripts/validate-layers.mjs",
+    "test": "node src/solver.test.js && node src/lib/geo.test.js && node scripts/validate-layers.mjs",
     "bench": "node scripts/bench-solver.js",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:sync": "npm run build && npx cap sync ios",
     "test:solver": "node src/solver.test.js",
-    "test:map": "node scripts/validate-layers.mjs"
+    "test:map": "node scripts/validate-layers.mjs",
+    "e2e": "npm run build && node scripts/e2e.mjs",
+    "e2e:only": "node scripts/e2e.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.1",
@@ -28,6 +30,7 @@
     "@capacitor/ios": "^8.5.0",
     "@capacitor/status-bar": "^8.0.3",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.62.1",
     "vite": "^5.4.11",
     "vite-plugin-pwa": "^0.21.1"
   }

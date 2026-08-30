@@ -77,13 +77,16 @@ input, select { font: inherit; color: inherit; }
 .iconbtn[disabled] { opacity: 0.45; cursor: default; }
 
 .maptools {
-  transition: opacity 0.22s ease, bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 0.22s ease, visibility 0.22s, bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   position: absolute;
   right: 14px;
   display: flex; flex-direction: column; gap: 8px;
   z-index: 3;
   transition: bottom 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
+
+/* Hidden means gone: not clickable, not tabbable, not hit by a stray tap. */
+.maptools--hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 
 .mapnote {
   position: absolute;
@@ -267,6 +270,20 @@ input[type="time"].control { font-variant-numeric: tabular-nums; font-weight: 50
   padding: 11px; font-size: 14.5px; font-weight: 600;
 }
 .btn--quiet:hover { background: var(--surface-2); }
+
+.locate {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  margin: -6px 0 14px;
+  padding: 7px 2px;
+  font-size: 13.5px; font-weight: 500;
+  color: var(--accent-deep);
+  text-align: left;
+}
+.locate:hover { text-decoration: underline; }
+.locate[disabled] { color: var(--ink-3); cursor: default; text-decoration: none; }
+.locate--warn { color: var(--warn); }
+.locate svg { flex: none; }
 
 /* -------------------------------------------------------------- context -- */
 

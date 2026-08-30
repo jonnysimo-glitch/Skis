@@ -53,6 +53,15 @@ const EDGES = buildEdges();
 const GRAPH_GEOJSON = graphToGeoJSON(EDGES);
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
+/**
+ * How far a GPS fix may be from a lift station and still be treated as "you
+ * are here". Nodes are stations and junctions rather than a dense trace of the
+ * piste, so halfway down a long run the nearest station can be a couple of
+ * kilometres off. Six is loose enough for that and tight enough to reject
+ * another resort.
+ */
+const MAX_SNAP_METRES = 6000;
+
 /** How tall the sheet opens for each screen. */
 const SNAP_FOR = {
   resort: "half",
@@ -82,8 +91,9 @@ export default function App() {
   const [plan, setPlan] = useState(() =>
     defaultPlan(getResort(load("resortId")) || defaultResort, detectContext(nowMinutes()), nowMinutes())
   );
-  const [gpsNode, setGpsNode] = useState(null);
-  const [locating, setLocating] = useState(false);
+  // null | {state:'ok', key} | {state:'far', km} | {state:'denied'}
+  //      | {state:'unavailable'} | {state:'locating'}
+  const [gps, setGps] = useState(null);
 
   const setAbility = (value) => {
     setAbilityState(value);
@@ -255,20 +265,34 @@ export default function App() {
     runSolve(nextPlan, ability, refine, { showSolving: true });
   };
 
+  /**
+   * Snap the start to wherever the phone says you are.
+   *
+   * Every outcome has to say something. A tap that quietly does nothing is
+   * indistinguishable from a broken button, and the one case where that is
+   * most likely — planning tomorrow from a hotel in another valley — is also
+   * the case where the user most needs to be told why.
+   */
   const onLocate = () => {
-    if (!navigator.geolocation) return;
-    setLocating(true);
+    if (!navigator.geolocation) {
+      setGps({ state: "unavailable" });
+      return;
+    }
+    setGps({ state: "locating" });
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { key, metres } = nearestNode(pos.coords.latitude, pos.coords.longitude);
-        setLocating(false);
-        // A fix five valleys away is not a start node. Say nothing rather than
-        // silently teleporting the user onto the mountain.
-        if (metres > 6000) return;
-        setGpsNode(key);
+        // A fix five valleys away is not a start node.
+        if (metres > MAX_SNAP_METRES) {
+          setGps({ state: "far", km: Math.round(metres / 1000) });
+          return;
+        }
+        setGps({ state: "ok", key });
         setPlan((p) => ({ ...p, start: key }));
       },
-      () => setLocating(false),
+      (error) => {
+        setGps({ state: error?.code === 1 ? "denied" : "unavailable" });
+      },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
     );
   };
@@ -277,7 +301,7 @@ export default function App() {
     setResortId(id);
     save("resortId", id);
     const next = getResort(id);
-    setPlan(defaultPlan(next, context, nowMinutes(), gpsNode));
+    setPlan(defaultPlan(next, context, nowMinutes(), gps?.state === "ok" ? gps.key : null));
   };
 
   const dismissNote = () => {
@@ -348,9 +372,13 @@ export default function App() {
       </div>
 
       <div
-        className="maptools"
-        style={{ bottom: chromeBottom, opacity: chromeHidden ? 0 : 1, pointerEvents: chromeHidden ? "none" : "auto" }}
+        className={`maptools${chromeHidden ? " maptools--hidden" : ""}`}
+        style={{ bottom: chromeBottom }}
         aria-hidden={chromeHidden}
+        // `inert` keeps these out of the tab order while hidden. aria-hidden on
+        // its own would leave focusable buttons inside a hidden subtree, which
+        // is worse than not hiding them at all.
+        {...(chromeHidden ? { inert: "" } : {})}
       >
         <button
           className="iconbtn"
@@ -404,9 +432,8 @@ export default function App() {
             ability={ability}
             setAbility={setAbility}
             context={context}
-            gpsNode={gpsNode}
+            gps={gps}
             onLocate={onLocate}
-            locating={locating}
             onSolve={onSolve}
             onBack={() => setScreen("resort")}
           />

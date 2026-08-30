@@ -29,13 +29,45 @@ npm run dev        # http://localhost:5173
 ```
 
 ```bash
-npm test           # 27 solver checks + map layer expression checks
-npm run test:solver  # just the solver — must pass before any commit touching it
-npm run test:map     # just the map layers (see below)
+npm test           # solver, geometry and map-layer checks — no browser needed
+npm run e2e        # 162 end-to-end checks in a real browser, including GPS
 npm run bench      # solve() timings, the measurement behind the worker decision
 npm run build      # production build to dist/
 npm run preview    # serve the production build
 ```
+
+Narrower targets when you are working on one thing:
+
+```bash
+npm run test:solver   # the 27 behavioural solver checks
+npm run test:map      # map layer paint expressions (see below)
+npm run e2e:only -- --only=gps      # one e2e section
+npm run e2e:only -- --headed        # watch it drive the browser
+```
+
+### What the tests actually cover
+
+`npm test` runs in Node in a couple of seconds:
+
+- **`src/solver.test.js`** — 27 behavioural checks on the solver. Unchanged from
+  the handoff.
+- **`src/lib/geo.test.js`** — distance and snapping. The important one checks
+  every point on a grid across the resort against a brute-force search, because
+  snapping a GPS fix to the wrong node sends someone down the wrong side of the
+  mountain and the mistake is invisible until they are standing in the wrong
+  valley.
+- **`scripts/validate-layers.mjs`** — map layer paint expressions.
+
+`npm run e2e` builds, serves `dist/` and drives it in Chromium. It tests what
+would actually ship, not the dev server. Sections: resort selection, the three
+entry contexts, **GPS**, solving, refine, detail and commit, navigate, the empty
+states, airplane mode, the sheet, labels and keyboard, thin-terrain honesty,
+persistence, lunch, and running out of day.
+
+The GPS section simulates fixes at every base, mid-mountain, 107 km away, and
+with permission refused. It checks the three things that must agree: what the
+button says, what the picker displays, and where the solved route actually
+starts.
 
 ### The map key
 
@@ -168,6 +200,17 @@ These came from the brief and are not up for casual revision.
 - **"To next junction", not "to next turn".** Pistes have decision points where
   runs split; they do not have turns.
 - **Waypoints are optional.** No required pin-dropping step.
+
+**GPS never fails silently.** Tapping "use my position" always says what
+happened: which station it snapped to, or that you are 107 km away, or that
+location permission is off — each with what to do instead. A tap that quietly
+does nothing is indistinguishable from a broken button.
+
+Nodes are lift stations and junctions, not a dense trace of the piste, so
+halfway down a long run the nearest *station* can belong to a different run.
+A fix is accepted within 6 km of a node and the picker always lists whatever
+the plan is currently using, so what the solver routes from is always what the
+user can see.
 
 Two solver behaviours are surfaced rather than hidden: it returns **fewer routes
 than asked** when the mountain cannot support more (the list is not padded), and
