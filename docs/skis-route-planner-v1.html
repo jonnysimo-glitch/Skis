@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skis — route planner prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0E1D28; --ink2:#47606F; --ink3:#8AA0AE;
+  --snow:#FFFFFF; --paper:#EDF3F7; --frost:#E3ECF2; --line:#CFDDE6;
+  --blue:#1D6FCC; --red:#C22B37; --black:#101820; --amber:#C87F12;
+  --sig:"Barlow Condensed",sans-serif; --ui:"IBM Plex Sans",sans-serif; --num:"IBM Plex Mono",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--ui);
+  display:flex;flex-direction:column;align-items:center;padding:32px 16px 64px;min-height:100vh}
+.masthead{width:100%;max-width:392px;margin-bottom:18px}
+.masthead h1{font-family:var(--sig);font-size:15px;font-weight:600;letter-spacing:.16em;text-transform:uppercase}
+.masthead p{font-size:12px;color:var(--ink3);margin-top:2px}
+.device{width:100%;max-width:392px;background:var(--snow);border:1px solid var(--line);
+  border-radius:30px;overflow:hidden;display:flex;flex-direction:column;min-height:720px}
+.bar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;
+  font-family:var(--num);font-size:10px;color:var(--ink3);border-bottom:1px solid var(--frost);flex:none}
+.screen{display:none;flex-direction:column;flex:1}
+.screen.on{display:flex}
+.head{padding:20px 22px 14px;border-bottom:1px solid var(--frost);flex:none}
+.eyebrow{font-family:var(--sig);font-size:11px;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink3)}
+.title{font-family:var(--sig);font-size:31px;font-weight:600;line-height:1.02;letter-spacing:-.005em;margin-top:5px}
+.body{padding:18px 22px;flex:1;overflow-y:auto}
+.foot{padding:14px 22px 20px;border-top:1px solid var(--frost);flex:none;background:var(--snow)}
+label.f{display:block;font-family:var(--sig);font-size:12px;font-weight:600;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink2);margin-bottom:7px}
+.field{margin-bottom:18px}
+select,input[type=time]{width:100%;font-family:var(--ui);font-size:15px;color:var(--ink);
+  background:var(--snow);border:1px solid var(--line);border-radius:9px;padding:11px 12px;appearance:none}
+input[type=time]{font-family:var(--num)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{font-family:var(--ui);font-size:13px;padding:8px 13px;border-radius:20px;cursor:pointer;
+  background:var(--snow);border:1px solid var(--line);color:var(--ink2)}
+.chip[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--snow)}
+.chip.b[aria-pressed=true]{background:var(--blue);border-color:var(--blue)}
+.chip.r[aria-pressed=true]{background:var(--red);border-color:var(--red)}
+.chip.k[aria-pressed=true]{background:var(--black);border-color:var(--black)}
+button.go{width:100%;font-family:var(--sig);font-size:17px;font-weight:600;letter-spacing:.07em;
+  text-transform:uppercase;background:var(--ink);color:var(--snow);border:0;border-radius:11px;
+  padding:15px;cursor:pointer}
+button.go.ghost{background:var(--snow);color:var(--ink);border:1px solid var(--line)}
+button.go:hover{opacity:.9}
+.opt{width:100%;text-align:left;background:var(--snow);border:1px solid var(--line);border-radius:13px;
+  padding:14px 15px;margin-bottom:11px;cursor:pointer;display:block;font-family:var(--ui)}
+.opt:hover{border-color:var(--ink3)}
+.opt .lab{font-family:var(--sig);font-size:12px;font-weight:600;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--ink3)}
+.opt .nm{font-family:var(--sig);font-size:23px;font-weight:600;margin:1px 0 8px;line-height:1.1}
+.stats{display:flex;gap:14px;font-family:var(--num);font-size:12px;color:var(--ink2);margin-top:9px}
+.stats b{font-weight:500;color:var(--ink)}
+.pips{display:flex;gap:4px;align-items:center;margin-top:9px}
+.pip{width:7px;height:7px;border-radius:50%}
+.pip.blue{background:var(--blue)}.pip.red{background:var(--red)}.pip.black{background:var(--black)}
+.pipn{font-family:var(--num);font-size:11px;color:var(--ink3);margin-left:3px}
+.refine{border-top:1px solid var(--frost);padding-top:14px;margin-top:4px}
+.detail{display:grid;grid-template-columns:66px 1fr;gap:0}
+.rail{position:relative}
+.rows{padding-left:4px}
+.row{height:62px;display:flex;flex-direction:column;justify-content:center;
+  border-bottom:1px solid var(--frost)}
+.row .n{font-size:14px;font-weight:500}
+.row .m{font-family:var(--num);font-size:11px;color:var(--ink3);margin-top:2px}
+.tag{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:1px}
+.tag.blue{background:var(--blue)}.tag.red{background:var(--red)}.tag.black{background:var(--black)}
+.tag.lift{background:var(--ink3);border-radius:50%}
+.banner{background:var(--ink);color:var(--snow);padding:15px 18px;border-radius:12px;margin-bottom:14px}
+.banner .d{font-family:var(--sig);font-size:26px;font-weight:600;line-height:1.05}
+.banner .s{font-size:13px;opacity:.72;margin-top:2px}
+.warn{background:#FBF2E2;border:1px solid #EBD6A8;border-radius:11px;padding:13px 15px;margin-bottom:14px}
+.warn .t{font-family:var(--sig);font-size:13px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--amber)}
+.warn p{font-size:13px;color:var(--ink2);margin-top:4px;line-height:1.45}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+.metric{background:var(--frost);border-radius:10px;padding:11px 13px}
+.metric .v{font-family:var(--sig);font-size:25px;font-weight:600;line-height:1}
+.metric .k{font-family:var(--sig);font-size:11px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink2);margin-top:3px}
+.empty{text-align:center;padding:44px 10px}
+.empty .big{font-family:var(--sig);font-size:27px;font-weight:600;line-height:1.15}
+.empty p{font-size:14px;color:var(--ink2);margin:10px 0 22px;line-height:1.5}
+.solving{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:20px}
+.solving .t{font-family:var(--sig);font-size:14px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3)}
+.note{font-size:12px;color:var(--ink3);line-height:1.5;margin-top:12px}
+.caption{width:100%;max-width:392px;margin-top:16px;font-size:12px;color:var(--ink3);line-height:1.55}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){
+  .draw{stroke-dasharray:900;stroke-dashoffset:900;animation:d 1.1s ease forwards}
+  @keyframes d{to{stroke-dashoffset:0}}
+}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <h1>Skis · route planner</h1>
+  <p>Working prototype — Monterosa Ski. The solver is real.</p>
+</div>
+
+<div class="device">
+  <div class="bar"><span>9:41</span><span id="clockLabel">Monterosa</span></div>
+
+  <section class="screen on" id="s-plan">
+    <div class="head">
+      <div class="eyebrow">Plan a day</div>
+      <div class="title">What have you<br>got time for?</div>
+    </div>
+    <div class="body">
+      <div class="field pair">
+        <div><label class="f" for="start">Start</label>
+          <select id="start"></select></div>
+        <div><label class="f" for="end">Finish at</label>
+          <select id="end"></select></div>
+      </div>
+      <div class="field pair">
+        <div><label class="f" for="t0">First lift</label>
+          <input type="time" id="t0" value="09:15"></div>
+        <div><label class="f" for="t1">Down by</label>
+          <input type="time" id="t1" value="16:00"></div>
+      </div>
+      <div class="field">
+        <label class="f">Comfortable on</label>
+        <div class="chips" id="ability">
+          <button class="chip b" data-v="blue" aria-pressed="false">Blue</button>
+          <button class="chip r" data-v="red" aria-pressed="true">Blue and red</button>
+          <button class="chip k" data-v="black" aria-pressed="false">Anything</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="f">Also</label>
+        <div class="chips" id="extras">
+          <button class="chip" data-v="noDrags" aria-pressed="false">No drag lifts</button>
+          <button class="chip" data-v="lunch" aria-pressed="false">Sit-down lunch</button>
+        </div>
+      </div>
+      <p class="note">Last lifts are built in. Nothing will be suggested that strands you above a closed lift.</p>
+    </div>
+    <div class="foot"><button class="go" id="solveBtn">Find routes</button></div>
+  </section>
+
+  <section class="screen" id="s-solving">
+    <div class="solving">
+      <svg width="150" height="66" viewBox="0 0 150 66" aria-hidden="true">
+        <polyline class="draw" points="4,58 30,16 56,54 82,12 108,50 146,26" fill="none"
+          stroke="#1D6FCC" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <div class="t">Checking lifts and closures</div>
+    </div>
+  </section>
+
+  <section class="screen" id="s-routes">
+    <div class="head">
+      <div class="eyebrow" id="routesEyebrow">Three routes</div>
+      <div class="title" id="routesTitle">Pick a shape<br>for the day</div>
+    </div>
+    <div class="body">
+      <div id="routeList"></div>
+      <div class="refine">
+        <label class="f">Not quite?</label>
+        <div class="chips" id="refine">
+          <button class="chip" data-v="shorter" aria-pressed="false">Shorter</button>
+          <button class="chip" data-v="longer" aria-pressed="false">Longer</button>
+          <button class="chip" data-v="easier" aria-pressed="false">Easier</button>
+          <button class="chip" data-v="harder" aria-pressed="false">Harder</button>
+          <button class="chip" data-v="vertical" aria-pressed="false">More vertical</button>
+          <button class="chip" data-v="noDrags" aria-pressed="false">No drags</button>
+          <button class="chip" data-v="lunch" aria-pressed="false">Lunch</button>
+        </div>
+        <p class="note">Tapping a chip re-solves in place. You never go back to the form.</p>
+      </div>
+    </div>
+    <div class="foot"><button class="go ghost" data-goto="s-plan">Change the basics</button></div>
+  </section>
+
+  <section class="screen" id="s-empty">
+    <div class="head">
+      <div class="eyebrow">No route</div>
+      <div class="title">That won't fit</div>
+    </div>
+    <div class="body">
+      <div class="empty">
+        <div class="big" id="emptyBig">Nothing gets you back in time.</div>
+        <p id="emptyWhy"></p>
+      </div>
+    </div>
+    <div class="foot"><button class="go" data-goto="s-plan">Change the basics</button></div>
+  </section>
+
+  <section class="screen" id="s-detail">
+    <div class="head">
+      <div class="eyebrow" id="dLabel">Route</div>
+      <div class="title" id="dName">Route</div>
+    </div>
+    <div class="body">
+      <div class="metrics" id="dMetrics"></div>
+      <div id="dWarn"></div>
+      <div class="detail">
+        <div class="rail" id="dRail"></div>
+        <div class="rows" id="dRows"></div>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="go" id="startBtn" style="margin-bottom:9px">Save offline and start</button>
+      <button class="go ghost" data-goto="s-routes">Back to options</button>
+    </div>
+  </section>
+
+  <section class="screen" id="s-nav">
+    <div class="head">
+      <div class="eyebrow">Navigating</div>
+      <div class="title" id="navTitle">On route</div>
+    </div>
+    <div class="body">
+      <div class="banner" id="navBanner"></div>
+      <div id="navWarn"></div>
+      <div class="metrics">
+        <div class="metric"><div class="v" id="navSpeed">0</div><div class="k">km/h</div></div>
+        <div class="metric"><div class="v" id="navNext">—</div><div class="k">to junction</div></div>
+      </div>
+      <div class="detail">
+        <div class="rail" id="nRail"></div>
+        <div class="rows" id="nRows"></div>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="go" id="navNextBtn" style="margin-bottom:9px">Next segment</button>
+      <button class="go ghost" data-goto="s-detail">End</button>
+    </div>
+  </section>
+</div>
+
+<p class="caption">Plan · solve · choose · refine · detail · navigate. Routes are computed live from a
+graph of Monterosa lifts and pistes, respecting ability, time budget and last-lift times.</p>
+
+<script>
+const NODES={
+ staffal:{name:"Staffal",alt:1830,area:"Gressoney",base:1,rif:1},
+ jolanda:{name:"Punta Jolanda",alt:2240,area:"Gressoney",rif:1},
+ gabiet:{name:"Gabiet",alt:2350,area:"Gressoney",rif:1},
+ salati:{name:"Passo dei Salati",alt:2971,area:"Alta quota"},
+ indren:{name:"Punta Indren",alt:3260,area:"Alta quota"},
+ pianalunga:{name:"Pianalunga",alt:2050,area:"Alagna",rif:1},
+ alagna:{name:"Alagna",alt:1191,area:"Alagna",base:1},
+ santanna:{name:"Sant'Anna",alt:2170,area:"Gressoney",rif:1},
+ bettaforca:{name:"Colle Bettaforca",alt:2727,area:"Ayas"},
+ mandria:{name:"Alpe Mandria",alt:2000,area:"Ayas",rif:1},
+ crest:{name:"Crest",alt:1900,area:"Ayas",rif:1},
+ champoluc:{name:"Champoluc",alt:1570,area:"Ayas",base:1},
+ frachey:{name:"Frachey",alt:1620,area:"Ayas",base:1}};
+const LIFTS=[["staffal","gabiet","Gabiet","gondola",8,960,6],["gabiet","salati","Passo dei Salati","gondola",7,945,5],
+ ["salati","indren","Indren","cable car",6,915,9],["staffal","jolanda","Punta Jolanda","drag",6,975,2],
+ ["staffal","santanna","Sant'Anna","chair",6,975,4],["santanna","bettaforca","Bettaforca","chair",7,950,4],
+ ["frachey","santanna","Ciarcerio","chair",8,960,3],["champoluc","crest","Crest","gondola",7,980,6],
+ ["crest","mandria","Mandria","chair",6,970,3],["mandria","bettaforca","Colle","chair",8,950,4],
+ ["alagna","pianalunga","Pianalunga","gondola",9,960,5],["pianalunga","salati","Bocchetta","gondola",7,945,4]];
+const RUNS=[["indren","salati","Indren","black",2.9,7],["salati","gabiet","Salati","red",3.4,7],
+ ["salati","gabiet","Lys","blue",4.4,10],["salati","pianalunga","Olen","red",3.9,8],
+ ["gabiet","staffal","Gabiet","red",2.8,6],["gabiet","staffal","Moos","blue",3.6,8],
+ ["jolanda","staffal","Jolanda","blue",2.1,5],["pianalunga","alagna","Bosco","black",4.6,10],
+ ["pianalunga","alagna","Valle","red",5.2,11],["bettaforca","staffal","Bettaforca","red",4.1,9],
+ ["bettaforca","santanna","Sitten","blue",2.2,5],["santanna","staffal","Leichtu","blue",2.6,6],
+ ["bettaforca","mandria","Colle","red",3.8,8],["mandria","crest","Mandria","blue",2.4,5],
+ ["mandria","frachey","Ostafa","red",3.2,7],["crest","champoluc","Crest","blue",3.1,7],
+ ["crest","champoluc","Del Bosco","black",2.3,6]];
+const RANK={blue:1,red:2,black:3};
+const EDGES=[];
+LIFTS.forEach((l,i)=>EDGES.push({id:"L"+i,kind:"lift",from:l[0],to:l[1],name:l[2],liftType:l[3],
+ ride:l[4],lastUp:l[5],queue:l[6],min:l[4]+l[6],gain:NODES[l[1]].alt-NODES[l[0]].alt}));
+RUNS.forEach((r,i)=>EDGES.push({id:"R"+i,kind:"run",from:r[0],to:r[1],name:r[2],diff:r[3],
+ km:r[4],min:r[5],drop:NODES[r[0]].alt-NODES[r[1]].alt}));
+
+const ok=(e,o)=>e.kind==="run"?RANK[e.diff]<=RANK[o.ability]:!(o.noDrags&&e.liftType==="drag");
+function adjacency(o){const a={};for(const k in NODES)a[k]=[];
+ for(const e of EDGES)if(ok(e,o))a[e.from].push(e);return a}
+function toEnd(adj,end){const dist={},prev={},rev={};
+ for(const k in NODES){dist[k]=Infinity;rev[k]=[]}
+ dist[end]=0;for(const k in adj)for(const e of adj[k])rev[e.to].push(e);
+ const pq=[[0,end]];
+ while(pq.length){pq.sort((a,b)=>a[0]-b[0]);const[d,n]=pq.shift();if(d>dist[n])continue;
+  for(const e of rev[n]){const nd=d+e.min;
+   if(nd<dist[e.from]){dist[e.from]=nd;prev[e.from]=e;pq.push([nd,e.from])}}}
+ return{dist,prev}}
+function home(prev,from,end){const out=[];let n=from,g=0;
+ while(n!==end&&g++<40){const e=prev[n];if(!e)return null;out.push(e);n=e.to}
+ return n===end?out:null}
+function sample(o,adj,h,rng){const{dist,prev}=h;if(dist[o.start]===Infinity)return null;
+ let node=o.start,t=0;const segs=[],uses={};const cap=e=>e.kind==="run"?3:4;let g=0;
+ while(g++<70){const c=adj[node].filter(e=>{
+   if(t+e.min+dist[e.to]>o.budget)return false;
+   if(e.kind==="lift"&&o.startClock+t>e.lastUp)return false;
+   return (uses[e.id]||0)<cap(e)});
+  if(!c.length)break;
+  const w=c.map(e=>{let x=e.kind==="run"?1.6:1;const n=uses[e.id]||0;
+   x*=n===0?3.2:n===1?0.4:0.1;
+   if(e.kind==="lift"&&segs.length&&segs[segs.length-1].kind==="lift")x*=0.35;return x});
+  const tot=w.reduce((a,b)=>a+b,0);let p=rng()*tot,i=0;
+  while(p>w[i]&&i<c.length-1){p-=w[i];i++}
+  const e=c[i];segs.push(e);uses[e.id]=(uses[e.id]||0)+1;t+=e.min;node=e.to;
+  if(node===o.end&&t>o.budget*0.82&&rng()<0.6)break}
+ const tail=home(prev,node,o.end);if(!tail)return null;
+ for(const e of tail){if(e.kind==="lift"&&o.startClock+t>e.lastUp)return null;
+  uses[e.id]=(uses[e.id]||0)+1;if(uses[e.id]>cap(e)+1)return null;segs.push(e);t+=e.min}
+ if(t>o.budget||t<o.budget*0.72||!segs.length)return null;
+ if(o.lunch&&!segs.some(e=>NODES[e.to].rif))return null;
+ return{segs,minutes:t}}
+function measure(r){let km=0,vert=0,lifts=0;const ids=new Set(),areas=new Set(),
+ counts={blue:0,red:0,black:0};
+ for(const e of r.segs){areas.add(NODES[e.to].area);
+  if(e.kind==="run"){km+=e.km;vert+=e.drop;ids.add(e.id);counts[e.diff]++}else lifts++}
+ return{...r,km:Math.round(km*10)/10,vert:Math.round(vert),lifts,runs:ids.size,
+  areas:areas.size,counts}}
+function solve(o){const adj=adjacency(o),h=toEnd(adj,o.end);
+ let s=20260829;const rng=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff};
+ const f=new Map();
+ for(let i=0;i<3500;i++){const r=sample(o,adj,h,rng);if(!r)continue;
+  const k=r.segs.map(e=>e.id).join(">");if(!f.has(k))f.set(k,measure(r))}
+ const all=[...f.values()];if(!all.length)return[];
+ let obj=[{label:"Most vertical",name:r=>"The "+short(topNode(r))+" circuit",score:r=>r.vert},
+  {label:"Most variety",name:r=>r.areas>2?"Three valleys":"The "+short(topNode(r))+" loop",
+   score:r=>r.runs*100+r.areas*160},
+  {label:"Cruisiest",name:()=>"Easy miles",
+   score:r=>-(r.counts.red*45+r.counts.black*150+r.lifts*12)+r.runs*22}];
+ if(o.emphasis==="vertical")obj.unshift({label:"Biggest descent",
+  name:r=>"The "+short(topNode(r))+" drop",score:r=>r.vert*2});
+ const out=[],used=new Set();
+ for(const t of obj){const rk=[...all].sort((a,b)=>t.score(b)-t.score(a));
+  const p=rk.find(r=>!used.has(r.segs.map(e=>e.id).join(">")));
+  if(p){used.add(p.segs.map(e=>e.id).join(">"));out.push({...p,label:t.label,name:t.name(p)})}}
+ return out.slice(0,3)}
+function topNode(r){let best=r.segs[0].from;
+ for(const e of r.segs)if(NODES[e.to].alt>NODES[best].alt)best=e.to;return best}
+const SHORT={salati:"Salati",indren:"Indren",bettaforca:"Bettaforca",gabiet:"Gabiet",
+ pianalunga:"Pianalunga",santanna:"Sant'Anna",jolanda:"Jolanda",mandria:"Mandria",crest:"Crest"};
+const short=k=>SHORT[k]||NODES[k].name;
+
+const altsOf=r=>{const a=[NODES[r.segs[0].from].alt];for(const e of r.segs)a.push(NODES[e.to].alt);return a};
+function fingerprint(r,w,h){const a=altsOf(r);
+ const lo=Math.min(...a),hi=Math.max(...a),sp=hi-lo||1;
+ let x=0;const total=r.segs.reduce((s,e)=>s+e.min,0);
+ const y=v=>h-4-((v-lo)/sp)*(h-8);
+ let out="";let px=2,py=y(a[0]);
+ r.segs.forEach((e,i)=>{const nx=px+(e.min/total)*(w-4),ny=y(a[i+1]);
+  const col=e.kind==="lift"?"#8AA0AE":e.diff==="blue"?"#1D6FCC":e.diff==="red"?"#C22B37":"#101820";
+  const dash=e.kind==="lift"?' stroke-dasharray="2 2"':"";
+  out+='<line x1="'+px.toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+
+   '" stroke="'+col+'" stroke-width="'+(e.kind==="lift"?1.2:2)+'"'+dash+' stroke-linecap="round"/>';
+  px=nx;py=ny});
+ return '<svg width="100%" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true">'+out+'</svg>'}
+
+function spine(r,rowH){const a=altsOf(r);
+ const lo=Math.min(...a),hi=Math.max(...a),sp=hi-lo||1;
+ const W=66,H=r.segs.length*rowH;
+ const x=v=>10+((v-lo)/sp)*(W-30);
+ let out="",labels="";
+ r.segs.forEach((e,i)=>{const y0=i*rowH,y1=(i+1)*rowH;
+  const col=e.kind==="lift"?"#8AA0AE":e.diff==="blue"?"#1D6FCC":e.diff==="red"?"#C22B37":"#101820";
+  const dash=e.kind==="lift"?' stroke-dasharray="3 3"':"";
+  out+='<line x1="'+x(a[i]).toFixed(1)+'" y1="'+y0+'" x2="'+x(a[i+1]).toFixed(1)+'" y2="'+y1+
+   '" stroke="'+col+'" stroke-width="'+(e.kind==="lift"?1.4:2.4)+'"'+dash+' stroke-linecap="round"/>';
+  const prev=a[i-1],cur=a[i],next=a[i+1];
+  const peak=i>0&&prev<cur&&cur>next, trough=i>0&&prev>cur&&cur<next;
+  if(peak||trough||i===0)out+='<circle cx="'+x(cur).toFixed(1)+'" cy="'+y0+
+   '" r="'+(peak?2.8:2)+'" fill="'+(peak?"#0E1D28":"#8AA0AE")+'"/>';
+  if(peak||i===0||cur===lo)
+   labels+='<text x="'+x(cur).toFixed(1)+'" y="'+(y0-6)+'" font-family="IBM Plex Mono, monospace" '+
+    'font-size="9" fill="#8AA0AE" text-anchor="middle">'+cur+'</text>'});
+ const last=a[a.length-1];
+ out+='<circle cx="'+x(last).toFixed(1)+'" cy="'+H+'" r="2.6" fill="#0E1D28"/>';
+ return '<svg width="'+W+'" height="'+(H+6)+'" viewBox="0 -14 '+W+' '+(H+20)+'" aria-hidden="true">'+
+  out+labels+'</svg>'}
+
+const hhmm=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+const toMin=s=>{const[a,b]=s.split(":").map(Number);return a*60+b};
+const state={ability:"red",noDrags:false,lunch:false,refine:new Set(),routes:[],pick:null,step:0};
+
+for(const id of["start","end"]){const el=document.getElementById(id);
+ for(const k in NODES)if(NODES[k].base)el.insertAdjacentHTML("beforeend",
+  '<option value="'+k+'">'+NODES[k].name+'</option>')}
+document.getElementById("start").value="staffal";
+document.getElementById("end").value="staffal";
+
+document.getElementById("ability").addEventListener("click",e=>{
+ const b=e.target.closest(".chip");if(!b)return;
+ [...e.currentTarget.children].forEach(c=>c.setAttribute("aria-pressed",c===b));
+ state.ability=b.dataset.v});
+document.getElementById("extras").addEventListener("click",e=>{
+ const b=e.target.closest(".chip");if(!b)return;
+ const on=b.getAttribute("aria-pressed")==="true";b.setAttribute("aria-pressed",!on);
+ state[b.dataset.v]=!on});
+document.getElementById("refine").addEventListener("click",e=>{
+ const b=e.target.closest(".chip");if(!b)return;
+ const v=b.dataset.v,on=b.getAttribute("aria-pressed")==="true";
+ const pairs={shorter:"longer",longer:"shorter",easier:"harder",harder:"easier"};
+ if(!on&&pairs[v]){state.refine.delete(pairs[v]);
+  const o=document.querySelector('#refine .chip[data-v="'+pairs[v]+'"]');
+  if(o)o.setAttribute("aria-pressed","false")}
+ on?state.refine.delete(v):state.refine.add(v);
+ b.setAttribute("aria-pressed",!on);run(true)});
+
+function opts(){const t0=toMin(document.getElementById("t0").value||"09:15");
+ const t1=toMin(document.getElementById("t1").value||"16:00");
+ let budget=t1-t0,ability=state.ability,noDrags=state.noDrags,lunch=state.lunch,emphasis=null;
+ const r=state.refine;
+ if(r.has("shorter"))budget=Math.round(budget*0.6);
+ if(r.has("longer"))budget=Math.round(budget*1.15);
+ if(r.has("easier"))ability=ability==="black"?"red":"blue";
+ if(r.has("harder"))ability=ability==="blue"?"red":"black";
+ if(r.has("noDrags"))noDrags=true;
+ if(r.has("lunch"))lunch=true;
+ if(r.has("vertical"))emphasis="vertical";
+ if(lunch)budget-=45;
+ return{start:document.getElementById("start").value,end:document.getElementById("end").value,
+  ability,noDrags,lunch,emphasis,budget,startClock:t0,t0,t1}}
+
+const show=id=>document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("on",s.id===id));
+document.querySelectorAll("[data-goto]").forEach(b=>
+ b.addEventListener("click",()=>show(b.dataset.goto)));
+
+document.getElementById("solveBtn").addEventListener("click",()=>{
+ show("s-solving");setTimeout(()=>run(false),820)});
+
+function run(inPlace){const o=opts();
+ if(o.budget<25){return fail(o,"There isn't enough time between those two clocks for a single lap.")}
+ const routes=solve(o);state.routes=routes;state.opts=o;
+ if(!routes.length){return fail(o,
+  "Every option either misses a last lift or leaves you on the wrong side of the mountain.")}
+ const list=document.getElementById("routeList");list.innerHTML="";
+ routes.forEach((r,i)=>{
+  const back=hhmm(o.t0+r.minutes+(o.lunch?45:0));
+  const pips=["blue","red","black"].filter(d=>r.counts[d]).map(d=>
+   '<span class="pip '+d+'"></span><span class="pipn">'+r.counts[d]+'</span>').join("");
+  list.insertAdjacentHTML("beforeend",
+   '<button class="opt" data-i="'+i+'">'+
+   '<div class="lab">'+r.label+'</div><div class="nm">'+r.name+'</div>'+
+   fingerprint(r,300,44)+
+   '<div class="stats"><span><b>'+Math.round(r.minutes/60*10)/10+'h</b> out</span>'+
+   '<span><b>'+r.km+'</b> km</span><span><b>'+r.vert.toLocaleString()+'</b> m down</span></div>'+
+   '<div class="pips">'+pips+'<span class="pipn" style="margin-left:auto">back '+back+'</span></div>'+
+   '</button>')});
+ document.getElementById("routesEyebrow").textContent=
+  o.lunch?"Three routes · lunch included":"Three routes";
+ list.querySelectorAll(".opt").forEach(b=>b.addEventListener("click",()=>detail(+b.dataset.i)));
+ show("s-routes")}
+
+function fail(o,why){document.getElementById("emptyWhy").textContent=why+
+ " Try finishing at a different base, or giving yourself until "+hhmm(Math.min(o.t1+45,17*60))+".";
+ show("s-empty")}
+
+function rowsHTML(r){return r.segs.map(e=>{
+ const cls=e.kind==="lift"?"lift":e.diff;
+ const sub=e.kind==="lift"
+  ? e.liftType+" · "+e.ride+" min ride, "+e.queue+" min queue"
+  : e.diff+" · "+e.km+" km · "+e.drop+" m down";
+ return '<div class="row"><div class="n"><span class="tag '+cls+'"></span>'+e.name+'</div>'+
+  '<div class="m">'+sub+'</div></div>'}).join("")}
+
+function detail(i){const r=state.routes[i],o=state.opts;state.pick=r;state.step=0;
+ document.getElementById("dLabel").textContent=r.label;
+ document.getElementById("dName").textContent=r.name;
+ const back=hhmm(o.t0+r.minutes+(o.lunch?45:0));
+ document.getElementById("dMetrics").innerHTML=
+  '<div class="metric"><div class="v">'+r.vert.toLocaleString()+'</div><div class="k">metres down</div></div>'+
+  '<div class="metric"><div class="v">'+r.km+'</div><div class="k">kilometres</div></div>'+
+  '<div class="metric"><div class="v">'+r.runs+'</div><div class="k">distinct runs</div></div>'+
+  '<div class="metric"><div class="v">'+back+'</div><div class="k">back at base</div></div>';
+ const tight=o.t1-(o.t0+r.minutes+(o.lunch?45:0));
+ document.getElementById("dWarn").innerHTML=tight<20
+  ? '<div class="warn"><div class="t">Tight</div><p>This lands '+tight+
+    ' minutes before your finish time. One slow queue and you are cutting it fine.</p></div>':"";
+ document.getElementById("dRows").innerHTML=rowsHTML(r);
+ document.getElementById("dRail").innerHTML=spine(r,62);
+ show("s-detail")}
+
+document.getElementById("startBtn").addEventListener("click",()=>{state.step=0;navRender();show("s-nav")});
+document.getElementById("navNextBtn").addEventListener("click",()=>{
+ if(state.step<state.pick.segs.length-1){state.step++;navRender()}});
+
+function navRender(){const r=state.pick,i=state.step,e=r.segs[i];
+ document.getElementById("navTitle").textContent=r.name;
+ const nxt=r.segs[i+1];
+ document.getElementById("navBanner").innerHTML=
+  '<div class="d">'+(e.kind==="lift"?"Ride "+e.name:"Ski "+e.name)+'</div>'+
+  '<div class="s">'+(nxt?"then "+(nxt.kind==="lift"?"ride ":"ski ")+nxt.name:"last one, finishes at base")+'</div>';
+ document.getElementById("navSpeed").textContent=e.kind==="lift"?"—":(18+((i*7)%26));
+ document.getElementById("navNext").textContent=e.kind==="lift"
+  ? e.ride+" min":(Math.round(e.km/e.min*3*10)/10)+" km";
+ document.getElementById("navWarn").innerHTML=i>=3
+  ? '<div class="warn"><div class="t">12 minutes behind</div><p>Queues at '+
+    r.segs[1].name+' ran long. Dropping the '+
+    (r.segs[r.segs.length-2]?r.segs[r.segs.length-2].name:"last")+
+    ' leg gets you back on time.</p></div>':"";
+ document.getElementById("nRows").innerHTML=rowsHTML(r);
+ document.getElementById("nRail").innerHTML=spine(r,62);
+ [...document.getElementById("nRows").children].forEach((el,k)=>{
+  el.style.opacity=k<i?0.35:1});
+ document.getElementById("navNextBtn").textContent=
+  i<r.segs.length-1?"Next segment":"Finished";}
+</script>
+</body>
+</html>
