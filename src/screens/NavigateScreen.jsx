@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useGeolocation, kmh } from "../lib/useGeolocation.js";
-import { evaluateArrival } from "../lib/progress.js";
+import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile from "../ui/ElevationProfile.jsx";
 import { LegList, Metrics } from "../ui/RouteBits.jsx";
@@ -82,11 +82,22 @@ export default function NavigateScreen({
   }, [step]);
 
   useEffect(() => {
-    if (!gps.fix || last) return;
+    if (!gps.fix || last) return undefined;
     const result = evaluateArrival({ fix: gps.fix, leg, streak: streak.current });
     streak.current = result.streak;
     setToJunction(result.metres);
-    if (result.arrived) onStep(step + 1);
+    if (result.arrived) {
+      onStep(step + 1);
+      return undefined;
+    }
+    // One fix inside the radius and then silence is the common case: the phone
+    // stops reporting once you stop moving. Let it stand unless something
+    // contradicts it — a later fix runs this effect again and clears the timer.
+    if (result.streak > 0) {
+      const timer = setTimeout(() => onStep(step + 1), DWELL_MS);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
   }, [gps.fix, leg, last, step, onStep]);
 
   const speed = kmh(gps.fix?.speed);

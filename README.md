@@ -29,8 +29,10 @@ npm run dev        # http://localhost:5173
 ```
 
 ```bash
-npm test           # solver, geometry, map-layer and palette checks — no browser
-npm run e2e        # 162 end-to-end checks in a real browser, including GPS
+npm test           # solver, geometry, arrival, routing, map-layer and palette
+npm run e2e        # 184 end-to-end checks in a real browser, including GPS
+npm run features   # 114 depth checks, one feature at a time
+npm run audit      # layout, tap targets, contrast and grid across 24 states
 npm run bench      # solve() timings, the measurement behind the worker decision
 npm run build      # production build to dist/
 npm run preview    # serve the production build
@@ -43,6 +45,7 @@ npm run test:solver   # the 27 behavioural solver checks
 npm run test:map      # map layer paint expressions (see below)
 npm run e2e:only -- --only=gps      # one e2e section
 npm run e2e:only -- --headed        # watch it drive the browser
+node scripts/features.mjs --only=refine
 ```
 
 ### What the tests actually cover
@@ -56,6 +59,14 @@ npm run e2e:only -- --headed        # watch it drive the browser
   snapping a GPS fix to the wrong node sends someone down the wrong side of the
   mountain and the mistake is invisible until they are standing in the wrong
   valley.
+- **`src/lib/progress.test.js`** — deciding from a stream of fixes that someone
+  has reached the next junction. Advancing too eagerly changes the instruction
+  while they are still skiing; too late and they stand at a lift wondering why
+  nothing happened.
+- **`src/lib/direct.test.js`** — the "straight there" transfer, including that
+  it never inherits a day plan's refinements. Salati to Champoluc takes 54
+  minutes on red and does not exist at all on blue, so a stale *Easier* chip
+  would report a real transfer as impossible.
 - **`scripts/validate-layers.mjs`** — map layer paint expressions.
 - **`scripts/check-contrast.mjs`** — text contrast and the distance between the
   brand accent and the piste difficulty signals.
@@ -70,6 +81,22 @@ The GPS section simulates fixes at every base, mid-mountain, 107 km away, and
 with permission refused. It checks the three things that must agree: what the
 button says, what the picker displays, and where the solved route actually
 starts.
+
+`npm run features` asks a harder question of a smaller surface. For one feature
+at a time, what are the twenty ways it goes wrong? Both ends set to the same
+place, state left over from the last plan, a permission denied halfway, a second
+tap that lands before the first finished. It covers straight-there transfers,
+free endpoints, refine, GPS following, location failures and the record of a
+day. It drives the real geolocation: it moves the phone to a junction's actual
+coordinates and asserts the leg advances with no tap.
+
+`npm run audit` walks 24 screen states and checks the things that are tedious to
+eyeball and easy to regress: horizontal overflow, clipped text, 44pt tap
+targets, spacing on the 4pt half-step, placeholder text reaching the screen, and
+computed contrast against whatever is actually behind each piece of text.
+
+All three share `scripts/harness.mjs`, so they cannot drift apart on what counts
+as a page error or which browser gets driven.
 
 ### The map key
 
@@ -171,8 +198,18 @@ Committing to a route caches everything needed to ski it with no signal:
 
 - **route and graph** → `localStorage`, a few KB
 - **app shell** → service worker precache
-- **map tiles** → warmed over the route's bounding box at z11–z15, then served
-  `CacheFirst`
+- **map tiles** → warmed over the route's bounding box, then served
+  `CacheFirst`. With a MapTiler key that is the basemap and terrain-RGB at
+  z11–z15; without one it is the open elevation tiles the map actually runs on,
+  to z13. Warming only the keyed path would have meant the default
+  configuration cached the route and the shell but not the mountain, and the
+  map dropped to the schematic the moment the signal went.
+
+Warming is time-bounded — eight seconds a tile, twenty-five overall. `fetch`
+has no timeout of its own, and a marginal alpine connection is exactly where a
+request hangs rather than failing. The route and graph are written first and
+never depend on the network, so giving up on a tile costs map detail and
+nothing else.
 
 Alpine coverage is unreliable; this is a hard requirement, and it is also why
 the graph is kept small and local.
@@ -187,8 +224,8 @@ AI-assistant aesthetic.
 - The map is the hero — full-bleed, always mounted, never boxed into a card.
 - The bottom sheet is the primary surface. It drags up over the map and the map
   never fully disappears.
-- One saturated accent (a rescue orange) carries the route casing, the primary
-  button and active states. Everything else is a cool neutral.
+- One saturated accent carries the route casing, the primary button and active
+  states. Everything else is a cool neutral.
 - The elevation profile is a recurring motif: filled area, difficulty-coloured
   line, lifts dashed, x axis in **time** rather than distance.
 
@@ -224,6 +261,29 @@ These came from the brief and are not up for casual revision.
 - **"To next junction", not "to next turn".** Pistes have decision points where
   runs split; they do not have turns.
 - **Waypoints are optional.** No required pin-dropping step.
+- **Both ends of a plan can be anywhere on the mountain**, not just a valley
+  station. Being stranded at a col with the car three valleys away is the case
+  this app exists for, and it is not servable from bases-only pickers. The
+  finish field is "Finish at", never "Car is at": the app does not get to
+  assume there is a car.
+- **There is a second question the app answers.** "Straight there" is a plain
+  Dijkstra for when you are meeting someone at Crest or retrieving a car, as
+  opposed to filling a day. It ignores the day refinements entirely, because a
+  stale *Easier* chip would report a real transfer as impossible rather than
+  merely shading it.
+- **Navigation follows the GPS.** Tapping through forty legs by hand is data
+  entry with gloves on. Two consecutive fixes inside the radius advance a leg,
+  and so does one fix that nothing contradicts for six seconds: `watchPosition`
+  fires on change, so standing in a lift queue it may never fire again, and
+  waiting for a second fix that is not coming is exactly when the screen looks
+  broken.
+- **A refinement that rules everything out keeps you on the chips.** The chips
+  are the way back — one tap undoes it. Sending the user to the empty screen
+  there would leave the form as the only exit, which is the thing refine exists
+  to avoid.
+- **Committing does not block on tiles.** The route and graph are written
+  synchronously, so the day is skiable with no signal the instant the button is
+  tapped; terrain keeps downloading behind the navigate screen.
 
 **GPS never fails silently.** Tapping "use my position" always says what
 happened: which station it snapped to, or that you are 107 km away, or that

@@ -16,8 +16,10 @@ export const hours = (minutes) => {
  * makes it scannable without reading.
  */
 export function StatRow({ items, large }) {
+  // Four at this size do not fit across a phone; three do.
+  const wrap = large && items.length > 3;
   return (
-    <div className={`stats${large ? " stats--lg" : ""}`}>
+    <div className={`stats${large ? " stats--lg" : ""}${wrap ? " stats--wrap" : ""}`}>
       {items.map((item) => (
         <div className="stat" key={item.k}>
           <span className="stat__v">

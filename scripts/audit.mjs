@@ -343,6 +343,15 @@ for (const ability of ["Blue", "Anything"]) {
   await page.click('.tabbar__tab:has-text("Stats")');
   await page.waitForTimeout(500);
   await audit(page, "stats (with days)");
+  // The destructive confirmation is a screen state of its own, and its buttons
+  // are the ones most likely to be sized by hand.
+  const clear = await page.$('button:has-text("Clear history")');
+  if (clear) {
+    await clear.click();
+    await page.waitForTimeout(300);
+    await audit(page, "stats (confirming clear)");
+  }
+
   await page.click('.tabbar__tab:has-text("Home")');
   await page.waitForTimeout(400);
   await audit(page, "home (with days)");

@@ -63,6 +63,19 @@ export default defineConfig(() => {
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // Open elevation tiles, which is what the map runs on with no key.
+            // Without this rule committing a route caches the route and the
+            // shell but not the mountain, and the map drops to the schematic
+            // the moment the signal goes.
+            urlPattern: /elevation-tiles-prod|terrarium/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "terrain-tiles",
+              expiration: { maxEntries: 2000, maxAgeSeconds: 60 * 60 * 24 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
       devOptions: { enabled: false },

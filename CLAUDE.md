@@ -215,11 +215,20 @@ Re-run the benchmark if the sampling constants change.
 
 ## One decision made during the build
 
-The brand accent is a **rescue orange**, not Komoot's green. Blue, red and black
-are reserved as piste difficulty signals, and green is the beginner grade in
-France, which this expands into. Orange is the strongest read left over both
-snow and rock. Everything else about the Komoot direction above stands as
-written.
+The brand accent is a **glacier blue**, not Komoot's green. Green is the
+beginner grade in France, which this expands into, so it cannot carry the
+brand.
+
+Blue was chosen after an orange was tried and rejected: it reads as ice and
+meltwater against snow and it is what the app should feel like. That needs
+care, because blue is also a piste grade, and an accent a skier could read as
+"blue run" is a safety problem rather than a taste one. So the accent sits
+deliberately on the cyan side while piste blue stays navy-leaning, and on the
+map a wide white halo separates the brand casing from the difficulty-coloured
+core. `npm run test:palette` asserts the separation rather than leaving it to
+the eye.
+
+Everything else about the Komoot direction above stands as written.
 
 ## Replacing the resort data
 

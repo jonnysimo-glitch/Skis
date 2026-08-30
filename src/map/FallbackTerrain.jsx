@@ -32,8 +32,14 @@ const GRID = 60;
 /** How fast a flick bleeds off. 0.92 settles in about half a second at 60fps. */
 const GLIDE_DECAY = 0.92;
 
+/**
+ * Pitch limits. 0 is straight down, which is as far as the camera goes: there
+ * is no under the map. The ceiling matches MapLibre's `maxPitch` so tilting
+ * feels the same whichever layer is currently drawing, since they swap
+ * underneath the user without warning.
+ */
 const MIN_PITCH = 0;
-const MAX_PITCH = 78;
+const MAX_PITCH = 75;
 const VERT_EXAGGERATION = 2.4;
 const SUN = normalise([-0.5, 0.66, -0.56]);
 const SKY_TOP = [104, 158, 196];

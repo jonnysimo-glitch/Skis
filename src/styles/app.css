@@ -114,11 +114,17 @@ input, select { font: inherit; color: inherit; }
 }
 .mapnote__t { flex: 1; min-width: 0; }
 .mapnote__x {
+  /* 44pt of hit area, 36pt of circle. The negative margin keeps the extra
+     reach from making the note taller than the text needs. */
   color: rgba(255, 255, 255, 0.6); flex: none;
-  width: 32px; height: 32px; border-radius: 50%;
+  width: var(--tap); height: var(--tap);
+  margin: calc(var(--s-1) * -1);
+  padding: var(--s-1);
+  border-radius: 50%;
+  background-clip: content-box;
   display: grid; place-items: center;
 }
-.mapnote__x:active { background: rgba(255, 255, 255, 0.14); }
+.mapnote__x:active { background: rgba(255, 255, 255, 0.14); background-clip: content-box; }
 
 /* ---------------------------------------------------------------- sheet -- */
 /* The primary surface. Drags up over the map; the map is never fully hidden. */
@@ -260,6 +266,9 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .chip[aria-pressed="true"] .chip__swatch { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
 .chip--busy { opacity: 0.5; }
+
+/* A tighter primary for inline pairs. Never below the 44pt floor. */
+.btn--sm { min-height: var(--tap); font-size: var(--t-subhead); }
 
 /* Primary action: 50pt tall, the iOS standard for a full-width button. */
 .btn {
@@ -508,8 +517,9 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* Four big numbers do not fit across a 393px phone: "6h 42m" at 26px alone is
-   wider than a quarter of the gutter width. Two up, two down. */
-.stats--lg {
+   wider than a quarter of the gutter width. Two up, two down. Three still fit
+   in a row, so this is only applied when there are four. */
+.stats--wrap {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--s-4) var(--s-3);
@@ -591,6 +601,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-size: var(--t-footnote); line-height: 1.4;
 }
 .warn:not(:last-child), .info:not(:last-child) { margin-bottom: var(--s-4); }
+.warn__acts { display: flex; gap: var(--s-2); margin-top: var(--s-3); }
 .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
 .warn__icon { color: var(--warn); flex: none; margin-top: 1px; }
 .warn__t {

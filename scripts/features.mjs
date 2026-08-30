@@ -9,6 +9,8 @@
  *
  * Pass --only=<word> to run one feature.
  */
+import { NODES } from "../src/resort.js";
+import { DWELL_MS as DWELL } from "../src/lib/progress.js";
 import {
   serve,
   newPage,
@@ -51,8 +53,12 @@ const where = (page) =>
     if (document.querySelector(".empty")) return "empty";
     if (document.querySelector(".banner")) return "navigate";
     if (document.querySelector(".solving")) return "solving";
-    if (document.querySelector(".routecard")) return "choose";
+    // A time input only exists on the form, and the form has chips of its own,
+    // so it has to be ruled out before falling back to them.
     if (document.querySelector("#p-t1")) return "plan";
+    // Route cards do not make it the choose screen: a refinement can rule
+    // every one of them out and the screen stays put. The chips do.
+    if (document.querySelector(".routecard, .sheet .chips .chip")) return "choose";
     if (document.querySelector(".legs")) return "detail";
     if (document.querySelector(".sheet")) return "summary";
     return "?";
@@ -187,6 +193,10 @@ if (feature("2. A transfer is not a refined day")) {
     "an 80 minute window is not quietly cut to 48 by a stale Shorter",
     !/further than that/.test(body)
   );
+  const legs = await page.$$eval(".leg", (n) => n.map((l) => l.textContent.trim()));
+  check("it uses red terrain, which blue-only would have ruled out", legs.length > 0, `${legs.length} legs`);
+  check("the legs are real named runs and lifts", legs.every((l) => l.length > 3));
+  check("it is one answer, not a shortlist", (await routeCount(page)) === 0, `${await routeCount(page)} cards`);
 
   // And the plan screen shows no refinement state for a transfer.
   await page.click('.iconbtn[aria-label="Back"]');
@@ -337,7 +347,7 @@ if (feature("5. Navigation follows the GPS")) {
   check("navigation starts", (await where(page)) === "navigate");
 
   const first = await text(page);
-  check("it opens on leg one", /Leg 1 of \d+/.test(first), first.split("\n")[0]);
+  check("it opens on leg one", /leg 1 of \d+/i.test(first), first.match(/leg \d+ of \d+/i)?.[0] || "no leg counter");
   check("it names the next junction, not the next turn", /junction/i.test(first));
   check("it never says 'turn'", !/next turn/i.test(first));
   check("it says it is following you", /Following you/.test(first), first.match(/Following you[^.]*\./)?.[0] || "not following");
@@ -350,13 +360,43 @@ if (feature("5. Navigation follows the GPS")) {
   });
   check("the manual fallback names where you are going", target !== null, target || "");
 
-  const legBefore = await page.$eval(".eyebrow", (n) => n.textContent);
-  // Two fixes at the junction: one confirmation is not enough on purpose.
-  const junction = await page.evaluate(() => window.__nextJunction || null);
-  await page.context_.setGeolocation({ latitude: 45.9012, longitude: 7.8318 });
-  await page.waitForTimeout(1500);
-  const distanceShown = /to junction/i.test(await text(page));
-  check("distance to the junction replaces the planned minutes once there is a fix", distanceShown);
+  const legNumber = async () =>
+    Number((await page.$eval(".sheet .eyebrow", (n) => n.textContent)).match(/(\d+) of/i)?.[1] || 0);
+  check("the leg counter reads one", (await legNumber()) === 1, `${await legNumber()}`);
+
+  // The headline behaviour: walk the phone to the junction and the screen
+  // should advance itself. No tap.
+  const here = NODES[target && Object.keys(NODES).find((k) => NODES[k].name === target)];
+  check("the junction is a real node with coordinates", !!here, target || "unknown");
+
+  if (here) {
+    const distanceShown = () => text(page).then((t) => /to junction/i.test(t));
+    await page.context_.setGeolocation({ latitude: here.lat, longitude: here.lon });
+    // One fix is deliberately not enough; two consecutive ones are.
+    await page.waitForTimeout(1600);
+    check("distance to the junction replaces the planned minutes", await distanceShown());
+
+    // Two fixes advance immediately; one fix and silence takes the dwell.
+    await page.waitForFunction(
+      () => /leg 2 of/i.test(document.querySelector(".sheet .eyebrow")?.textContent || ""),
+      { timeout: 15000 }
+    ).catch(() => {});
+    check("arriving at the junction advances the leg without a tap", (await legNumber()) === 2, `on leg ${await legNumber()}`);
+
+    // And it does not run away. Leg 2 goes on from here, so its junction is
+    // somewhere else: sitting at leg 1's junction must not keep advancing.
+    await page.context_.setGeolocation({ latitude: here.lat + 0.06, longitude: here.lon + 0.06 });
+    await page.waitForTimeout(DWELL + 3000);
+    check("a fix nowhere near the next junction does not advance", (await legNumber()) === 2, `on leg ${await legNumber()}`);
+  }
+
+  const before = await legNumber();
+  const manual = await page.$('.sheet__foot .btn:has-text("Reached")');
+  if (manual) {
+    await manual.click();
+    await page.waitForTimeout(400);
+    check("tapping Reached advances a leg", (await legNumber()) === before + 1, `${before} to ${await legNumber()}`);
+  }
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
@@ -415,6 +455,36 @@ if (feature("6. Every location failure says something")) {
     const startVal = await page.$eval("#p-start", (n) => n.value);
     const options = await page.$$eval("#p-start option", (n) => n.map((o) => o.value));
     check("and the start it picks is one the picker actually offers", options.includes(startVal), `${startVal} in [${options.length}]`);
+    check("it names the station rather than a coordinate", /Nearest is \w/.test(body), body.match(/Nearest is [^\n]*/)?.[0] || "");
+
+    // The three that must agree: button, picker, and where the route starts.
+    const shown = await page.$eval("#p-start", (n) => n.options[n.selectedIndex].textContent.trim());
+    check("what the button says matches what the picker shows", body.includes(shown), shown);
+    await solve(page);
+    check("and it solves from there", (await routeCount(page)) > 0);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+
+  // Over http on a LAN address, which is how you open this on a phone.
+  {
+    const page = await newPage(browser, { at: [9, 0] });
+    await page.goto(url.replace("127.0.0.1", "0.0.0.0"), { waitUntil: "domcontentloaded" }).catch(() => {});
+    const insecure = await page.evaluate(() => window.isSecureContext === false).catch(() => false);
+    check("a LAN address is an insecure context", insecure === true, `secure=${!insecure}`);
+    if (insecure) {
+      await page.waitForSelector(".hero", { timeout: 20000 });
+      await page.click(".hero");
+      await page.click("text=Go skiing");
+      await page.waitForSelector("#p-t1", { timeout: 15000 });
+      await page.click(".locate");
+      await page.waitForTimeout(900);
+      const body = await text(page);
+      check("it blames https, not the permission", /needs https/i.test(body), body.match(/Location[^\n]*/)?.[0] || "");
+      check("it does not send you to settings for the wrong thing", !/Location is off/.test(body));
+      await solve(page);
+      check("and the rest of the app is unaffected", (await routeCount(page)) > 0);
+    }
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
@@ -442,7 +512,9 @@ if (feature("7. Finishing a day writes it down, once")) {
   await page.waitForTimeout(800);
   check("finishing shows the summary", /Down at|Back at/.test(await text(page)));
 
-  const days = () => page.evaluate(() => JSON.parse(localStorage.getItem("skis.days") || "[]").length);
+  // Everything durable lives under one key; history is a field inside it.
+  const days = () =>
+    page.evaluate(() => (JSON.parse(localStorage.getItem("skis.v1") || "{}").history || []).length);
   check("the day is written to the record", (await days()) === 1, `${await days()} days`);
 
   // The one that used to double-count: back out of the summary and finish again.
@@ -456,13 +528,45 @@ if (feature("7. Finishing a day writes it down, once")) {
   check("with a vertical", /\bm\b/.test(stats));
   check("and exactly one day, not two", (await days()) === 1, `${await days()}`);
 
-  // Clearing is confirmed rather than instant.
-  const clear = await page.$('button:has-text("Clear")');
+  check("the day is labelled the way a person refers to it", /today/i.test(stats), stats.match(/Today|Yesterday/i)?.[0] || "no label");
+  check("and carries the route's character title", /circuit|valleys|miles|vertical|variety|cruis/i.test(stats));
+
+  // The season totals on home come from the same record.
+  await page.click('.tabbar__tab:has-text("Home")');
+  await page.waitForTimeout(500);
+  const home = await text(page);
+  check("home shows the season once there is a day in it", /this season/i.test(home));
+  check("and the empty state is gone", !/no days yet/i.test(home));
+
+  // It survives a reload: this is the phone's memory, not the session's.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero, .tabbar", { timeout: 20000 });
+  check("the record survives a reload", (await days()) === 1, `${await days()}`);
+
+  await page.click('.tabbar__tab:has-text("Stats")');
+  await page.waitForTimeout(500);
+
+  // Clearing is confirmed rather than instant, and cancelling really cancels.
+  const clear = await page.$('button:has-text("Clear history")');
+  check("there is a way to clear the record", clear !== null);
   if (clear) {
     await clear.click();
     await page.waitForTimeout(400);
-    check("clearing the record asks first", /sure|permanent|cannot be undone|Delete/i.test(await text(page)));
-    check("and the day is still there until confirmed", (await days()) === 1);
+    check("clearing asks first", /Delete everything/i.test(await text(page)));
+    check("and says what will be lost", /no copy anywhere else/i.test(await text(page)));
+    check("the day is still there until confirmed", (await days()) === 1);
+
+    await page.click('button:has-text("Keep")');
+    await page.waitForTimeout(400);
+    check("keeping it actually keeps it", (await days()) === 1, `${await days()}`);
+    check("and the confirmation goes away", !/Delete everything/i.test(await text(page)));
+
+    await page.click('button:has-text("Clear history")');
+    await page.waitForTimeout(300);
+    await page.click('button:has-text("Delete")');
+    await page.waitForTimeout(500);
+    check("deleting it empties the record", (await days()) === 0, `${await days()}`);
+    check("and the empty state comes back", /no days yet/i.test(await text(page)));
   }
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();

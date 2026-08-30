@@ -44,9 +44,12 @@ export const maptilerTerrain = {
  * self-hosted — worth doing before this carries real traffic, both to be a good
  * citizen and because a resort's own tiles can be pinned for offline use.
  */
-const TERRAIN_TILES =
+export const TERRAIN_TILES =
   (import.meta.env?.VITE_TERRAIN_TILES || "").trim() ||
   "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+
+/** The highest terrain zoom worth holding; see `maxzoom` on the source below. */
+export const TERRAIN_MAX_ZOOM = 13;
 
 const demSource = () => ({
   type: "raster-dem",
@@ -56,7 +59,7 @@ const demSource = () => ({
   minzoom: 0,
   // z13 terrarium is about 10 m per pixel at this latitude, which is more than
   // enough for terrain shape and keeps the offline tile set small.
-  maxzoom: 13,
+  maxzoom: TERRAIN_MAX_ZOOM,
   attribution:
     '<a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a>',
 });

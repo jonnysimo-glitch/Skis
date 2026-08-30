@@ -2,10 +2,13 @@
  * Route detail, and the commit.
  *
  * Committing must cache tiles, graph and route for full airplane mode. Alpine
- * signal is unreliable and this is a hard requirement — so the button says what
- * it is doing and reports honestly when there is nothing to cache.
+ * signal is unreliable and this is a hard requirement.
+ *
+ * The route and graph are written synchronously, so the day is skiable with no
+ * signal the instant the button is tapped. Terrain tiles keep downloading
+ * behind the navigate screen: they are the enhancement, and a progress bar
+ * between a skier and the first lift is the wrong trade.
  */
-import { useState } from "react";
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { LegList, StatRow, detailStats, hours } from "../ui/RouteBits.jsx";
@@ -16,21 +19,19 @@ import { commitRoute } from "../lib/offline.js";
 import { Back, Download, Warning, Check, Wifi, Clock } from "../ui/Icons.jsx";
 
 export default function DetailScreen({ route, opts, plan, resortId, onStart, onBack }) {
-  const [progress, setProgress] = useState(null);
-
   const back = backAt(route, opts);
   const slack = plan.t1 - back;
   const clocks = legClocks(route, opts.startClock);
   const finishName = NODES[route.segments[route.segments.length - 1].to].name;
 
-  const save = async () => {
-    setProgress({ done: 0, total: 1, phase: "route" });
-    await commitRoute({ route, opts, resortId, onProgress: setProgress });
-    setProgress(null);
+  // The route and graph are written synchronously, so the day is already
+  // skiable offline by the time this returns. Terrain keeps downloading behind
+  // the navigate screen; making someone watch a progress bar for tiles they do
+  // not need yet is the wrong trade on a mountain.
+  const save = () => {
+    commitRoute({ route, opts, resortId });
     onStart();
   };
-
-  const pct = progress?.total ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
     <>
@@ -91,17 +92,10 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
       </SheetBody>
 
       <SheetFoot>
-        {progress ? (
-          <button className="btn" disabled>
-            <Download width="18" height="18" />
-            {progress.phase === "tiles" ? `Caching terrain ${pct}%` : "Saving route"}
-          </button>
-        ) : (
-          <button className="btn" onClick={save}>
-            <Download width="18" height="18" />
-            Save offline and start
-          </button>
-        )}
+        <button className="btn" onClick={save}>
+          <Download width="18" height="18" />
+          Save offline and start
+        </button>
         <button className="btn btn--quiet" onClick={onBack}>
           <Back width="16" height="16" /> Back to options
         </button>

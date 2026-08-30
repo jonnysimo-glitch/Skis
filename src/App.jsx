@@ -160,7 +160,7 @@ export default function App() {
   const mapControl = useRef(null);
   const [mapBroken, setMapBroken] = useState(false);
   const [mapLive, setMapLive] = useState(false);
-  const [noteOpen, setNoteOpen] = useState(!hasMapKey && !load("seenMapNote"));
+  const [noteOpen, setNoteOpen] = useState(!load("seenMapNote"));
   const [sheetHeight, setSheetHeight] = useState(0);
 
   // Two map layers, briefly.
@@ -534,7 +534,11 @@ export default function App() {
         </button>
       </div>
 
-      {noteOpen && showSchematic && !chromeHidden && screen === "plan" && (
+      {/* Only once the schematic is what you are actually going to be looking
+          at. Without a key that is immediate; with one it means MapLibre gave
+          up, and gating on that stops the note flashing while it loads. */}
+      {noteOpen && showSchematic && (!hasMapKey || mapBroken) && !chromeHidden &&
+        screen === "plan" && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           <span className="mapnote__t">Simplified terrain. Drag to orbit.</span>

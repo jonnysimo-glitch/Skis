@@ -123,17 +123,15 @@ export default function StatsScreen({ version, onChanged }) {
                 <span className="warn__p">
                   All {days.length} days, permanently. There is no copy anywhere else.
                 </span>
-                <span style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
+                <span className="warn__acts">
                   <button
-                    className="btn btn--ghost"
-                    style={{ minHeight: 40 }}
+                    className="btn btn--ghost btn--sm"
                     onClick={() => setConfirming(false)}
                   >
                     Keep
                   </button>
                   <button
-                    className="btn"
-                    style={{ minHeight: 40 }}
+                    className="btn btn--sm"
                     onClick={() => {
                       clearHistory();
                       setConfirming(false);

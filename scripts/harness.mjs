@@ -30,7 +30,14 @@ export async function serve() {
       const info = await stat(path);
       if (info.isDirectory()) path = join(path, "index.html");
     } catch {
-      path = join(ROOT, "index.html"); // SPA fallback
+      // SPA fallback, but only for routes. Handing index.html back for a
+      // missing .js would turn a broken asset into a MIME-type error three
+      // steps away from the cause.
+      if (extname(path)) {
+        res.writeHead(404).end("not found");
+        return;
+      }
+      path = join(ROOT, "index.html");
     }
     try {
       const body = await readFile(path);

@@ -28,6 +28,18 @@ export const ARRIVAL_RADIUS_M = 70;
 export const CONFIRMATIONS = 2;
 
 /**
+ * How long one fix inside the radius may stand unchallenged before it counts
+ * as arrival on its own.
+ *
+ * `watchPosition` fires when the position changes. Standing in a lift queue it
+ * may not fire again for a long time, and waiting for a second fix that is
+ * never coming is the exact moment the screen looks broken. So a lone fix
+ * inside the radius is confirmed by nothing contradicting it: any later fix
+ * outside the radius clears the timer before it fires.
+ */
+export const DWELL_MS = 6000;
+
+/**
  * @param {object} args
  * @param {object} args.fix        latest position, or null
  * @param {object} args.leg        the segment currently being travelled
