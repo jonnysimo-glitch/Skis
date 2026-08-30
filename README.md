@@ -79,12 +79,25 @@ cp .env.example .env
 # add your key from maptiler.com — the free tier is enough
 ```
 
-**The app runs without a key.** Rather than a broken grey box, it renders an
-interactive terrain view built from the resort graph's own node altitudes:
-inverse-distance interpolation roughened with ridged noise, hillshaded, with the
-route draped over it. You can orbit and pitch it exactly as you would the real
-map. What you lose is real satellite relief and the basemap's own pistes and
-lift lines. The UI says so plainly rather than pretending.
+**The app runs without a key**, and still shows real terrain. There are three
+rungs, best first:
+
+1. **With a key** — MapTiler's winter basemap, which brings its own pistes,
+   lifts and lift names, over MapTiler terrain.
+2. **Without one** — real elevation anyway. [AWS Terrain
+   Tiles](https://registry.opendata.aws/terrain-tiles/) publish global DEM as
+   terrarium-encoded PNGs with no key and no signup (EU-DEM over the Alps), and
+   MapLibre can both extrude and colour a DEM directly. You get the real shape
+   of Monte Rosa with an elevation colour ramp and hillshading. What you lose is
+   a basemap underneath, so the pistes on screen are the ones from our own
+   graph.
+3. **If MapLibre cannot run at all** — no WebGL, shaders that will not compile,
+   tiles that never arrive — a schematic built from the graph's own node
+   altitudes, which needs neither a GPU nor a network.
+
+The schematic paints first because it is instant, and MapLibre takes over only
+once it has actually settled a frame. A nine-second watchdog hands back if it
+never does. There is no path to an empty rectangle where the mountain should be.
 
 MapLibre is code-split, so a visitor without a key never downloads the 800KB
 they cannot use.
@@ -219,16 +232,57 @@ different emphasis, which the UI states plainly.
 
 ---
 
-## Deploying
+## Trying it
 
-Vercel, zero config — `vercel.json` is in the repo.
+**GitHub Pages** is wired up: `.github/workflows/pages.yml` builds and deploys
+on every push to the working branch, so there should be a live build at
+
+    https://jonnysimo-glitch.github.io/Skis/
+
+If that 404s, check the repo's **Actions** tab — the first run has to enable
+Pages, and that needs Actions to be allowed on the repo.
+
+**Locally**, which is the certain path:
 
 ```bash
-npx vercel            # preview
+npm install
+npm run dev           # http://localhost:5173
+```
+
+**On a phone.** This is a mobile product and the sheet, the map orbit and GPS
+all behave differently under a thumb:
+
+```bash
+npm run dev:host      # prints a http://192.168.x.x address for your wifi
+```
+
+One thing to know: geolocation and service workers need a secure context.
+`localhost` counts as secure; `http://192.168.x.x` does not, so over wifi the
+locate button will tell you it needs https and offline mode will not register.
+For the full thing on a phone, use the Pages URL or a deploy of your own.
+
+**Faking a location** so you can test the mid-day flow without being at
+Monterosa — Chrome DevTools → ⋮ → More tools → Sensors → Location → Other, then:
+
+| where | lat | lon |
+|---|---|---|
+| Staffal (Gressoney base) | 45.8790 | 7.8180 |
+| Passo dei Salati (high, mid-mountain) | 45.8890 | 7.8730 |
+| Champoluc (Ayas base) | 45.8180 | 7.7270 |
+| Alagna (far side) | 45.8530 | 7.9370 |
+
+Set the clock to an afternoon time and the app opens in its mid-day context:
+start is where you are, finish is where the car is.
+
+**Other hosts.** Vercel is zero-config — `vercel.json` is in the repo:
+
+```bash
 npx vercel --prod
 ```
 
-Set `VITE_MAPTILER_KEY` in the Vercel project's environment variables.
+Set `VITE_MAPTILER_KEY` in the project's environment variables if you have one.
+`VITE_BASE` defaults to `/`; only GitHub Pages needs it set, and the workflow
+does that itself.
 
 ---
 
