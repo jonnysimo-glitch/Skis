@@ -590,7 +590,8 @@ if (feature("8. The skiing tab opens on the mountain")) {
   check("the map is there", (await page.$("canvas")) !== null);
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body));
-  check("and says where that is", /Valle d'Aosta/.test(body));
+  // innerText returns text-transform: uppercase as uppercase.
+  check("and says where that is", /valle d'aosta/i.test(body), body.match(/VALLE[^\n]*/i)?.[0] || "");
   check("it shows what the mountain has", /lifts/i.test(body) && /runs/i.test(body), body.match(/\d+\s*\n?LIFTS/i)?.[0] || "");
   check("including when the lifts stop", /last down/i.test(body));
 
