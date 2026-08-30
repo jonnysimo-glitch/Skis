@@ -1,0 +1,551 @@
+/**
+ * The 3D view when there is no MapTiler key.
+ *
+ * The brief is explicit that a missing key must not produce a broken grey box.
+ * So this builds a terrain surface out of the only elevation data we already
+ * have — the altitudes on the resort graph's own nodes — and lets you orbit it
+ * with the route draped over the top. You lose real satellite relief, pistes
+ * and lift lines from the basemap; you keep the thing that matters, which is
+ * seeing the shape of the day on a mountain you can turn around.
+ *
+ * It is a schematic and the UI says so. It is also, usefully, offline by
+ * construction: there is nothing to fetch.
+ */
+import { useEffect, useRef } from "react";
+import { NODES, projector } from "../resort.js";
+import { PISTE_COLOUR } from "../lib/geo.js";
+
+const GRID = 60;
+const VERT_EXAGGERATION = 2.4;
+const SUN = normalise([-0.5, 0.66, -0.56]);
+const SKY_TOP = [88, 140, 184];
+const SKY_HORIZON = [206, 226, 238];
+
+function normalise(v) {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+
+/** Deterministic value noise — the same mountain every time. */
+function hash2(x, y) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+function noise2(x, y) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  return (
+    hash2(xi, yi) * (1 - u) * (1 - v) +
+    hash2(xi + 1, yi) * u * (1 - v) +
+    hash2(xi, yi + 1) * (1 - u) * v +
+    hash2(xi + 1, yi + 1) * u * v
+  );
+}
+function fbm(x, y) {
+  let sum = 0;
+  let amp = 0.5;
+  let freq = 1;
+  for (let o = 0; o < 4; o++) {
+    sum += noise2(x * freq, y * freq) * amp;
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return sum;
+}
+
+/**
+ * Inverse-distance interpolation through the node altitudes, roughened with
+ * noise so it reads as terrain rather than a drape over thirteen poles.
+ */
+function buildField() {
+  const proj = projector();
+  const pts = Object.values(NODES).map((n) => {
+    const { x, z } = proj.project(n.lat, n.lon);
+    return { x, z, alt: n.alt };
+  });
+
+  const xs = pts.map((p) => p.x);
+  const zs = pts.map((p) => p.z);
+  const padX = (Math.max(...xs) - Math.min(...xs)) * 0.18;
+  const padZ = (Math.max(...zs) - Math.min(...zs)) * 0.18;
+  const minX = Math.min(...xs) - padX;
+  const maxX = Math.max(...xs) + padX;
+  const minZ = Math.min(...zs) - padZ;
+  const maxZ = Math.max(...zs) + padZ;
+
+  const heights = new Float32Array((GRID + 1) * (GRID + 1));
+  const at = (i, j) => i * (GRID + 1) + j;
+
+  const idw = (x, z) => {
+    let num = 0;
+    let den = 0;
+    for (const p of pts) {
+      const d2 = (x - p.x) ** 2 + (z - p.z) ** 2 + 1;
+      const w = 1 / (d2 * Math.sqrt(d2)); // ~1/d^3, tight enough to keep peaks
+      num += p.alt * w;
+      den += w;
+    }
+    return num / den;
+  };
+
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i <= GRID; i++) {
+    for (let j = 0; j <= GRID; j++) {
+      const x = minX + ((maxX - minX) * i) / GRID;
+      const z = minZ + ((maxZ - minZ) * j) / GRID;
+      // Ridged noise (1 - |2n-1|) gives crests rather than dunes, which is
+      // what makes an interpolated blob read as a mountain range.
+      const ridge = (sc) => 1 - Math.abs(2 * fbm(x / sc, z / sc) - 1);
+      const h =
+        idw(x, z) +
+        430 * (ridge(2800) - 0.5) +
+        210 * (ridge(1050) - 0.5) +
+        80 * (fbm(x / 380, z / 380) - 0.5);
+      heights[at(i, j)] = h;
+      lo = Math.min(lo, h);
+      hi = Math.max(hi, h);
+    }
+  }
+
+  const sample = (x, z) => {
+    const fi = ((x - minX) / (maxX - minX)) * GRID;
+    const fj = ((z - minZ) / (maxZ - minZ)) * GRID;
+    const i = Math.max(0, Math.min(GRID - 1, Math.floor(fi)));
+    const j = Math.max(0, Math.min(GRID - 1, Math.floor(fj)));
+    const u = Math.max(0, Math.min(1, fi - i));
+    const v = Math.max(0, Math.min(1, fj - j));
+    return (
+      heights[at(i, j)] * (1 - u) * (1 - v) +
+      heights[at(i + 1, j)] * u * (1 - v) +
+      heights[at(i, j + 1)] * (1 - u) * v +
+      heights[at(i + 1, j + 1)] * u * v
+    );
+  };
+
+  return {
+    proj, heights, at, sample,
+    minX, maxX, minZ, maxZ, lo, hi,
+    cx: (minX + maxX) / 2,
+    cz: (minZ + maxZ) / 2,
+    cy: (lo + hi) / 2,
+    span: Math.max(maxX - minX, maxZ - minZ),
+  };
+}
+
+const mix = (a, b, t) => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
+/** Snow above, rock and forest below, shaded by slope and hazed by distance. */
+function surfaceColour(alt, lo, hi, shade, haze) {
+  const t = Math.max(0, Math.min(1, (alt - lo) / (hi - lo || 1)));
+  let c;
+  if (t < 0.22) c = [66, 88, 78];        // valley forest
+  else if (t < 0.4) c = [112, 132, 122]; // treeline
+  else if (t < 0.56) c = [168, 178, 180]; // rock and scree
+  else if (t < 0.72) c = [214, 226, 233]; // old snow
+  else c = [246, 250, 253];              // snowfield
+  const k = 0.46 + 0.72 * shade;
+  c = [c[0] * k, c[1] * k, c[2] * k];
+  // Atmospheric perspective: distant ridges wash toward the sky.
+  c = mix(c, SKY_HORIZON, haze * 0.72);
+  return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+}
+
+export default function FallbackTerrain({
+  route,
+  graph,
+  pins,
+  camera,
+  controlRef,
+  viewportBottom = 0,
+}) {
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const view = useRef({ bearing: -28, pitch: 56, zoom: 1, targetZoom: 1 });
+  const dirty = useRef(true);
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom });
+
+  if (!fieldRef.current) fieldRef.current = buildField();
+
+  propsRef.current = { route, graph, pins, camera, viewportBottom };
+  dirty.current = true;
+
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      orbit: (deg) => { view.current.bearing += deg; dirty.current = true; },
+      resetNorth: () => {
+        view.current.bearing = 0;
+        view.current.pitch = 56;
+        dirty.current = true;
+      },
+      flat: () => {
+        view.current.pitch = view.current.pitch > 12 ? 3 : 56;
+        dirty.current = true;
+      },
+      zoom: (delta) => {
+        const v = view.current;
+        v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * (delta > 0 ? 1.32 : 0.76)));
+        dirty.current = true;
+      },
+      isFlat: () => view.current.pitch < 12,
+    };
+  }, [controlRef]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const field = fieldRef.current;
+    const ctx = canvas.getContext("2d");
+    let width = 0;
+    let height = 0;
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.getBoundingClientRect();
+      width = rect.width || 430;
+      height = rect.height || 900;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dirty.current = true;
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+
+    // ---- camera ----------------------------------------------------------
+    // Screen position is linear in the focal length once the perspective
+    // divide is done, so the framing can be solved in one pass: project the
+    // points we want in shot into "unit" space, then pick the focal length and
+    // offsets that fit their bbox into the part of the canvas the sheet is not
+    // covering.
+    const unit = (x, y, z, v) => {
+      const b = (v.bearing * Math.PI) / 180;
+      const p = (v.pitch * Math.PI) / 180;
+      const px = x - field.cx;
+      const py = (y - field.cy) * VERT_EXAGGERATION;
+      const pz = z - field.cz;
+      const rx = px * Math.cos(b) - pz * Math.sin(b);
+      const rz = px * Math.sin(b) + pz * Math.cos(b);
+      const sy = rz * Math.cos(p) - py * Math.sin(p);
+      const depth = rz * Math.sin(p) + py * Math.cos(p);
+      const w = field.span * 1.45 + depth;
+      return { u: rx / w, v: sy / w, depth };
+    };
+
+    /** World points the camera should keep in shot. */
+    const targets = () => {
+      const { route: r, camera: cam } = propsRef.current;
+      if (cam?.kind === "point" && cam.center) {
+        // Navigating a leg: frame tightly around that leg.
+        const [lon, lat] = cam.center;
+        const { x, z } = field.proj.project(lat, lon);
+        const reach = field.span * 0.13;
+        return [
+          [x - reach, field.sample(x - reach, z), z - reach],
+          [x + reach, field.sample(x + reach, z), z + reach],
+          [x - reach, field.sample(x - reach, z + reach), z + reach],
+          [x + reach, field.sample(x + reach, z - reach), z - reach],
+        ];
+      }
+      if (r?.features?.length) {
+        const out = [];
+        for (const f of r.features) {
+          for (const [lon, lat] of f.geometry.coordinates) {
+            const { x, z } = field.proj.project(lat, lon);
+            out.push([x, field.sample(x, z), z]);
+          }
+        }
+        return out;
+      }
+      // Whole mountain.
+      const out = [];
+      for (const x of [field.minX, field.maxX]) {
+        for (const z of [field.minZ, field.maxZ]) {
+          out.push([x, field.sample(x, z), z]);
+        }
+      }
+      out.push([field.cx, field.hi, field.cz]);
+      return out;
+    };
+
+    /** Solve focal length and offset so the targets fill the visible area. */
+    const fit = (v) => {
+      const pts = targets().map(([x, y, z]) => unit(x, y, z, v));
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (const p of pts) {
+        u0 = Math.min(u0, p.u); u1 = Math.max(u1, p.u);
+        v0 = Math.min(v0, p.v); v1 = Math.max(v1, p.v);
+      }
+      // The sheet covers the bottom. Frame the subject in what is left, but
+      // keep the terrain itself drawing full-bleed behind it.
+      const padX = 26;
+      const padTop = 74;
+      const padBottom = 24;
+      const visibleH = Math.max(180, height - propsRef.current.viewportBottom);
+      const availW = width - padX * 2;
+      const availH = visibleH - padTop - padBottom;
+
+      const spanU = Math.max(u1 - u0, 1e-6);
+      const spanV = Math.max(v1 - v0, 1e-6);
+      const f = Math.min(availW / spanU, availH / spanV) * v.zoom;
+
+      return {
+        f,
+        ox: padX + availW / 2 - f * (u0 + u1) / 2,
+        oy: padTop + availH / 2 - f * (v0 + v1) / 2,
+      };
+    };
+
+    const project = (x, y, z, v, cam) => {
+      const p = unit(x, y, z, v);
+      return { x: cam.ox + p.u * cam.f, y: cam.oy + p.v * cam.f, depth: p.depth };
+    };
+
+    // ---- terrain ---------------------------------------------------------
+    const drawTerrain = (v, cam) => {
+      const { heights, at, minX, maxX, minZ, maxZ, lo, hi } = field;
+      const dx = (maxX - minX) / GRID;
+      const dz = (maxZ - minZ) / GRID;
+      const quads = [];
+      let dMin = Infinity;
+      let dMax = -Infinity;
+
+      for (let i = 0; i < GRID; i++) {
+        for (let j = 0; j < GRID; j++) {
+          const x0 = minX + dx * i;
+          const z0 = minZ + dz * j;
+          const h00 = heights[at(i, j)];
+          const h10 = heights[at(i + 1, j)];
+          const h01 = heights[at(i, j + 1)];
+          const h11 = heights[at(i + 1, j + 1)];
+
+          const a = project(x0, h00, z0, v, cam);
+          const b = project(x0 + dx, h10, z0, v, cam);
+          const c = project(x0 + dx, h11, z0 + dz, v, cam);
+          const d = project(x0, h01, z0 + dz, v, cam);
+
+          const nx = (h00 - h10) / dx;
+          const nz = (h00 - h01) / dz;
+          const n = normalise([nx * VERT_EXAGGERATION, 1, nz * VERT_EXAGGERATION]);
+          const shade = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
+          const depth = (a.depth + c.depth) / 2;
+          dMin = Math.min(dMin, depth);
+          dMax = Math.max(dMax, depth);
+
+          quads.push({ depth, pts: [a, b, c, d], alt: (h00 + h11) / 2, shade });
+        }
+      }
+
+      quads.sort((p, q) => q.depth - p.depth); // painter's algorithm
+      const dSpan = dMax - dMin || 1;
+      for (const q of quads) {
+        const haze = Math.max(0, Math.min(1, (q.depth - dMin) / dSpan));
+        const fill = surfaceColour(q.alt, lo, hi, q.shade, haze);
+        const [a, b, c, d] = q.pts;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = fill; // hides seams between adjacent quads
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+      }
+    };
+
+    // ---- lines on the surface -------------------------------------------
+    const toScreen = (coords, v, cam) =>
+      coords.map(([lon, lat]) => {
+        const { x, z } = field.proj.project(lat, lon);
+        return project(x, field.sample(x, z), z, v, cam);
+      });
+
+    const stroke = (pts, colour, lw, dash) => {
+      if (pts.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.setLineDash(dash || []);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = lw;
+      ctx.lineJoin = "round";
+      ctx.lineCap = dash ? "butt" : "round";
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    const drawGraph = (v, cam) => {
+      for (const feature of propsRef.current.graph.features) {
+        stroke(toScreen(feature.geometry.coordinates, v, cam), "rgba(255,255,255,0.5)", 1.3, [3, 3]);
+      }
+    };
+
+    const drawRoute = (v, cam) => {
+      const r = propsRef.current.route;
+      if (!r?.features?.length) return;
+      const done = propsRef.current.camera?.doneThrough ?? -1;
+      // Scale the route line with the framing so it stays a first-class object
+      // when zoomed out and does not become a stripe when zoomed in.
+      const k = Math.max(0.62, Math.min(1.5, cam.f / (field.span * 0.9)));
+      const lines = r.features.map((f) => ({
+        props: f.properties,
+        pts: toScreen(f.geometry.coordinates, v, cam),
+      }));
+      // Casing first, as one continuous object: the whole day reads at a glance.
+      for (const l of lines) {
+        const dim = l.props.i < done;
+        stroke(l.pts, dim ? "rgba(11,26,36,0.12)" : "rgba(11,26,36,0.28)", 12 * k);
+      }
+      for (const l of lines) {
+        const dim = l.props.i < done;
+        stroke(l.pts, dim ? "rgba(242,107,29,0.28)" : "#f26b1d", 9.5 * k);
+      }
+      for (const l of lines) {
+        const dim = l.props.i < done;
+        stroke(l.pts, dim ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.95)", 5.6 * k);
+      }
+      for (const l of lines) {
+        const dim = l.props.i < done;
+        ctx.globalAlpha = dim ? 0.35 : 1;
+        if (l.props.kind === "lift") stroke(l.pts, "#2b4453", 2.4 * k, [5, 4]);
+        else stroke(l.pts, PISTE_COLOUR[l.props.difficulty] || "#7d95a5", 3.8 * k);
+        ctx.globalAlpha = 1;
+      }
+    };
+
+    const drawPins = (v, cam) => {
+      const p = propsRef.current.pins;
+      if (!p?.features?.length) return;
+      for (const feature of p.features) {
+        const [lon, lat] = feature.geometry.coordinates;
+        const { x, z } = field.proj.project(lat, lon);
+        const s = project(x, field.sample(x, z), z, v, cam);
+        const role = feature.properties.role;
+        const r = role === "now" ? 8 : 6;
+
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(11,26,36,0.22)";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = role === "now" ? "#e35205" : role === "finish" ? "#0b1a24" : "#ffffff";
+        ctx.fill();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = role === "start" ? "#0b1a24" : "#ffffff";
+        ctx.stroke();
+
+        ctx.font = "600 12px 'Inter Variable', Inter, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3.5;
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(255,255,255,0.92)";
+        ctx.strokeText(feature.properties.name, s.x, s.y + r + 15);
+        ctx.fillStyle = "#0b1a24";
+        ctx.fillText(feature.properties.name, s.x, s.y + r + 15);
+      }
+    };
+
+    // ---- loop ------------------------------------------------------------
+    let raf = 0;
+    const frame = () => {
+      const v = view.current;
+      const gap = v.targetZoom - v.zoom;
+      if (Math.abs(gap) > 0.001) {
+        v.zoom += gap * 0.14;
+        dirty.current = true;
+      }
+
+      // Redraw only when something moved. 3,600 filled quads a frame is not a
+      // thing to do at 60Hz on a phone in a pocket on a chairlift.
+      if (dirty.current) {
+        dirty.current = false;
+        const cam = fit(v);
+
+        const sky = ctx.createLinearGradient(0, 0, 0, height);
+        sky.addColorStop(0, `rgb(${SKY_TOP.join(",")})`);
+        sky.addColorStop(0.55, "rgb(158,193,217)");
+        sky.addColorStop(1, `rgb(${SKY_HORIZON.join(",")})`);
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, width, height);
+
+        drawTerrain(v, cam);
+        drawGraph(v, cam);
+        drawRoute(v, cam);
+        drawPins(v, cam);
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    // ---- orbit -----------------------------------------------------------
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+    const down = (e) => {
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = "grabbing";
+    };
+    const move = (e) => {
+      if (!dragging) return;
+      const v = view.current;
+      v.bearing += (e.clientX - lastX) * 0.36;
+      v.pitch = Math.max(2, Math.min(85, v.pitch + (e.clientY - lastY) * 0.22));
+      lastX = e.clientX;
+      lastY = e.clientY;
+      dirty.current = true;
+    };
+    const up = (e) => {
+      dragging = false;
+      canvas.style.cursor = "grab";
+      try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+    };
+    const wheel = (e) => {
+      e.preventDefault();
+      const v = view.current;
+      v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+      dirty.current = true;
+    };
+
+    canvas.addEventListener("pointerdown", down);
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+    canvas.addEventListener("wheel", wheel, { passive: false });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", up);
+      canvas.removeEventListener("wheel", wheel);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="app__map"
+      style={{ touchAction: "none", cursor: "grab" }}
+      aria-label="Terrain view of the resort, built from the route graph. Drag to orbit."
+    />
+  );
+}

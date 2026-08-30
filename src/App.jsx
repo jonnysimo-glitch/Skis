@@ -1,0 +1,480 @@
+/**
+ * Skis.
+ *
+ * Resort → Plan → Solving → Choose → Detail → Navigate → Summary, plus a
+ * genuine empty state when the clocks do not allow a route.
+ *
+ * The map is mounted once and never unmounts. Screens are sheet contents over
+ * it, and each one asks the camera to look at something. That is the whole
+ * navigation model — there is no page transition, because the mountain is the
+ * thing you are always looking at.
+ */
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import Sheet from "./ui/Sheet.jsx";
+import FallbackTerrain from "./map/FallbackTerrain.jsx";
+import { hasMapKey } from "./map/config.js";
+
+// MapLibre is ~800KB. Without a key we render the fallback terrain instead and
+// never need it, so it is split out rather than shipped to every visitor.
+const MapCanvas = lazy(() => import("./map/MapCanvas.jsx"));
+
+import ResortScreen from "./screens/ResortScreen.jsx";
+import PlanScreen from "./screens/PlanScreen.jsx";
+import SolvingScreen from "./screens/SolvingScreen.jsx";
+import ChooseScreen from "./screens/ChooseScreen.jsx";
+import DetailScreen from "./screens/DetailScreen.jsx";
+import NavigateScreen from "./screens/NavigateScreen.jsx";
+import SummaryScreen from "./screens/SummaryScreen.jsx";
+import EmptyScreen from "./screens/EmptyScreen.jsx";
+
+import { RESORTS, getResort, defaultResort } from "./resorts/index.js";
+import { NODES, buildEdges } from "./resort.js";
+import { useSolver } from "./lib/useSolver.js";
+import { load, save } from "./lib/persist.js";
+import {
+  detectContext,
+  defaultPlan,
+  toSolverOpts,
+  toggleRefinement,
+  diagnose,
+  LUNCH_MINUTES,
+} from "./lib/plan.js";
+import {
+  graphToGeoJSON,
+  routeToGeoJSON,
+  nodesToGeoJSON,
+  routeBounds,
+  nearestNode,
+} from "./lib/geo.js";
+import { Compass, Layers, Plus, Minus, Close, Info, Back } from "./ui/Icons.jsx";
+
+const EDGES = buildEdges();
+const GRAPH_GEOJSON = graphToGeoJSON(EDGES);
+const EMPTY_FC = { type: "FeatureCollection", features: [] };
+
+/** How tall the sheet opens for each screen. */
+const SNAP_FOR = {
+  resort: "half",
+  plan: "tall",
+  solving: "peek",
+  choose: "half",
+  detail: "half",
+  navigate: "half",
+  summary: "half",
+  empty: "half",
+};
+
+const nowMinutes = () => {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+};
+
+export default function App() {
+  // ---- resort -------------------------------------------------------------
+  const [resortId, setResortId] = useState(() => load("resortId"));
+  const [screen, setScreen] = useState(() => (load("resortId") ? "plan" : "resort"));
+  const resort = getResort(resortId) || defaultResort;
+
+  // ---- profile and plan ---------------------------------------------------
+  const [ability, setAbilityState] = useState(() => load("profile")?.ability ?? "red");
+  const context = useMemo(() => detectContext(nowMinutes()), []);
+  const [plan, setPlan] = useState(() =>
+    defaultPlan(getResort(load("resortId")) || defaultResort, detectContext(nowMinutes()), nowMinutes())
+  );
+  const [gpsNode, setGpsNode] = useState(null);
+  const [locating, setLocating] = useState(false);
+
+  const setAbility = (value) => {
+    setAbilityState(value);
+    save("profile", { ability: value });
+  };
+
+  // ---- solving ------------------------------------------------------------
+  const { solve, solving } = useSolver();
+  const [refine, setRefine] = useState(() => new Set());
+  const [routes, setRoutes] = useState([]);
+  const [opts, setOpts] = useState(null);
+  const [pickIndex, setPickIndex] = useState(0);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [step, setStep] = useState(0);
+  const [diagnosis, setDiagnosis] = useState(null);
+
+  // ---- map ----------------------------------------------------------------
+  const mapControl = useRef(null);
+  const [mapBroken, setMapBroken] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(!hasMapKey && !load("seenMapNote"));
+  const [sheetHeight, setSheetHeight] = useState(0);
+  const useFallback = !hasMapKey || mapBroken;
+
+  const chosen = routes[pickIndex] || null;
+  const shownRoute =
+    screen === "choose" ? routes[previewIndex] || routes[0] || null : chosen;
+
+  const routeGeo = useMemo(() => routeToGeoJSON(shownRoute), [shownRoute]);
+
+  const pins = useMemo(() => {
+    if (screen === "resort") {
+      return nodesToGeoJSON(resort.bases, () => ({ role: "base" }));
+    }
+    if (!shownRoute) {
+      return nodesToGeoJSON([plan.start, plan.finish].filter((v, i, a) => a.indexOf(v) === i), (key) => ({
+        role: key === plan.finish ? "finish" : "start",
+      }));
+    }
+    const startKey = shownRoute.segments[0].from;
+    const finishKey = shownRoute.segments[shownRoute.segments.length - 1].to;
+    const keys = [startKey, finishKey];
+    if (screen === "navigate") {
+      const here = shownRoute.segments[step]?.from;
+      if (here && !keys.includes(here)) keys.push(here);
+    }
+    return nodesToGeoJSON(
+      [...new Set(keys)],
+      (key) =>
+        screen === "navigate" && key === shownRoute.segments[step]?.from
+          ? { role: "now" }
+          : key === finishKey
+            ? { role: "finish" }
+            : { role: "start" }
+    );
+  }, [screen, shownRoute, step, plan.start, plan.finish, resort.bases]);
+
+  const focus = useMemo(() => {
+    if (screen === "resort" || screen === "plan" || screen === "empty") {
+      return {
+        kind: "point",
+        center: resort.center,
+        zoom: resort.zoom,
+        pitch: resort.pitch,
+        bearing: resort.bearing,
+        doneThrough: -1,
+      };
+    }
+    if (screen === "navigate" && shownRoute) {
+      const leg = shownRoute.segments[step];
+      const from = NODES[leg.from];
+      const to = NODES[leg.to];
+      return {
+        kind: "point",
+        center: [(from.lon + to.lon) / 2, (from.lat + to.lat) / 2],
+        zoom: 13.4,
+        pitch: 66,
+        doneThrough: step,
+      };
+    }
+    if (shownRoute) {
+      return { kind: "bounds", bbox: routeBounds(shownRoute), pitch: 58, doneThrough: -1 };
+    }
+    return null;
+  }, [screen, shownRoute, step, resort]);
+
+  // Floating map chrome sits just above the sheet.
+  const chromeBottom = Math.max(16, sheetHeight + 14);
+
+  // ---- actions ------------------------------------------------------------
+
+  const runSolve = useCallback(
+    async (nextPlan, nextAbility, nextRefine, { showSolving = false } = {}) => {
+      const solverOpts = toSolverOpts({
+        plan: nextPlan,
+        ability: nextAbility,
+        refine: nextRefine,
+      });
+      setOpts(solverOpts);
+
+      if (showSolving) setScreen("solving");
+
+      const started = performance.now();
+      const result = await solve(solverOpts);
+      if (!result) return; // superseded by a newer request
+
+      // A solving screen that flashes is worse than no solving screen. Hold it
+      // for a readable beat, but only on a first solve — refine must feel like
+      // the list changing, not a round trip.
+      if (showSolving) {
+        const held = performance.now() - started;
+        if (held < 900) await new Promise((r) => setTimeout(r, 900 - held));
+      }
+
+      setRoutes(result.routes);
+      setPickIndex(0);
+      setPreviewIndex(0);
+
+      if (!result.routes.length) {
+        setDiagnosis(diagnose(nextPlan, nextAbility, solverOpts));
+        setScreen("empty");
+      } else {
+        setScreen("choose");
+      }
+    },
+    [solve]
+  );
+
+  const onSolve = () => runSolve(plan, ability, refine, { showSolving: true });
+
+  const onRefine = (id) => {
+    const next = toggleRefinement(refine, id);
+    setRefine(next);
+    runSolve(plan, ability, next); // re-solves in place, never back to the form
+  };
+
+  const onFix = (id) => {
+    if (id === "laterFinish") {
+      const nextPlan = { ...plan, t1: Math.min(plan.t1 + 45, resort.lastDown) };
+      setPlan(nextPlan);
+      runSolve(nextPlan, ability, refine, { showSolving: true });
+    } else if (id === "dropLunch") {
+      const nextPlan = { ...plan, lunch: false };
+      const next = new Set(refine);
+      next.delete("lunch");
+      setPlan(nextPlan);
+      setRefine(next);
+      runSolve(nextPlan, ability, next, { showSolving: true });
+    } else if (id === "finishHere") {
+      const nextPlan = { ...plan, finish: plan.start };
+      setPlan(nextPlan);
+      runSolve(nextPlan, ability, refine, { showSolving: true });
+    } else if (id === "harder") {
+      const next = toggleRefinement(refine, "harder");
+      setRefine(next);
+      runSolve(plan, ability, next, { showSolving: true });
+    }
+  };
+
+  /** Behind schedule mid-route: re-solve from where you are, with what is left. */
+  const onReplan = (fromNode) => {
+    const nextPlan = { ...plan, start: fromNode, t0: nowMinutes() };
+    setPlan(nextPlan);
+    setStep(0);
+    runSolve(nextPlan, ability, refine, { showSolving: true });
+  };
+
+  const onLocate = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { key, metres } = nearestNode(pos.coords.latitude, pos.coords.longitude);
+        setLocating(false);
+        // A fix five valleys away is not a start node. Say nothing rather than
+        // silently teleporting the user onto the mountain.
+        if (metres > 6000) return;
+        setGpsNode(key);
+        setPlan((p) => ({ ...p, start: key }));
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  };
+
+  const chooseResort = (id) => {
+    setResortId(id);
+    save("resortId", id);
+    const next = getResort(id);
+    setPlan(defaultPlan(next, context, nowMinutes(), gpsNode));
+  };
+
+  const dismissNote = () => {
+    setNoteOpen(false);
+    save("seenMapNote", true);
+  };
+
+  useEffect(() => {
+    if (screen === "navigate") setStep(0);
+  }, [chosen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- render -------------------------------------------------------------
+
+  const MapLayer = useFallback ? (
+    <FallbackTerrain
+      route={routeGeo}
+      graph={GRAPH_GEOJSON}
+      pins={pins}
+      camera={focus}
+      controlRef={mapControl}
+      viewportBottom={sheetHeight}
+    />
+  ) : (
+    <Suspense fallback={<div className="app__map" style={{ background: "#16303f" }} />}>
+      <MapCanvas
+        resort={resort}
+        graph={GRAPH_GEOJSON}
+        route={routeGeo}
+        pins={pins}
+        focus={focus}
+        doneThrough={focus?.doneThrough ?? -1}
+        onFail={() => setMapBroken(true)}
+        controlRef={mapControl}
+      />
+    </Suspense>
+  );
+
+  return (
+    <div className="app">
+      {MapLayer}
+
+      <div className="topbar">
+        {screen !== "resort" && (
+          <button
+            className="iconbtn"
+            aria-label="Back"
+            onClick={() =>
+              setScreen(
+                screen === "plan"
+                  ? "resort"
+                  : screen === "choose" || screen === "empty"
+                    ? "plan"
+                    : screen === "detail"
+                      ? "choose"
+                      : screen === "navigate"
+                        ? "detail"
+                        : "choose"
+              )
+            }
+          >
+            <Back />
+          </button>
+        )}
+        <span className="wordmark">
+          <i className="wordmark__dot" /> Skis
+        </span>
+        <span className="topbar__spacer" />
+      </div>
+
+      <div className="maptools" style={{ bottom: chromeBottom }}>
+        <button
+          className="iconbtn"
+          aria-label="Face north and tilt"
+          onClick={() => mapControl.current?.resetNorth()}
+        >
+          <Compass />
+        </button>
+        <button
+          className="iconbtn"
+          aria-label="Toggle flat and tilted view"
+          onClick={() => mapControl.current?.flat()}
+        >
+          <Layers />
+        </button>
+        <button className="iconbtn" aria-label="Zoom in" onClick={() => mapControl.current?.zoom(1)}>
+          <Plus />
+        </button>
+        <button className="iconbtn" aria-label="Zoom out" onClick={() => mapControl.current?.zoom(-1)}>
+          <Minus />
+        </button>
+      </div>
+
+      {noteOpen && useFallback && (
+        <div className="mapnote" style={{ bottom: chromeBottom }}>
+          <Info width="16" height="16" style={{ flex: "none" }} />
+          <span className="mapnote__t">
+            <b>Schematic terrain</b> — drag to orbit. Add{" "}
+            <code>VITE_MAPTILER_KEY</code> for real relief.
+          </span>
+          <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">
+            <Close width="16" height="16" />
+          </button>
+        </div>
+      )}
+
+      <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
+        {screen === "resort" && (
+          <ResortScreen
+            selected={resortId}
+            onSelect={chooseResort}
+            onContinue={() => setScreen("plan")}
+          />
+        )}
+
+        {screen === "plan" && (
+          <PlanScreen
+            resort={resort}
+            plan={plan}
+            setPlan={setPlan}
+            ability={ability}
+            setAbility={setAbility}
+            context={context}
+            gpsNode={gpsNode}
+            onLocate={onLocate}
+            locating={locating}
+            onSolve={onSolve}
+            onBack={() => setScreen("resort")}
+          />
+        )}
+
+        {screen === "solving" && <SolvingScreen />}
+
+        {screen === "choose" && opts && (
+          <ChooseScreen
+            routes={routes}
+            opts={opts}
+            plan={plan}
+            ability={ability}
+            refine={refine}
+            solving={solving}
+            activeIndex={previewIndex}
+            onHover={setPreviewIndex}
+            onRefine={onRefine}
+            onPick={(i) => {
+              setPickIndex(i);
+              setPreviewIndex(i);
+              setScreen("detail");
+            }}
+            onBack={() => setScreen("plan")}
+          />
+        )}
+
+        {screen === "empty" && diagnosis && (
+          <EmptyScreen
+            diagnosis={diagnosis}
+            plan={plan}
+            resort={resort}
+            onFix={onFix}
+            onBack={() => setScreen("plan")}
+          />
+        )}
+
+        {screen === "detail" && chosen && opts && (
+          <DetailScreen
+            route={chosen}
+            opts={opts}
+            plan={plan}
+            resortId={resort.id}
+            onStart={() => {
+              setStep(0);
+              setScreen("navigate");
+            }}
+            onBack={() => setScreen("choose")}
+          />
+        )}
+
+        {screen === "navigate" && chosen && opts && (
+          <NavigateScreen
+            route={chosen}
+            opts={opts}
+            plan={plan}
+            step={step}
+            onStep={setStep}
+            onFinish={() => setScreen("summary")}
+            onReplan={onReplan}
+            onAbandon={() => setScreen("detail")}
+          />
+        )}
+
+        {screen === "summary" && chosen && opts && (
+          <SummaryScreen
+            route={chosen}
+            opts={opts}
+            plan={plan}
+            onAgain={() => {
+              setRefine(new Set());
+              setScreen("plan");
+            }}
+            onDone={() => setScreen("detail")}
+          />
+        )}
+      </Sheet>
+    </div>
+  );
+}

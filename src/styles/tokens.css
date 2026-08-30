@@ -1,0 +1,56 @@
+/**
+ * Design tokens.
+ *
+ * Direction is Komoot: the map is the hero, UI floats over terrain in a bottom
+ * sheet, and ONE saturated accent carries the route line, the primary button
+ * and active states. Everything else is a cool neutral so the route reads
+ * instantly against snow and rock.
+ *
+ * The accent is a rescue orange. It has to survive being drawn over white snow
+ * AND dark rock, and it cannot be blue, red or black — those three are reserved
+ * as European piste difficulty signals and are not ours to spend on branding.
+ */
+:root {
+  /* One accent, used with discipline. */
+  --accent: #e35205;
+  --accent-deep: #c9430a;   /* white text on this passes AA (4.9:1) */
+  --accent-soft: #fff1e7;
+  --accent-line: #f26b1d;   /* route casing over terrain — brightness over text contrast */
+
+  /* Cool neutrals: snow and rock. */
+  --ink: #0b1a24;
+  --ink-2: #46606f;
+  --ink-3: #7d95a5;
+  --ink-4: #a8bcc8;
+  --surface: #ffffff;
+  --surface-2: #f1f5f8;
+  --surface-3: #e4ecf1;
+  --line: #dce6ec;
+  --line-strong: #c3d3dd;
+
+  /* Domain signals. European piste convention — not decoration, do not restyle. */
+  --piste-blue: #1d6fcc;
+  --piste-red: #c22b37;
+  --piste-black: #101820;
+  --lift: #7d95a5;
+
+  --warn: #a86416;
+  --warn-bg: #fdf5e6;
+  --warn-line: #ecd9ab;
+
+  --display: "Outfit Variable", "Outfit", system-ui, -apple-system, sans-serif;
+  --ui: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-sheet: 26px;
+  --r-pill: 999px;
+
+  --shadow-sheet: 0 -2px 28px rgba(11, 26, 36, 0.16);
+  --shadow-float: 0 2px 14px rgba(11, 26, 36, 0.18);
+  --shadow-card: 0 1px 3px rgba(11, 26, 36, 0.07);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
