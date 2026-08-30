@@ -348,8 +348,11 @@ if (feature("5. Navigation follows the GPS")) {
 
   const first = await text(page);
   check("it opens on leg one", /leg 1 of \d+/i.test(first), first.match(/leg \d+ of \d+/i)?.[0] || "no leg counter");
-  check("it names the next junction, not the next turn", /junction/i.test(first));
-  check("it never says 'turn'", !/next turn/i.test(first));
+  // Naming the junction beats using the word: "to Gabiet" is a place you can
+  // see from the chairlift, "to junction" is a category.
+  const keys = await page.$$eval(".navmetric__k", (n) => n.map((k) => k.textContent.trim()));
+  check("it points at the next junction by name", keys.some((k) => /^to \w/i.test(k)), keys.join(" / "));
+  check("it never says 'turn'", !/turn/i.test(first));
   check("it says it is following you", /Following you/.test(first), first.match(/Following you[^.]*\./)?.[0] || "not following");
   check("the tab bar is out of the way while navigating", await page.$eval(".tabbar", (n) => n.className.includes("hidden")));
 

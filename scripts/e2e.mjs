@@ -440,28 +440,34 @@ try {
     check("committing stores the route for offline use", stored.legs > 0, `${stored.legs} legs`);
     check("and records which resort it belongs to", stored.resort === "monterosa", String(stored.resort));
 
-    check("navigate names the next junction, not a turn", /junction/i.test(await page.$eval(".metrics", (n) => n.textContent)));
+    // The metric points at the junction by name rather than using the word,
+    // which is the principle taken one step further: "to Gabiet" is a place
+    // you can see, "to junction" is a category.
+    const metricKeys = await page.$$eval(".navmetric__k", (n) => n.map((k) => k.textContent.trim()));
+    check("navigate points at a named junction", metricKeys.some((k) => /^to \w/i.test(k)), metricKeys.join(" / "));
+    check("and never says turn", !/turn/i.test(await page.$eval(".nav", (n) => n.textContent)));
     check(
       "the button says where you are going",
-      /Reached/.test(await page.$eval(".sheet__foot .btn", (n) => n.textContent))
+      /Reached/.test(await page.$eval(".nav__foot .btn", (n) => n.textContent))
     );
 
-    const legs = await page.$$eval(".leg", (n) => n.length);
-    const firstBanner = await page.$eval(".nav__do", (n) => n.textContent);
+    const legCount = () => page.$eval(".nav__legcount", (n) => n.textContent);
+    const totalLegs = Number((await legCount()).match(/of (\d+)/)?.[1] || 0);
+    check("it counts the legs", totalLegs > 0, await legCount());
+    const firstInstruction = await page.$eval(".nav__do", (n) => n.textContent);
     await page.click('.nav__foot .btn:has-text("Reached")');
     await page.waitForTimeout(350);
-    check("advancing changes the instruction", (await page.$eval(".nav__do", (n) => n.textContent)) !== firstBanner);
-    check("and marks the leg behind you as done", (await page.$$(".leg--done")).length >= 1);
-    check("exactly one leg is current", (await page.$$(".leg--now")).length === 1);
+    check("advancing changes the instruction", (await page.$eval(".nav__do", (n) => n.textContent)) !== firstInstruction);
+    check("and the counter moves with it", /leg 2 of/i.test(await legCount()), await legCount());
 
     // Walk to the end.
-    for (let i = 0; i < legs + 4; i++) {
+    for (let i = 0; i < totalLegs + 4; i++) {
       const next = await page.$('.nav__foot .btn:has-text("Reached")');
       if (!next) break;
       await next.click();
       await page.waitForTimeout(45);
     }
-    const finish = await page.$('.sheet__foot .btn:has-text("Finish")');
+    const finish = await page.$('.nav__foot .btn:has-text("Finish")');
     check("the last leg offers a finish", finish !== null);
     if (finish) {
       await finish.click();
