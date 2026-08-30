@@ -92,7 +92,7 @@ if (feature("1. Straight there: getting to one place, now")) {
   );
   check(
     "the action says what it does",
-    /Take me there/.test(await page.$eval(".sheet__foot .btn", (n) => n.textContent))
+    /Take me there/.test(await page.$eval(".page__foot .btn", (n) => n.textContent))
   );
   check(
     "lunch is not offered for a transfer",
@@ -108,7 +108,7 @@ if (feature("1. Straight there: getting to one place, now")) {
   await page.selectOption("#p-finish", startVal);
   check(
     "asking to be taken where you already are is refused",
-    await page.$eval(".sheet__foot .btn", (n) => n.disabled)
+    await page.$eval(".page__foot .btn", (n) => n.disabled)
   );
   check(
     "and it says which end to change rather than greying out in silence",
@@ -119,7 +119,7 @@ if (feature("1. Straight there: getting to one place, now")) {
   // A real transfer.
   await page.selectOption("#p-start", "salati");
   await page.selectOption("#p-finish", "champoluc");
-  check("picking two different ends re-enables it", !(await page.$eval(".sheet__foot .btn", (n) => n.disabled)));
+  check("picking two different ends re-enables it", !(await page.$eval(".page__foot .btn", (n) => n.disabled)));
 
   await page.click("text=Take me there");
   await page.waitForSelector(".legs, .empty", { timeout: 20000 });
@@ -433,7 +433,7 @@ if (feature("6. Every location failure says something")) {
     check("a denied permission is stated", /Location is off|Location needs https|No location/.test(body), body.match(/Location[^\n]*/)?.[0] || "silent");
     check("and it still says what to do instead", /Pick a start below/.test(body));
     check("the button is not left spinning", !/Finding you/.test(body));
-    check("the form still works", !(await page.$eval(".sheet__foot .btn", (n) => n.disabled)));
+    check("the form still works", !(await page.$eval(".page__foot .btn", (n) => n.disabled)));
     await solve(page);
     check("and solving is unaffected", (await routeCount(page)) > 0);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));

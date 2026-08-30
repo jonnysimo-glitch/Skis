@@ -555,7 +555,7 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2500);
 
-    check("the app cold-loads with the radio off", (await page.$(".sheet")) !== null);
+    check("the app cold-loads with the radio off", (await page.$(".resortpanel")) !== null);
     check("the map still draws", (await page.$("canvas, .maplibregl-canvas")) !== null);
     check("the committed route survived", (await page.evaluate(() => !!JSON.parse(localStorage.getItem("skis.v1") || "{}").committed)));
     // A reload lands back on the mountain, which is where the tab starts.
@@ -576,6 +576,11 @@ try {
     const page = await newPage(browser);
     await toPlan(page, url);
     await solve(page);
+    // On the route detail rather than the options list: the options list is
+    // wall-to-wall buttons, so a drag across its body is a tap on a route and
+    // the sheet resizes because the screen changed, not because it was dragged.
+    await page.click(".routecard");
+    await page.waitForSelector(".legs", { timeout: 15000 });
 
     const height = () => page.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
     const rest = await height();
@@ -593,8 +598,16 @@ try {
 
     await page.evaluate(() => { document.querySelector(".sheet__body").scrollTop = 200; });
     const beforeScroll = await height();
-    const body = await (await page.$(".sheet__body")).boundingBox();
-    await page.mouse.move(body.x + body.width / 2, body.y + 120);
+    // The leg list is a plain list, so a drag over it is a scroll and nothing
+    // else. Prove that first, or this asserts about the wrong gesture.
+    const over = await page.evaluate(() => {
+      const legs = document.querySelector(".legs").getBoundingClientRect();
+      const at = document.elementFromPoint(legs.x + legs.width / 2, legs.y + 20);
+      return { tag: at?.tagName.toLowerCase(), interactive: !!at?.closest("button, a") };
+    });
+    check("the drag lands on something that is not a control", !over.interactive, over.tag);
+    const body = await (await page.$(".legs")).boundingBox();
+    await page.mouse.move(body.x + body.width / 2, body.y + 20);
     await page.mouse.down();
     await page.mouse.move(body.x + body.width / 2, body.y + 300, { steps: 10 });
     await page.mouse.up();
