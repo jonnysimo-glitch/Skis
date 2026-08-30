@@ -33,16 +33,33 @@ function chunk(type, data) {
   return Buffer.concat([len, body, crc]);
 }
 
-function png(width, height, rgba) {
+/**
+ * @param {boolean} [alpha=true]  false writes truecolour with no alpha channel.
+ *   The App Store icon is rejected outright if it has one, and iOS applies the
+ *   rounded mask itself, so that icon is a flat opaque square.
+ */
+function png(width, height, rgba, alpha = true) {
+  const channels = alpha ? 4 : 3;
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;   // bit depth
-  ihdr[9] = 6;   // truecolour with alpha
-  const raw = Buffer.alloc((width * 4 + 1) * height);
+  ihdr[8] = 8;                 // bit depth
+  ihdr[9] = alpha ? 6 : 2;     // truecolour with or without alpha
+  const stride = width * channels + 1;
+  const raw = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y++) {
-    raw[y * (width * 4 + 1)] = 0; // no filter
-    rgba.copy(raw, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4);
+    raw[y * stride] = 0; // no filter
+    if (alpha) {
+      rgba.copy(raw, y * stride + 1, y * width * 4, (y + 1) * width * 4);
+    } else {
+      for (let x = 0; x < width; x++) {
+        const from = (y * width + x) * 4;
+        const to = y * stride + 1 + x * 3;
+        raw[to] = rgba[from];
+        raw[to + 1] = rgba[from + 1];
+        raw[to + 2] = rgba[from + 2];
+      }
+    }
   }
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -92,7 +109,17 @@ function inPolygon(px, py, poly) {
   return inside;
 }
 
-function render(size, maskable) {
+/**
+ * @param {number} size
+ * @param {'rounded'|'maskable'|'square'} shape
+ *   rounded  the PWA icon, with its own corner radius
+ *   maskable shrunk so it survives a circular crop
+ *   square   full bleed and fully opaque, for the App Store and for iOS,
+ *            which draws the mask itself and rejects an icon that pre-empts it
+ */
+function renderRGBA(size, shape = "rounded") {
+  const maskable = shape === "maskable";
+  const square = shape === "square";
   const rgba = Buffer.alloc(size * size * 4);
   const S = size / 64;
   // Maskable icons must survive a circular crop, so shrink the artwork.
@@ -114,7 +141,8 @@ function render(size, maskable) {
           let colour = null;
           let alpha = 0;
 
-          const bg = roundRect(px, py, size, size, maskable ? 0 : size * 0.22);
+          const radius = maskable || square ? 0 : size * 0.22;
+          const bg = roundRect(px, py, size, size, radius);
           if (bg <= 0) {
             colour = INK;
             alpha = 255;
@@ -141,15 +169,66 @@ function render(size, maskable) {
       rgba[i + 3] = Math.round(a);
     }
   }
-  return png(size, size, rgba);
+  return rgba;
+}
+
+/** The same artwork, encoded. Square icons drop the alpha channel. */
+const render = (size, shape = "rounded") =>
+  png(size, size, renderRGBA(size, shape), shape !== "square");
+
+/**
+ * The launch screen. A square canvas because iOS crops it to whatever the
+ * device is, so anything near an edge is lost: the mark sits well inside.
+ */
+function splash(size) {
+  const rgba = Buffer.alloc(size * size * 4);
+  const mark = Math.round(size * 0.22);
+  // Fill with the app background, then paste the mark in the middle.
+  for (let i = 0; i < size * size; i++) {
+    rgba[i * 4] = INK[0];
+    rgba[i * 4 + 1] = INK[1];
+    rgba[i * 4 + 2] = INK[2];
+    rgba[i * 4 + 3] = 255;
+  }
+  const art = renderRGBA(mark, "rounded");
+  const offset = Math.round((size - mark) / 2);
+  for (let y = 0; y < mark; y++) {
+    for (let x = 0; x < mark; x++) {
+      const from = (y * mark + x) * 4;
+      const a = art[from + 3] / 255;
+      if (!a) continue;
+      const to = ((y + offset) * size + (x + offset)) * 4;
+      for (let c = 0; c < 3; c++) {
+        rgba[to + c] = Math.round(art[from + c] * a + rgba[to + c] * (1 - a));
+      }
+    }
+  }
+  return png(size, size, rgba, false);
 }
 
 mkdirSync("public/icons", { recursive: true });
-for (const [file, size, maskable] of [
-  ["icon-192.png", 192, false],
-  ["icon-512.png", 512, false],
-  ["icon-512-maskable.png", 512, true],
+for (const [file, size, shape] of [
+  ["icon-192.png", 192, "rounded"],
+  ["icon-512.png", 512, "rounded"],
+  ["icon-512-maskable.png", 512, "maskable"],
 ]) {
-  writeFileSync(`public/icons/${file}`, render(size, maskable));
+  writeFileSync(`public/icons/${file}`, render(size, shape));
   console.log(`  public/icons/${file}`);
 }
+
+/**
+ * Source art for the native builds.
+ *
+ * `npx capacitor-assets generate` reads these and produces every size iOS and
+ * Android ask for, which is the whole reason to keep one 1024 master rather
+ * than a folder of hand-cut sizes.
+ */
+mkdirSync("assets", { recursive: true });
+writeFileSync("assets/icon.png", render(1024, "square"));
+console.log("  assets/icon.png              1024, opaque, no corner radius");
+writeFileSync("assets/icon-foreground.png", render(1024, "maskable"));
+console.log("  assets/icon-foreground.png   1024, inset for adaptive masks");
+writeFileSync("assets/splash.png", splash(2732));
+console.log("  assets/splash.png            2732, logo centred on the ink");
+writeFileSync("assets/splash-dark.png", splash(2732));
+console.log("  assets/splash-dark.png       2732, same: the app is dark either way");

@@ -1,0 +1,45 @@
+<!--
+  Keys to add to ios/App/App/Info.plist after `npx cap add ios`.
+
+  Capacitor generates that file; these are the app-specific keys it cannot
+  know about. The location string is not optional in any sense: iOS terminates
+  the app on the first location request if it is missing, and App Review reads
+  it, so it has to say what the app actually does with the position rather than
+  "to provide a better experience".
+-->
+
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Skis uses your position to set your starting point to the nearest lift station and to notice when you reach the next junction while you are skiing. It stays on your phone.</string>
+
+<!--
+  Not requested. The app does not track you in the background: navigation
+  follows along while the screen is on, and stops when you put the phone away.
+  Listing it here as a comment so it is a decision rather than an oversight.
+
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+-->
+
+<!--
+  No non-exempt encryption: the app uses HTTPS and nothing else. Without this
+  key every single upload stops to ask the question by hand.
+-->
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+
+<!--
+  Portrait only. The layout is a full-bleed map with fixed panels designed for
+  one hand; landscape has no design and would ship as a bug. The PWA manifest
+  already says portrait, but iOS does not read that.
+-->
+<key>UISupportedInterfaceOrientations</key>
+<array>
+  <string>UIInterfaceOrientationPortrait</string>
+</array>
+
+<!--
+  The map draws to the edges and the status bar sits over it.
+-->
+<key>UIViewControllerBasedStatusBarAppearance</key>
+<false/>
+<key>UIStatusBarStyle</key>
+<string>UIStatusBarStyleLightContent</string>

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for the app target.
+
+  Copy to ios/App/App/PrivacyInfo.xcprivacy after `npx cap add ios` and add it
+  to the App target in Xcode. Capacitor ships manifests for its own frameworks;
+  this one is for the app itself, and it is the one Apple reads.
+
+  Everything below is a claim about the shipped app that has to stay true:
+  nothing is collected, nothing is tracked, and no data leaves the device
+  except map tile requests, which carry no identifier and no user data.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSPrivacyTracking</key>
+  <false/>
+
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <!--
+        UserDefaults, reached through WKWebView's localStorage, which is where
+        the ability setting, the ski history and the committed route live.
+        CA92.1 is "access info from same app, per documentation": the data is
+        the app's own and never leaves the device.
+      -->
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+    <dict>
+      <!--
+        File timestamps, used by the web view's own cache and by the service
+        worker holding map tiles for offline use. C617.1 is "inside the app
+        container, for the app's own files".
+      -->
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>C617.1</string>
+      </array>
+    </dict>
+    <dict>
+      <!--
+        Disk space, checked before writing a tile cache. E174.1 is "to display
+        to the user or write files": here, to avoid filling the device.
+      -->
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>E174.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

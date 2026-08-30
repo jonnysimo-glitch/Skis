@@ -22,7 +22,9 @@
     "audit": "npm run build && node scripts/audit.mjs",
     "features": "npm run build && node scripts/features.mjs",
     "resort": "node scripts/build-resort.mjs",
-    "resort:query": "node scripts/build-resort.mjs --query"
+    "resort:query": "node scripts/build-resort.mjs --query",
+    "icons": "node scripts/make-icons.mjs",
+    "preflight": "node scripts/preflight.mjs"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",

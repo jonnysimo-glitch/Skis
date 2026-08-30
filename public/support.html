@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a1922" />
+<!-- Set CONTACT@EXAMPLE.COM to the address you want published before
+     submitting. Apple requires a working support URL. -->
+<title>Skis, support</title>
+<style>
+  :root { --ink: #0a1922; --ink-2: #4a6072; --ink-3: #5c7385; --line: #d5e1ea; --accent: #036183; --warn-bg: #fdf4e6; --warn-line: #ecd7a8; --warn: #9a5b12; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 48px 20px 96px;
+    font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    color: var(--ink); background: #fff;
+    max-width: 46rem; margin-inline: auto;
+    -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 32px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 20px; letter-spacing: -0.01em; margin: 40px 0 8px; }
+  h3 { font-size: 17px; margin: 24px 0 4px; }
+  .sub { color: var(--ink-3); margin: 0 0 40px; }
+  p, li { color: var(--ink-2); }
+  li { margin-bottom: 8px; }
+  strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--accent); }
+  .note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 14px; padding: 16px; }
+  .note strong { color: var(--warn); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0 24px; }
+  footer { color: var(--ink-3); font-size: 15px; }
+</style>
+</head>
+<body>
+  <h1>Support</h1>
+  <p class="sub">Skis, the ski day planner.</p>
+
+  <div class="note">
+    <p style="margin:0">
+      <strong>Read this first.</strong> Run names, lift times and queue estimates
+      are provisional and are not yet supplied by the resorts. Do not rely on
+      Skis to tell you a lift is still running. Check the resort's own lift
+      status and last-lift times before committing to a route, especially one
+      that crosses a valley.
+    </p>
+  </div>
+
+  <h2>What Skis is for</h2>
+  <p>
+    Planning a day around the time you have. You say where you are, when you
+    need to be down, and what you are comfortable skiing. It gives you a few
+    routes with different characters, lets you push them around, and then
+    follows you down them.
+  </p>
+  <p>
+    It is not a shortest-path router. Nobody wants the fastest way down a
+    mountain; they want a good day that ends on time.
+  </p>
+
+  <h2>Common questions</h2>
+
+  <h3>The map is a simple grey mountain rather than terrain</h3>
+  <p>
+    That is the fallback, drawn from the resort's own altitudes. It appears when
+    real elevation tiles cannot be reached, which usually means no signal. It
+    works entirely offline by design, and the app stays fully usable on it.
+  </p>
+
+  <h3>It says I am hundreds of kilometres from the resort</h3>
+  <p>
+    Your phone's location is outside the resort, which is what happens when you
+    plan tomorrow from home. Pick a starting point from the list instead.
+  </p>
+
+  <h3>Location is off, or it asks for https</h3>
+  <p>
+    Location needs permission and a secure connection. If you opened Skis over a
+    plain http address on a local network, the browser refuses location and the
+    app says so rather than blaming the permission. Everything else still works;
+    tap when you arrive at each junction.
+  </p>
+
+  <h3>Navigation is not advancing on its own</h3>
+  <p>
+    It advances when your phone reports two positions close to the next
+    junction, or one that nothing contradicts for a few seconds. If the signal
+    is poor it will not guess, and the button at the bottom always works.
+  </p>
+
+  <h3>It says nothing fits</h3>
+  <p>
+    Deliberately. Rather than inventing a route that leaves you on the wrong
+    side of the mountain after the lifts shut, Skis says so and lists what would
+    change it: more time, no lunch, finishing where you started, or opening up a
+    harder grade.
+  </p>
+
+  <h3>Does it work with no signal?</h3>
+  <p>
+    Yes. Saving a route stores the route, the piste graph and the map tiles over
+    it, so a committed day works in airplane mode. That is a requirement rather
+    than a nice-to-have, because alpine coverage is unreliable.
+  </p>
+
+  <h3>How do I delete my data?</h3>
+  <p>
+    Stats, then Clear history. Or delete the app: nothing is stored anywhere
+    else. See <a href="./privacy.html">Privacy</a>.
+  </p>
+
+  <h2>Reporting something</h2>
+  <p>
+    A wrong run name, a lift time that does not match the mountain, or anything
+    that sent you somewhere you did not want to go, is worth reporting. Say
+    which resort, which run or lift, and what it should be.
+  </p>
+
+  <hr />
+  <footer>
+    <a href="mailto:CONTACT@EXAMPLE.COM">CONTACT@EXAMPLE.COM</a>
+    &middot; <a href="./privacy.html">Privacy</a>
+    &middot; <a href="./">Open Skis</a>
+  </footer>
+</body>
+</html>
