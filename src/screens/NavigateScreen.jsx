@@ -191,6 +191,7 @@ export default function NavigateScreen({
             <span>{gpsExplanation(gps.state)}</span>
           </>
         )}
+        {!live && <span className="nav__legcount">Times are from your plan.</span>}
         <span className="nav__legcount">
           Leg {step + 1} of {route.segments.length}
         </span>
@@ -212,21 +213,20 @@ export default function NavigateScreen({
           </div>
         )}
         <div className="nav__actions">
-        {last ? (
-          <button className="btn btn--nav" onClick={onFinish}>
-            <Check width="20" height="20" /> Finish
-          </button>
-        ) : (
-          <button
-            className={`btn btn--nav${following ? " btn--nav-quiet" : ""}`}
-            onClick={() => onStep(step + 1)}
-          >
-            Reached {junction.name} <Arrow width="20" height="20" />
-          </button>
-        )}
+          {last ? (
+            <button className="btn btn--nav" onClick={onFinish}>
+              <Check width="20" height="20" /> Finish
+            </button>
+          ) : (
+            <button
+              className={`btn btn--nav${following ? " btn--nav-quiet" : ""}`}
+              onClick={() => onStep(step + 1)}
+            >
+              Reached {junction.name} <Arrow width="20" height="20" />
+            </button>
+          )}
         </div>
       </footer>
-
     </div>
   );
 }

@@ -574,6 +574,104 @@ if (feature("7. Finishing a day writes it down, once")) {
   await page.context_.close();
 }
 
+// ============================================ 8. BROWSE BEFORE YOU PLAN ==
+if (feature("8. The skiing tab opens on the mountain")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+
+  check("it is not a form", (await page.$("#p-t1")) === null);
+  check("the map is there", (await page.$("canvas")) !== null);
+  const body = await text(page);
+  check("it names the resort", /Monterosa Ski/.test(body));
+  check("and says where that is", /Valle d'Aosta/.test(body));
+  check("it shows what the mountain has", /lifts/i.test(body) && /runs/i.test(body), body.match(/\d+\s*\n?LIFTS/i)?.[0] || "");
+  check("including when the lifts stop", /last down/i.test(body));
+
+  const planText = await page.$eval(".planbtn", (b) => b.textContent.trim());
+  check("there is one button and it says Plan", /Plan/.test(planText), planText);
+  const planBox = await page.$eval(".planbtn", (b) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
+  check("it is a real target", planBox.h >= 44 && planBox.w >= 80, `${planBox.w}x${planBox.h}`);
+
+  check("the resort name is not truncated", await page.$eval(".resortpill__nm", (n) => n.scrollWidth <= n.clientWidth + 1),
+    await page.$eval(".resortpill__nm", (n) => `${n.scrollWidth} in ${n.clientWidth}`));
+  check("changing resort is offered once, not twice",
+    (await page.$$('text=/Ski somewhere else/')).length === 0);
+
+  // Plan is the verb.
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  check("Plan opens the form", (await where(page)) === "plan");
+  await page.click(".sheet__foot .btn--quiet");
+  await page.waitForSelector(".planbtn", { timeout: 10000 });
+  check("and backing out returns to the mountain, not out of the tab",
+    (await page.$(".planbtn")) !== null && (await page.$eval('.tabbar__tab[aria-current="page"] span', (n) => n.textContent)) === "Skiing");
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ================================= 9. NAVIGATION IS A DIFFERENT INTERFACE ==
+if (feature("9. Navigating is pinned, not dragged")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, url);
+  await solve(page);
+  await page.click(".routecard");
+  await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+  check("the route detail is still a sheet", (await page.$(".sheet")) !== null);
+
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 20000 });
+
+  check("navigating is not a sheet", (await page.$(".sheet")) === null);
+  check("there is nothing to drag", (await page.$(".sheet__grab")) === null);
+  check("the tab bar is out of the way", await page.$eval(".tabbar", (n) => n.className.includes("hidden")));
+
+  const head = await page.$eval(".nav__head", (n) => n.getBoundingClientRect().top);
+  check("the instruction is pinned to the top", head <= 1, `${Math.round(head)}px`);
+
+  const nav = await page.evaluate(() => ({
+    doing: document.querySelector(".nav__do")?.textContent.trim(),
+    then: document.querySelector(".nav__then")?.textContent.trim(),
+    grade: document.querySelector(".nav__grade")?.textContent.trim(),
+    metrics: [...document.querySelectorAll(".navmetric__k")].map((m) => m.textContent.trim()),
+    action: document.querySelector(".nav__foot .btn")?.textContent.trim(),
+  }));
+  check("it says what to do", /^(Ride|Ski) /.test(nav.doing || ""), nav.doing);
+  check("and what comes after", /^then (ride|ski) /.test(nav.then || ""), nav.then);
+  check("the grade is stated", ["gondola", "chair", "drag", "cable car", "blue", "red", "black"].includes((nav.grade || "").toLowerCase()), nav.grade);
+  check("there are three numbers, no more", nav.metrics.length === 3, nav.metrics.join(" / "));
+  check("one of them is the junction", nav.metrics.some((m) => /^to /i.test(m)), nav.metrics.join(" / "));
+  check("one of them is when you are back", nav.metrics.some((m) => /due back|over/i.test(m)), nav.metrics.join(" / "));
+  check("the action names where you are going", /^Reached /.test(nav.action || ""), nav.action);
+
+  // Nothing hidden behind a vague label.
+  check("there is no Controls button", (await page.$(".navcontrols")) === null);
+  check("and no drawer to open", (await page.$(".nav__drawer")) === null);
+  check("stopping is one control in the corner", (await page.$(".nav__stop")) !== null);
+
+  const stopBox = await page.$eval(".nav__stop", (b) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
+  check("and it is a real target", stopBox.w >= 44 && stopBox.h >= 44, `${stopBox.w}x${stopBox.h}`);
+
+  // The map has to be reachable between the panels.
+  const gap = await page.evaluate(() => {
+    const head = document.querySelector(".nav__metrics").getBoundingClientRect().bottom;
+    const foot = document.querySelector(".nav__foot").getBoundingClientRect().top;
+    const mid = document.elementFromPoint(window.innerWidth / 2, (head + foot) / 2);
+    return { height: Math.round(foot - head), hits: mid?.tagName?.toLowerCase() };
+  });
+  check("there is map between the panels", gap.height > 200, `${gap.height}px`);
+  check("and a tap in it reaches the map, not the chrome", ["canvas", "div"].includes(gap.hits), gap.hits);
+
+  await page.click(".nav__stop");
+  await page.waitForTimeout(500);
+  check("stopping returns to the route", (await page.$(".sheet")) !== null);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 } finally {
   await browser.close();
   server.close();
