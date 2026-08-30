@@ -156,6 +156,18 @@ export async function toPlan(page, url) {
   await page.waitForSelector("#p-t1", { timeout: 15000 });
 }
 
+/**
+ * Get to the plan form from wherever the app currently is.
+ *
+ * The skiing tab starts on the resort, so after a reload, or after backing out
+ * of anything, the form is one Plan tap away rather than already on screen.
+ */
+export async function toForm(page) {
+  const plan = await page.$(".planbtn");
+  if (plan) await plan.click();
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+}
+
 export const solve = async (page) => {
   await page.click("text=Find routes");
   await page.waitForSelector(".routecard, .empty", { timeout: 15000 });

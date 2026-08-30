@@ -18,6 +18,7 @@ import {
   solve,
   routeCount,
   toMinutes,
+  toForm,
 } from "./harness.mjs";
 
 const HEADED = process.argv.includes("--headed");
@@ -735,8 +736,9 @@ try {
     await page.waitForTimeout(200);
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForSelector("#p-t1", { timeout: 10000 });
-    check("the resort is remembered, so you land on the plan screen", (await page.$("#p-t1")) !== null);
+    await page.waitForSelector(".planbtn", { timeout: 10000 });
+    check("the resort is remembered, so you land on its mountain", (await page.$(".planbtn")) !== null);
+    await toForm(page);
     check(
       "ability is set once in the profile and remembered",
       await page.$eval('button.chip:text-is("Anything")', (n) => n.getAttribute("aria-pressed") === "true")
@@ -745,7 +747,7 @@ try {
     // And it is still overridable from here.
     await page.click('button.chip:text-is("Blue")');
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForSelector("#p-t1");
+    await toForm(page);
     check(
       "changing it here updates the profile too",
       await page.$eval('button.chip:text-is("Blue")', (n) => n.getAttribute("aria-pressed") === "true")
