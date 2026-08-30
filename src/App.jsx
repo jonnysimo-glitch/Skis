@@ -15,9 +15,13 @@ import Sheet from "./ui/Sheet.jsx";
 import FallbackTerrain from "./map/FallbackTerrain.jsx";
 import { hasMapKey } from "./map/config.js";
 
-// MapLibre is ~800KB. Without a key we render the fallback terrain instead and
-// never need it, so it is split out rather than shipped to every visitor.
-const MapCanvas = lazy(() => import("./map/MapCanvas.jsx"));
+// MapLibre is ~800KB and not needed until the map is on screen, so it is split
+// out. If the chunk cannot be fetched at all — offline before it was ever
+// cached, or a failed deploy — resolve to nothing rather than throwing: the
+// schematic terrain is already on screen and simply stays there.
+const MapCanvas = lazy(() =>
+  import("./map/MapCanvas.jsx").catch(() => ({ default: () => null }))
+);
 
 import ResortScreen from "./screens/ResortScreen.jsx";
 import PlanScreen from "./screens/PlanScreen.jsx";
@@ -113,9 +117,19 @@ export default function App() {
   // ---- map ----------------------------------------------------------------
   const mapControl = useRef(null);
   const [mapBroken, setMapBroken] = useState(false);
+  const [mapLive, setMapLive] = useState(false);
   const [noteOpen, setNoteOpen] = useState(!hasMapKey && !load("seenMapNote"));
   const [sheetHeight, setSheetHeight] = useState(0);
-  const useFallback = !hasMapKey || mapBroken;
+
+  // Two map layers, briefly.
+  //
+  // The schematic draws instantly from the graph's own altitudes and needs
+  // neither a GPU nor a network, so it goes up first and there is never an
+  // empty rectangle where the mountain should be. MapLibre loads underneath
+  // it and takes over once it is genuinely painting — real elevation, real
+  // relief. If it never gets there, the schematic simply stays.
+  const showSchematic = mapBroken || !mapLive;
+  const tryMapLibre = !mapBroken;
 
   const chosen = routes[pickIndex] || null;
   const shownRoute =
@@ -323,28 +337,37 @@ export default function App() {
 
   // ---- render -------------------------------------------------------------
 
-  const MapLayer = useFallback ? (
-    <FallbackTerrain
-      route={routeGeo}
-      graph={GRAPH_GEOJSON}
-      pins={pins}
-      camera={focus}
-      controlRef={mapControl}
-      viewportBottom={sheetHeight}
-    />
-  ) : (
-    <Suspense fallback={<div className="app__map" style={{ background: "#16303f" }} />}>
-      <MapCanvas
-        resort={resort}
-        graph={GRAPH_GEOJSON}
-        route={routeGeo}
-        pins={pins}
-        focus={focus}
-        doneThrough={focus?.doneThrough ?? -1}
-        onFail={() => setMapBroken(true)}
-        controlRef={mapControl}
-      />
-    </Suspense>
+  const MapLayer = (
+    <>
+      {tryMapLibre && (
+        <Suspense fallback={null}>
+          <MapCanvas
+            resort={resort}
+            graph={GRAPH_GEOJSON}
+            route={routeGeo}
+            pins={pins}
+            focus={focus}
+            doneThrough={focus?.doneThrough ?? -1}
+            onReady={() => setMapLive(true)}
+            onFail={() => {
+              setMapBroken(true);
+              setMapLive(false);
+            }}
+            controlRef={mapLive ? mapControl : { current: null }}
+          />
+        </Suspense>
+      )}
+      {showSchematic && (
+        <FallbackTerrain
+          route={routeGeo}
+          graph={GRAPH_GEOJSON}
+          pins={pins}
+          camera={focus}
+          controlRef={mapControl}
+          viewportBottom={sheetHeight}
+        />
+      )}
+    </>
   );
 
   return (
@@ -410,7 +433,7 @@ export default function App() {
         </button>
       </div>
 
-      {noteOpen && useFallback && !chromeHidden && (
+      {noteOpen && showSchematic && !chromeHidden && (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           <span className="mapnote__t">

@@ -21,7 +21,7 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.1",
     "@fontsource-variable/outfit": "^5.1.1",
-    "maplibre-gl": "^4.7.1",
+    "maplibre-gl": "^6.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

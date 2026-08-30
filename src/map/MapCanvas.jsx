@@ -6,15 +6,25 @@
  * and the user can orbit and pitch freely from there.
  */
 import { useEffect, useRef } from "react";
-import maplibregl from "maplibre-gl";
+// MapLibre 6 dropped its default export; the classes are named exports now.
+import { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   STYLE_CHAIN,
   styleUrl,
-  terrainSource,
+  hasMapKey,
+  maptilerTerrain,
+  openTerrainStyle,
   TERRAIN_EXAGGERATION,
 } from "./config.js";
 import { addRouteLayers, setData, markProgress } from "./layers.js";
+
+/**
+ * How long to wait for the map to settle before giving up on it. Generous
+ * enough for a slow lift-station connection, short enough that nobody stares
+ * at an empty rectangle wondering if the app is broken.
+ */
+const MAP_RENDER_TIMEOUT_MS = 9000;
 
 export default function MapCanvas({
   resort,
@@ -32,15 +42,35 @@ export default function MapCanvas({
   const mapRef = useRef(null);
   const readyRef = useRef(false);
 
+  /**
+   * Does this browser have what MapLibre needs? Cheap to ask, and a blank blue
+   * rectangle is the worst possible answer to "where am I on the mountain".
+   */
+  const canRender = () => {
+    try {
+      const probe = document.createElement("canvas");
+      return !!(probe.getContext("webgl2") || probe.getContext("webgl"));
+    } catch {
+      return false;
+    }
+  };
+
   // ---- create once -------------------------------------------------------
   useEffect(() => {
     if (!holder.current || mapRef.current) return;
+    if (!canRender()) {
+      onFail?.(new Error("no WebGL"));
+      return undefined;
+    }
     let cancelled = false;
     let styleIndex = 0;
 
-    const map = new maplibregl.Map({
+    const map = new MapLibreMap({
       container: holder.current,
-      style: styleUrl(STYLE_CHAIN[0]),
+      // With a key, the winter basemap brings its own pistes and lifts. Without
+      // one, a style built straight from open elevation data: no basemap, but
+      // the real shape of the mountain rather than a schematic of it.
+      style: hasMapKey ? styleUrl(STYLE_CHAIN[0]) : openTerrainStyle(),
       center: resort.center,
       zoom: resort.zoom,
       pitch: resort.pitch,
@@ -53,23 +83,34 @@ export default function MapCanvas({
     mapRef.current = map;
 
     map.on("error", (event) => {
-      // A style that has moved is recoverable — walk the chain before giving up.
       const failedStyle = event?.error?.status === 403 || event?.error?.status === 404;
-      if (failedStyle && styleIndex < STYLE_CHAIN.length - 1 && !readyRef.current) {
+      if (!failedStyle || readyRef.current) return;
+      // A MapTiler style that has moved is recoverable — walk the chain first,
+      // then drop to the keyless terrain style, and only then give up entirely.
+      if (hasMapKey && styleIndex < STYLE_CHAIN.length - 1) {
         styleIndex += 1;
         map.setStyle(styleUrl(STYLE_CHAIN[styleIndex]));
         return;
       }
-      if (!readyRef.current && failedStyle) onFail?.(event?.error);
+      if (hasMapKey) {
+        styleIndex = STYLE_CHAIN.length;
+        map.setStyle(openTerrainStyle());
+        return;
+      }
+      onFail?.(event?.error);
     });
 
     map.on("style.load", () => {
       if (cancelled) return;
       try {
+        // The keyless style declares its own terrain source and 3D terrain, so
+        // only the MapTiler path needs wiring up here.
         if (!map.getSource("terrain")) {
-          map.addSource("terrain", terrainSource);
+          map.addSource("terrain", maptilerTerrain);
         }
-        map.setTerrain({ source: "terrain", exaggeration: TERRAIN_EXAGGERATION });
+        if (!map.getTerrain()) {
+          map.setTerrain({ source: "terrain", exaggeration: TERRAIN_EXAGGERATION });
+        }
         if (!map.getLayer("sky")) {
           map.addLayer({
             id: "sky",
@@ -83,10 +124,24 @@ export default function MapCanvas({
           });
         }
       } catch {
-        /* Terrain unavailable — the 2D basemap still beats nothing. */
+        /* Terrain unavailable — a flat basemap still beats nothing. */
       }
       addRouteLayers(map, { graph, route, pins });
       readyRef.current = true;
+      // Test hook. The map is the one part of this app that cannot be checked
+      // from the DOM — a camera pointing at empty sky and a layer that failed
+      // to paint look identical from outside. Opt-in via ?maptest=1 so it is
+      // never exposed to an ordinary visitor.
+      if (typeof window !== "undefined" && window.location.search.includes("maptest=1")) {
+        window.__skisMap = map;
+      }
+      // Deliberately NOT onReady here. A parsed style is not a painted map —
+      // WebGL can be present and still draw nothing. The caller is told only
+      // once MapLibre has actually settled a frame, below.
+    });
+
+    map.once("idle", () => {
+      if (cancelled) return;
       onReady?.(map);
     });
 
@@ -95,9 +150,26 @@ export default function MapCanvas({
     map.touchZoomRotate.enable({ around: "center" });
     map.dragRotate.enable();
 
+    /**
+     * Watchdog.
+     *
+     * WebGL can be present and still not draw — a software renderer that
+     * cannot run MapLibre's shaders, a driver blocklist, tiles that never
+     * arrive on a bad connection. All of those look identical from outside:
+     * an empty rectangle where the mountain should be. If nothing has settled
+     * by now, hand over to the schematic view, which needs neither a GPU nor a
+     * network.
+     */
+    const watchdog = setTimeout(() => {
+      if (cancelled) return;
+      if (!map.loaded()) onFail?.(new Error("map did not finish rendering"));
+    }, MAP_RENDER_TIMEOUT_MS);
+    map.once("idle", () => clearTimeout(watchdog));
+
     return () => {
       cancelled = true;
       readyRef.current = false;
+      clearTimeout(watchdog);
       map.remove();
       mapRef.current = null;
     };

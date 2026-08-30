@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -9,13 +9,7 @@ import { VitePWA } from "vite-plugin-pwa";
  * shell; map tiles are cached at runtime as they are fetched, and warmed
  * deliberately when the user commits (see src/lib/offline.js).
  */
-export default defineConfig(({ mode }) => {
-  // Read .env the same way the client does, so the precache decision below
-  // matches what the app will actually load.
-  const env = loadEnv(mode, process.cwd(), "VITE_");
-  const rawKey = (env.VITE_MAPTILER_KEY || "").trim();
-  const hasKey = rawKey.length > 0 && rawKey !== "your_key_here";
-
+export default defineConfig(() => {
   return {
   plugins: [
     react(),
@@ -45,9 +39,10 @@ export default defineConfig(({ mode }) => {
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
-        // Without a key MapLibre is never loaded, so precaching its 800KB
-        // chunk would be a first-visit download nothing can use.
-        globIgnores: hasKey ? [] : ["**/MapCanvas-*.{js,css}"],
+        // MapLibre is precached whether or not there is a key: without one it
+        // still renders real terrain from open elevation data, and a lazy
+        // chunk that is missing offline fails the import rather than merely
+        // degrading. The 3D map is the reason the chunk exists.
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [
           {

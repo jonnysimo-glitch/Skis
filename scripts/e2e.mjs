@@ -111,8 +111,10 @@ async function newPage(browser, { at = [9, 5], geolocation, permissions = [], of
 
 /** Resort screen → plan screen. */
 async function toPlan(page, url) {
-  await page.goto(url, { waitUntil: "networkidle" });
-  await page.waitForSelector(".hero", { timeout: 15000 });
+  // Not networkidle: the map streams elevation tiles for as long as it is on
+  // screen, so the network never goes quiet. Wait for the UI instead.
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
   await page.click(".hero");
   await page.click("text=Plan a day");
   await page.waitForSelector("#p-t1", { timeout: 10000 });
@@ -173,7 +175,7 @@ try {
   // =========================================================== A. RESORT ==
   if (section("A. Resort selection")) {
     const page = await newPage(browser);
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForSelector(".hero");
 
     check("only one resort is offered as live", (await page.$$(".hero")).length === 1);
@@ -614,7 +616,7 @@ try {
   // ========================================================== H. OFFLINE ==
   if (section("H. Airplane mode")) {
     const page = await newPage(browser);
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2500); // let the service worker take control
 
     const sw = await page.evaluate(async () => {
@@ -650,7 +652,7 @@ try {
   // ============================================================ I. SHEET ==
   if (section("I. The sheet and the map")) {
     const page = await newPage(browser);
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForSelector(".hero");
 
     const height = () => page.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
@@ -809,7 +811,7 @@ try {
     await page.click('button.chip:text-is("Anything")');
     await page.waitForTimeout(200);
 
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector("#p-t1", { timeout: 10000 });
     check("the resort is remembered, so you land on the plan screen", (await page.$("#p-t1")) !== null);
     check(
@@ -819,7 +821,7 @@ try {
 
     // And it is still overridable from here.
     await page.click('button.chip:text-is("Blue")');
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector("#p-t1");
     check(
       "changing it here updates the profile too",
@@ -960,6 +962,56 @@ try {
       check("including solving", (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
       await page.context_.close();
     }
+  }
+
+  // =============================================== P. THE MAP ALWAYS DRAWS ==
+  if (section("P. The map always draws something")) {
+    // The one thing a map must never be is an empty rectangle. MapLibre needs
+    // a working GPU and reachable elevation tiles; when either is missing it
+    // paints nothing and reports no error. So the schematic goes up first and
+    // only steps aside once MapLibre has actually settled a frame.
+    const page = await newPage(browser);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+
+    const canvases = () =>
+      page.evaluate(() => {
+        const all = [...document.querySelectorAll("canvas")];
+        const ml = all.find((c) => c.classList.contains("maplibregl-canvas"));
+        const schematic = all.find((c) => !c.classList.contains("maplibregl-canvas"));
+        const top = all[all.length - 1];
+        return {
+          any: all.length > 0,
+          maplibre: !!ml,
+          schematic: !!schematic,
+          visible: top === schematic ? "schematic" : top === ml ? "maplibre" : "none",
+        };
+      });
+
+    await page.waitForTimeout(1500);
+    const early = await canvases();
+    check("something is on screen within a second or two", early.any, JSON.stringify(early));
+    check("and it is the layer that needs no GPU and no network", early.visible === "schematic", early.visible);
+
+    // Past the watchdog, MapLibre has either taken over or given up. Either is
+    // fine; a blank map is not.
+    await page.waitForTimeout(10000);
+    const late = await canvases();
+    check("after the watchdog there is still a map", late.any, JSON.stringify(late));
+    check(
+      "either MapLibre took over or the schematic stayed",
+      late.visible === "maplibre" || late.visible === "schematic",
+      late.visible
+    );
+
+    // And the app is fully usable either way.
+    await page.click(".hero");
+    await page.click("text=Plan a day");
+    await page.waitForSelector("#p-t1", { timeout: 15000 });
+    await solve(page);
+    check("the app works whichever map is showing", (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
   }
 
 } finally {
