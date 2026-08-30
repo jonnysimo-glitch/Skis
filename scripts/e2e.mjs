@@ -555,7 +555,7 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2500);
 
-    check("the app cold-loads with the radio off", (await page.$(".resortpanel")) !== null);
+    check("the app cold-loads with the radio off", (await page.$(".tabbar")) !== null);
     check("the map still draws", (await page.$("canvas, .maplibregl-canvas")) !== null);
     check("the committed route survived", (await page.evaluate(() => !!JSON.parse(localStorage.getItem("skis.v1") || "{}").committed)));
     // A reload lands back on the mountain, which is where the tab starts.
