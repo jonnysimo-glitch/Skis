@@ -358,6 +358,28 @@ export default function FallbackTerrain({
       const spanV = Math.max(v1 - v0, 1e-6);
       const f = Math.min(availW / spanU, availH / spanV) * v.zoom;
 
+      // Pan is unbounded by nature: it is a screen-space nudge applied after
+      // the camera has framed the subject, so nothing stops you flicking the
+      // mountain off the edge and being left with an empty sky and no way back.
+      //
+      // Two things have to hold. You can always bring any part of the subject
+      // to the middle of the screen, which needs a limit of half the subject
+      // when the subject is larger than the frame. And a good part of it stays
+      // in view, which needs a much tighter limit when it is smaller: allowing
+      // its centre to reach the frame edge is enough to leave a sliver of
+      // mountain at the bottom and a screen full of sky.
+      // Based on how much bigger the subject is than the frame, not on its
+      // total size: fit() sizes it TO the frame, so "half the subject" is
+      // "half the frame" and never binds. The excess is what you need to be
+      // able to scroll through when zoomed in, plus a small allowance so the
+      // view can be nudged off centre at rest.
+      const OVERSCROLL = 0.22;
+      const limitX = Math.max(0, f * spanU - availW) / 2 + availW * OVERSCROLL;
+      const limitY = Math.max(0, f * spanV - availH) / 2 + availH * OVERSCROLL;
+      v.panX = Math.max(-limitX, Math.min(limitX, v.panX));
+      v.panY = Math.max(-limitY, Math.min(limitY, v.panY));
+      v.panLimit = { x: limitX, y: limitY };
+
       return {
         f,
         ox: padX + availW / 2 - (f * (u0 + u1)) / 2 + v.panX,
@@ -537,6 +559,13 @@ export default function FallbackTerrain({
       }
 
       if (Math.hypot(glide.x, glide.y) > 0.15) {
+        // A flick that reaches the edge stops there. Left running it would keep
+        // pushing against the stop for the rest of the glide.
+        const lim = v.panLimit;
+        if (lim) {
+          if (Math.abs(v.panX + glide.x) > lim.x) glide.x = 0;
+          if (Math.abs(v.panY + glide.y) > lim.y) glide.y = 0;
+        }
         v.panX += glide.x;
         v.panY += glide.y;
         glide.x *= GLIDE_DECAY;

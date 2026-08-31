@@ -857,6 +857,103 @@ if (feature("11. It works without a mouse or a screen")) {
   }
 }
 
+// ================================= 12. THE MAP CANNOT BE THROWN AWAY ==
+if (feature("12. You cannot scroll the mountain off the screen")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1400);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  if (!(await page.$(SEL))) {
+    check("the schematic terrain is the layer on screen", false, "MapLibre took over; nothing to measure");
+    await page.context_.close();
+  } else {
+    /** How much of the canvas is not sky. Sky is the only blue-dominant thing. */
+    const land = () =>
+      page.$eval(SEL, (c) => {
+        const g = c.getContext("2d");
+        const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
+        let hit = 0;
+        let total = 0;
+        for (let y = 0; y < height; y += 8) {
+          for (let x = 0; x < width; x += 8) {
+            const i = (y * width + x) * 4;
+            total++;
+            if (!(data[i + 2] > data[i] + 12 && data[i + 2] > data[i + 1] + 6)) hit++;
+          }
+        }
+        return Math.round((hit / total) * 100);
+      });
+
+    const box = await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const fling = async (dx, dy) => {
+      for (let i = 0; i < 4; i++) {
+        await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.w / 2 + dx, box.y + box.h / 2 + dy, { steps: 8 });
+        await page.mouse.up();
+      }
+      await page.waitForTimeout(1100);
+    };
+
+    const rest = await land();
+    check("there is terrain on screen to begin with", rest > 15, `${rest}% of the canvas`);
+
+    // Pan is a screen-space offset with nothing bounding it by nature, so each
+    // direction gets flung hard enough to clear the viewport several times over.
+    for (const [dir, dx, dy] of [
+      ["left", -240, 0], ["up", 0, -240], ["right", 480, 0],
+      ["down", 0, 480], ["diagonally", -300, 300],
+    ]) {
+      await fling(dx, dy);
+      const seen = await land();
+      check(`flinging ${dir} cannot empty the screen`, seen > 15, `${seen}% still terrain`);
+    }
+
+    // And zoomed in you must still be able to reach the far side, or the clamp
+    // has traded one problem for another.
+    await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      for (let i = 0; i < 6; i++) {
+        c.dispatchEvent(new WheelEvent("wheel", { deltaY: -240, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(900);
+    // Comparing the land percentage is too weak: the same fraction of sky can
+    // survive a view that has genuinely moved. Fingerprint the pixels instead.
+    const print = () =>
+      page.$eval(SEL, (c) => {
+        const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+        let h = 0;
+        for (let y = 0; y < height; y += 16) {
+          for (let x = 0; x < width; x += 16) {
+            const i = (y * width + x) * 4;
+            h = (h * 31 + data[i] + data[i + 1] * 3 + data[i + 2] * 7) | 0;
+          }
+        }
+        return h;
+      });
+    // Fling back the other way. Flinging further into the stop is correctly a
+    // no-op, so pushing the same direction again proves nothing: the first
+    // version of this check read "identical pixels" and blamed the app.
+    const before = await print();
+    await fling(200, -120);
+    const after = await print();
+    const shifted = await land();
+    check("zoomed in, panning still moves the view", before !== after, before === after ? "identical pixels" : "view moved");
+    check("and still cannot empty it", shifted > 15, `${shifted}%`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
 } finally {
   await browser.close();
   server.close();
