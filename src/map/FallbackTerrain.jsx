@@ -42,6 +42,38 @@ const MIN_PITCH = 0;
 const MAX_PITCH = 75;
 const VERT_EXAGGERATION = 2.4;
 const SUN = normalise([-0.5, 0.66, -0.56]);
+/**
+ * The block.
+ *
+ * The mountain is given thickness: a rim under the edge of the terrain, and a
+ * flat plane closing the bottom, so it reads as an object rather than a cut-out
+ * floating in nothing.
+ *
+ * The rim is a constant thickness following the ground, and that is the whole
+ * trick. The obvious construction is a proper box: drop each edge straight down
+ * to the floor. It cannot be made to work here. The bounding box cuts through
+ * mountainside on every side, so whichever wall faces the camera has its top at
+ * around 3,200 m and hangs 2,000 m down the screen in front of the resort. That
+ * is not a framing or a bearing problem: it was measured at four bearings and
+ * the near edge is high ground at all of them, because the valleys run through
+ * the middle of this bbox rather than along its sides.
+ *
+ * Nor is it a colour problem, which is the trap. In rock brown the wall is
+ * obviously a wall. In a blue-white a shade off the snow the same wall is
+ * invisible, so it looks fixed while still hiding half the mountain, with the
+ * piste lines drawn over the top of it. If a change here makes the model look
+ * better, check what it is covering before believing it.
+ */
+const SKIRT = 0.17;
+const SKIRT_LIT = [236, 243, 249];
+const SKIRT_SHADE = [214, 227, 238];
+const BASE_COLOUR = [199, 216, 230];
+// How far the slab may run past the side edges, and how much of the free
+// height it fills. Bleeding the corners is deliberate: a diorama that stops
+// short of the frame reads as a small object, not as terrain.
+const BLOCK_BLEED = 1.34;
+const BLOCK_FILL = 0.46;
+
 const SKY_TOP = [104, 158, 196];
 const SKY_HORIZON = [216, 234, 244];
 
@@ -183,10 +215,12 @@ function surfaceColour(alt, lo, hi, shade, haze) {
   else if (t < 0.56) c = [168, 178, 180]; // rock and scree
   else if (t < 0.72) c = [214, 226, 233]; // old snow
   else c = [246, 250, 253];              // snowfield
-  const k = 0.46 + 0.72 * shade;
+  const k = 0.62 + 0.56 * shade;
   c = [c[0] * k, c[1] * k, c[2] * k];
-  // Atmospheric perspective: distant ridges wash toward the sky.
-  c = mix(c, SKY_HORIZON, haze * 0.72);
+  // A touch of aerial perspective so far ridges sit back, but only a touch.
+  // Washing the surface into the sky is what makes a solid model look like a
+  // transparency laid over it, and this one is meant to read as an object.
+  c = mix(c, SKY_HORIZON, haze * 0.16);
   return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
 }
 
@@ -198,6 +232,7 @@ export default function FallbackTerrain({
   controlRef,
   viewportBottom = 0,
   viewportTop = 0,
+  block = false,
   nodes = MONTEROSA_NODES,
   makeProjector = monterosaProjector,
 }) {
@@ -209,7 +244,7 @@ export default function FallbackTerrain({
     bearing: -28, pitch: 56, zoom: 1, targetZoom: 1, panX: 0, panY: 0,
   });
   const dirty = useRef(true);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block });
 
   // Rebuilt when the mountain changes, or a new resort would be drawn with the
   // previous one's terrain and slab.
@@ -230,7 +265,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -327,7 +362,10 @@ export default function FallbackTerrain({
 
     /** World points the camera should keep in shot. */
     const targets = () => {
-      const { route: r, camera: cam } = propsRef.current;
+      const { route: r, camera: cam, block: asBlock } = propsRef.current;
+      // An object you look at whole. Framed tightly inside it, its sides sit
+      // off screen and project across the view instead of bounding it.
+      if (asBlock) return whole();
       if (cam?.kind === "point" && cam.center) {
         // Navigating a leg: frame tightly around that leg.
         const [lon, lat] = cam.center;
@@ -373,7 +411,13 @@ export default function FallbackTerrain({
 
       const spanU = Math.max(u1 - u0, 1e-6);
       const spanV = Math.max(v1 - v0, 1e-6);
-      const f = Math.min(availW / spanU, availH / spanV) * v.zoom;
+      // A pitched slab projects wide and shallow, so fitting both axes is
+      // always width-bound and leaves a small model adrift in sky. Let the
+      // corners bleed off the sides and fill the height instead, which is what
+      // makes it read as a diorama you are looking into.
+      const f = (propsRef.current.block
+        ? Math.min((availW / spanU) * BLOCK_BLEED, (availH * BLOCK_FILL) / spanV)
+        : Math.min(availW / spanU, availH / spanV)) * v.zoom;
 
       // Pan is unbounded by nature: it is a screen-space nudge applied after
       // the camera has framed the subject, so nothing stops you flicking the
@@ -444,11 +488,83 @@ export default function FallbackTerrain({
         }
       }
 
+      // ---- the block -------------------------------------------------------
+      // Pushed onto the same list so the painter's sort puts near faces in
+      // front of the terrain and far ones behind, with no second pass.
+      if (propsRef.current.block) {
+        const thickness = Math.max(hi - lo, 1) * SKIRT;
+        const base = lo - thickness;
+
+        /**
+         * One strip of the rim.
+         *
+         * `out` is the direction the face looks, which decides whether it is
+         * drawn at all. Without that test both sides of every face are painted,
+         * the inner face of the far side shows over the terrain, and the model
+         * reads as an open tray.
+         */
+        const side = (xa, za, ha, xb, zb, hb, out) => {
+          const step = Math.max(dx, dz);
+          const mx = (xa + xb) / 2;
+          const mz = (za + zb) / 2;
+          if (project(mx + out[0] * step, base, mz + out[1] * step, v, cam).depth >=
+              project(mx, base, mz, v, cam).depth) return; // facing away
+
+          const p1 = project(xa, ha, za, v, cam);
+          const p2 = project(xb, hb, zb, v, cam);
+          quads.push({
+            // Depth from the top corners only. Averaging a top and a bottom
+            // describes a point halfway down and sorts a near face behind
+            // terrain it stands in front of.
+            depth: (p1.depth + p2.depth) / 2,
+            pts: [
+              p1,
+              p2,
+              project(xb, Math.max(hb - thickness, base), zb, v, cam),
+              project(xa, Math.max(ha - thickness, base), za, v, cam),
+            ],
+            flat: out[0] !== 0 ? SKIRT_SHADE : SKIRT_LIT,
+          });
+        };
+
+        const edge = (i, j, di, dj, out) =>
+          side(
+            minX + dx * i, minZ + dz * j, heights[at(i, j)],
+            minX + dx * (i + di), minZ + dz * (j + dj), heights[at(i + di, j + dj)],
+            out
+          );
+
+        for (let i = 0; i < GRID; i++) {
+          edge(i, 0, 1, 0, [0, -1]);
+          edge(i, GRID, 1, 0, [0, 1]);
+        }
+        for (let j = 0; j < GRID; j++) {
+          edge(0, j, 0, 1, [-1, 0]);
+          edge(GRID, j, 0, 1, [1, 0]);
+        }
+
+        // The underside, one flat tone, so it is a box and not a shell.
+        quads.push({
+          depth: Infinity, // behind everything; only seen from below
+          pts: [
+            project(minX, base, minZ, v, cam),
+            project(maxX, base, minZ, v, cam),
+            project(maxX, base, maxZ, v, cam),
+            project(minX, base, maxZ, v, cam),
+          ],
+          flat: BASE_COLOUR,
+        });
+      }
+
       quads.sort((p, q) => q.depth - p.depth); // painter's algorithm
       const dSpan = dMax - dMin || 1;
       for (const q of quads) {
         const haze = Math.max(0, Math.min(1, (q.depth - dMin) / dSpan));
-        const fill = surfaceColour(q.alt, lo, hi, q.shade, haze);
+        // Flat means exactly that: one tone, no relief shading and no haze.
+        // The block is an object the mountain sits in, not more mountain.
+        const fill = q.flat
+          ? `rgb(${q.flat[0]},${q.flat[1]},${q.flat[2]})`
+          : surfaceColour(q.alt, lo, hi, q.shade, haze);
         const [a, b, c, d] = q.pts;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);

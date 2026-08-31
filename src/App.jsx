@@ -507,6 +507,7 @@ export default function App() {
           viewportBottom={
             navigating ? NAV_FOOT_H : exploring ? PLAN_BUTTON_H + 28 : sheetHeight
           }
+          block={exploring}
           viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}
