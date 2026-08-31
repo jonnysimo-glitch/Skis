@@ -18,15 +18,45 @@ export default function SettingsSheet({ ability, setAbility, onClose }) {
   const close = useRef(onClose);
   close.current = onClose;
 
-  // A dialog closes on Escape and takes focus off whatever is behind it. Mount
-  // only: re-running this would drag focus back to Close on every ability tap.
+  // A dialog closes on Escape and keeps focus inside itself. `aria-modal`
+  // promises the rest of the page is inert; without a trap that promise is a
+  // lie, and tabbing walks straight out into the map behind it.
+  //
+  // Mount only: re-running this would drag focus back to Close on every
+  // ability tap.
   useEffect(() => {
+    const focusables = () =>
+      [...(panel.current?.querySelectorAll("button, [href], select, input, [tabindex]:not([tabindex='-1'])") ?? [])]
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+
     const onKey = (e) => {
-      if (e.key === "Escape") { e.stopPropagation(); close.current(); }
+      if (e.key === "Escape") { e.stopPropagation(); close.current(); return; }
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      // Wrap at both ends, and pull focus back in if it has escaped already.
+      if (!panel.current?.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
+    // Whatever opened this gets focus back when it closes.
+    const opener = document.activeElement;
     window.addEventListener("keydown", onKey);
-    panel.current?.querySelector("button")?.focus({ preventScroll: true });
-    return () => window.removeEventListener("keydown", onKey);
+    focusables()[0]?.focus({ preventScroll: true });
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (opener instanceof HTMLElement) opener.focus({ preventScroll: true });
+    };
   }, []);
 
   return (

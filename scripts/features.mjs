@@ -766,6 +766,97 @@ if (feature("10. Map chrome only where there is a map")) {
   await page.context_.close();
 }
 
+// ================================================= 11. USABLE WITHOUT SIGHT ==
+if (feature("11. It works without a mouse or a screen")) {
+  const page = await newPage(browser, { at: [9, 30] });
+
+  const semantics = () =>
+    page.evaluate(() => {
+      const vis = (el) => {
+        const s = getComputedStyle(el), r = el.getBoundingClientRect();
+        return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0;
+      };
+      const unnamed = [...document.querySelectorAll("button, a[href], select")]
+        .filter(vis)
+        .filter((el) => !((el.getAttribute("aria-label") || el.textContent || "").trim()
+          || el.labels?.[0]?.textContent.trim()))
+        .map((el) => el.tagName.toLowerCase() + "." + (el.className || "").split(" ")[0]);
+      const loudIcons = [...document.querySelectorAll("svg")]
+        .filter(vis)
+        .filter((s) => !s.hasAttribute("aria-hidden") && !s.hasAttribute("role") && !s.querySelector("title"))
+        .length;
+      const headings = [...document.querySelectorAll("h1,h2,h3,h4,h5,h6")].filter(vis).map((h) => +h.tagName[1]);
+      return { unnamed, loudIcons, headings, main: !!document.querySelector("main, [role=main]") };
+    });
+
+  const screens = [];
+  const record = async (name) => { await page.waitForTimeout(300); screens.push([name, await semantics()]); };
+
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await record("home");
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await record("explore");
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await record("plan");
+  await solve(page);
+  await record("choose");
+  await page.click(".routecard");
+  await page.waitForSelector(".legs", { timeout: 15000 });
+  await record("detail");
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 20000 });
+  await record("navigate");
+
+  const bad = (pick) => screens.filter(([, v]) => pick(v)).map(([n]) => n);
+  check("every control has a name a screen reader can read",
+    bad((v) => v.unnamed.length).length === 0,
+    screens.flatMap(([n, v]) => v.unnamed.map((u) => `${n}:${u}`)).join(", ") || "all named");
+  check("decorative icons are hidden from it, so it is not read noise",
+    bad((v) => v.loudIcons > 0).length === 0,
+    screens.map(([n, v]) => `${n}:${v.loudIcons}`).filter((x) => !x.endsWith(":0")).join(", ") || "none announced");
+  check("there is exactly one h1 per screen", bad((v) => v.headings.filter((h) => h === 1).length > 1).length === 0);
+  check("and heading levels do not skip",
+    bad((v) => v.headings.some((h, i) => i && h - v.headings[i - 1] > 1)).length === 0,
+    screens.map(([n, v]) => `${n}:${v.headings.join("")}`).join(" "));
+  check("there is a main landmark to skip the chrome with", bad((v) => !v.main).length === 0);
+  await page.context_.close();
+
+  // The settings dialog says aria-modal. That has to be true.
+  {
+    const page = await newPage(browser, { at: [9, 30] });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+    await page.click(".hero");
+    await page.click('.iconbtn[aria-label="Settings"]');
+    await page.waitForSelector(".modal", { timeout: 10000 });
+
+    const inside = () => page.evaluate(() => !!document.activeElement?.closest(".modal"));
+    check("opening it moves focus into the dialog", await inside());
+
+    let escaped = 0;
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      if (!(await inside())) { escaped = i + 1; break; }
+    }
+    check("tabbing cannot walk out of it", escaped === 0, escaped ? `escaped after ${escaped} tabs` : "12 tabs, still inside");
+
+    for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+Tab");
+    check("nor can shift-tabbing", await inside());
+
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    check("escape closes it", (await page.$(".modal")) === null);
+    check("and focus goes back to what opened it",
+      await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Settings"));
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
 } finally {
   await browser.close();
   server.close();

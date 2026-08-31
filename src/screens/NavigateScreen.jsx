@@ -139,9 +139,9 @@ export default function NavigateScreen({
           {isLift ? <Lift width="30" height="30" /> : <Descend width="30" height="30" />}
         </div>
         <div className="nav__what">
-          <div className="nav__do">
+          <h1 className="nav__do">
             {isLift ? "Ride" : "Ski"} {leg.name}
-          </div>
+          </h1>
           <div className="nav__then">
             {next
               ? `then ${next.kind === "lift" ? "ride" : "ski"} ${next.name}`

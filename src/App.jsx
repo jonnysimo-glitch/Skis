@@ -512,7 +512,7 @@ export default function App() {
   );
 
   return (
-    <div className="app" style={{ "--sheet-floor": `${sheetFloor}px` }}>
+    <main className="app" style={{ "--sheet-floor": `${sheetFloor}px` }}>
       {MapLayer}
 
       <div className="topbar">
@@ -579,6 +579,10 @@ export default function App() {
       {/* Only once the schematic is what you are actually going to be looking
           at. Without a key that is immediate; with one it means MapLibre gave
           up, and gating on that stops the note flashing while it loads. */}
+      {/* The mountain has no visible heading, being a map. Screen readers still
+          need somewhere to land. */}
+      {exploring && <h1 className="visually-hidden">{resort.name}</h1>}
+
       {/* Plan sits in the thumb zone rather than a top corner. This is a phone
           held in one gloved hand, and it is the one thing on this screen you
           do every single time. */}
@@ -722,6 +726,6 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
-    </div>
+    </main>
   );
 }

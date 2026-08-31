@@ -1,7 +1,16 @@
-/** Inline icons. Small set, one stroke weight, no dependency. */
+/**
+ * Inline icons. Small set, one stroke weight, no dependency.
+ *
+ * Every one of these is decorative: each button that carries an icon also
+ * carries a label or an aria-label, so a screen reader announcing "graphic"
+ * beside it is noise. Hidden by default here rather than at each of the
+ * hundred or so call sites, and `{...p}` still wins if one ever needs a name.
+ */
 const base = {
   width: 20,
   height: 20,
+  "aria-hidden": true,
+  focusable: "false",
   viewBox: "0 0 20 20",
   fill: "none",
   stroke: "currentColor",
