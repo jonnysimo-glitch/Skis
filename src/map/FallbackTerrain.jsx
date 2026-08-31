@@ -36,6 +36,15 @@ const DIM_ACCENT = "rgba(42, 196, 238, 0.3)";
 const GLIDE_DECAY = 0.92;
 
 /**
+ * How far to soften the terrain when compositing it, in CSS pixels.
+ *
+ * Wide enough to dissolve the steps between flat quads completely. It can be
+ * this wide because the blurred copy is cut back to the sharp silhouette
+ * before it is composited, so only the inside of the mountain is softened.
+ */
+const TERRAIN_BLUR = 2.6;
+
+/**
  * Pitch limits. 0 is straight down, which is as far as the camera goes: there
  * is no under the map. The ceiling matches MapLibre's `maxPitch` so tilting
  * feels the same whichever layer is currently drawing, since they swap
@@ -56,6 +65,20 @@ const MAX_PITCH = 75;
  * the cut-out read as an object on a table.
  */
 const HOME = { bearing: 152, pitch: 46, zoom: 1 };
+
+/**
+ * The bearing that puts north at the top of the screen.
+ *
+ * 180 rather than 0, because resort.js maps north to -z and the projection
+ * looks along +z: at bearing 0 north is behind the camera and sits at the
+ * bottom of the frame. Verified rather than reasoned about, in field.test.js.
+ *
+ * Deliberately not HOME. The opening view is a composition, chosen because
+ * Monterosa runs east to west and looks like a model of a mountain from 152;
+ * from due north it is edge-on and flat. The compass is a compass, though, and
+ * pressing one has exactly one meaning.
+ */
+const NORTH_UP = 180;
 
 /**
  * Camera slack.
@@ -165,6 +188,8 @@ export default function FallbackTerrain({
     ...HOME, targetZoom: HOME.zoom, panX: 0, panY: 0,
   });
   const dirty = useRef(true);
+  const lastCam = useRef(null);
+  const projectRef = useRef(null);
   const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block });
 
   // Rebuilt when the mountain changes, or a new resort would be drawn with the
@@ -209,6 +234,17 @@ export default function FallbackTerrain({
       view.current.bearing = deg;
       dirty.current = true;
     };
+    // Where a lat/lon lands on the canvas right now. The heading arrow is
+    // painted on a canvas in the same colour as the dot it sits under, so the
+    // only way to check it points where it should is to work out where that
+    // is and compare.
+    window.__skisProject = (lon, lat) => {
+      const f = fieldRef.current;
+      if (!f || !lastCam.current) return null;
+      const { x, z } = f.proj.project(lat, lon);
+      const s2 = projectRef.current(x, f.sample(x, z), z, view.current, lastCam.current);
+      return { x: s2.x, y: s2.y };
+    };
     return () => clearInterval(tick);
   }, []);
 
@@ -216,7 +252,14 @@ export default function FallbackTerrain({
     if (!controlRef) return;
     controlRef.current = {
       orbit: (deg) => { view.current.bearing += deg; dirty.current = true; },
+      // Two controls, two meanings, the way a map app has them. The compass
+      // faces north and does nothing else to the framing you have chosen; the
+      // recentre goes back to the opening composition, bearing and all.
       resetNorth: () => {
+        view.current.bearing = NORTH_UP;
+        dirty.current = true;
+      },
+      resetView: () => {
         Object.assign(view.current, HOME, { targetZoom: HOME.zoom, panX: 0, panY: 0 });
         dirty.current = true;
       },
@@ -236,14 +279,25 @@ export default function FallbackTerrain({
     let width = 0;
     let height = 0;
 
+    const off = document.createElement("canvas");
+    const offCtx = off.getContext("2d");
+    const blur = document.createElement("canvas");
+    const blurCtx = blur.getContext("2d");
+    let dpr = 1;
+
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = canvas.getBoundingClientRect();
       width = rect.width || 430;
       height = rect.height || 900;
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
+      off.width = canvas.width;
+      off.height = canvas.height;
+      blur.width = canvas.width;
+      blur.height = canvas.height;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
       dirty.current = true;
     };
     resize();
@@ -397,9 +451,10 @@ export default function FallbackTerrain({
       const p = unit(x, y, z, v);
       return { x: cam.ox + p.u * cam.f, y: cam.oy + p.v * cam.f, depth: p.depth };
     };
+    projectRef.current = project;
 
     // ---- terrain ---------------------------------------------------------
-    const drawTerrain = (v, cam) => {
+    const drawTerrain = (v, cam, g) => {
       const { heights, at, shades, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
@@ -513,17 +568,17 @@ export default function FallbackTerrain({
           ? `rgb(${q.flat[0]},${q.flat[1]},${q.flat[2]})`
           : surfaceColour(q.alt, lo, hi, q.shade, haze);
         const [a, b, c, d] = q.pts;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.lineTo(c.x, c.y);
-        ctx.lineTo(d.x, d.y);
-        ctx.closePath();
-        ctx.fillStyle = fill;
-        ctx.fill();
-        ctx.strokeStyle = fill; // hides seams between adjacent quads
-        ctx.lineWidth = 0.6;
-        ctx.stroke();
+        g.beginPath();
+        g.moveTo(a.x, a.y);
+        g.lineTo(b.x, b.y);
+        g.lineTo(c.x, c.y);
+        g.lineTo(d.x, d.y);
+        g.closePath();
+        g.fillStyle = fill;
+        g.fill();
+        g.strokeStyle = fill; // hides seams between adjacent quads
+        g.lineWidth = 0.6;
+        g.stroke();
       }
     };
 
@@ -727,6 +782,7 @@ export default function FallbackTerrain({
       if (dirty.current) {
         dirty.current = false;
         const cam = fit(v);
+        lastCam.current = cam;
 
         const sky = ctx.createLinearGradient(0, 0, 0, height);
         sky.addColorStop(0, `rgb(${SKY_TOP.join(",")})`);
@@ -738,7 +794,43 @@ export default function FallbackTerrain({
         // Terrain first, then everything on it. The pistes and the route are
         // drawn over the surface rather than into it, so a run on the far side
         // of a ridge stays visible — see section 15 in scripts/features.mjs.
-        drawTerrain(v, cam);
+        // The terrain is drawn as flat filled quads, so every one of the 3,600
+        // is a single tone with a hard step to its neighbour, and close up it
+        // reads as tiling rather than as ground. More quads is the obvious
+        // answer and does not fit: GRID 90 is 52fps on a laptop, so a third of
+        // that on a phone.
+        //
+        // So it is painted once into an offscreen surface and composited back
+        // through a small blur, which costs one drawImage and dissolves the
+        // steps. The route and the pistes go on afterwards, on the real
+        // canvas, and stay sharp.
+        offCtx.setTransform(1, 0, 0, 1, 0, 0);
+        offCtx.clearRect(0, 0, off.width, off.height);
+        offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawTerrain(v, cam, offCtx);
+
+        // Blur it, then cut the blur back to the sharp shape.
+        //
+        // Blurring straight onto the canvas softens the outline as much as the
+        // interior, and past about a pixel the mountain starts to look out of
+        // focus rather than smooth. Compositing the blurred copy through the
+        // sharp one with destination-in keeps only the pixels the sharp
+        // terrain covers, so the silhouette and the slab's edges stay crisp
+        // while the facets inside them dissolve. That buys a blur wide enough
+        // to actually work.
+        blurCtx.setTransform(1, 0, 0, 1, 0, 0);
+        blurCtx.clearRect(0, 0, blur.width, blur.height);
+        blurCtx.filter = `blur(${TERRAIN_BLUR * dpr}px)`;
+        blurCtx.drawImage(off, 0, 0);
+        blurCtx.filter = "none";
+        blurCtx.globalCompositeOperation = "destination-in";
+        blurCtx.drawImage(off, 0, 0);
+        blurCtx.globalCompositeOperation = "source-over";
+
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(blur, 0, 0);
+        ctx.restore();
         drawGraph(v, cam);
         drawRoute(v, cam);
         drawPins(v, cam);

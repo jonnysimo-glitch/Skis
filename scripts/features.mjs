@@ -609,7 +609,7 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   check("there is no panel over it", (await page.$(".sheet, .resortpanel")) === null);
   check("and nothing to drag", (await page.$(".sheet__grab")) === null);
   check("the map has its controls here, where there is a map",
-    (await page.$$(".maptools .iconbtn")).length === 3);
+    (await page.$$(".maptools .iconbtn")).length === 4);
 
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body), body.replace(/\n/g, " ").slice(0, 60));
@@ -778,7 +778,7 @@ if (feature("10. Map chrome only where there is a map")) {
   await page.waitForTimeout(300);
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  check("the mountain does, and they are all there", (await chrome()) >= 3, `${await chrome()}`);
+  check("the mountain does, and they are all there", (await chrome()) >= 4, `${await chrome()}`);
 
   await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
@@ -985,7 +985,7 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
       const v = window.__skisView;
       return { x: v.panX, lim: v.panLimit?.x ?? 0 };
     });
-    await page.click("[aria-label='Face north and tilt']");
+    await page.click("[aria-label='Recentre the view']");
     await page.waitForTimeout(700);
     const cxx = box.x + box.w / 2;
     const cyy = box.y + box.h / 2;
@@ -1290,7 +1290,7 @@ if (feature("16. One gesture at a time")) {
       return { zoom: v.targetZoom, bearing: v.bearing, pitch: v.pitch };
     };
     const reset = async () => {
-      await page.tap("[aria-label='Face north and tilt']");
+      await page.tap("[aria-label='Recentre the view']");
       await page.waitForTimeout(500);
     };
     const twoFinger = (frames) =>
@@ -1408,6 +1408,102 @@ if (feature("16. One gesture at a time")) {
       Math.abs(b.pitch - a.pitch) > 8, `pitch moved ${(b.pitch - a.pitch).toFixed(0)} degrees`);
     check("and does not zoom instead", Math.abs(b.zoom - a.zoom) < 0.02,
       `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
+
+    // ---- and the compass means north ---------------------------------------
+    // A compass button has exactly one meaning. It used to return to the
+    // opening view, which is a composition at bearing 152 and not north at all.
+    const needle = () => page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue("--map-north")));
+    await page.evaluate(() => window.__skisSetBearing(40));
+    await page.waitForTimeout(500);
+    const turned = await needle();
+    check("the needle turns with the map", Math.min(turned, 360 - turned) > 20,
+      `${turned} degrees round from up`);
+    await page.tap("[aria-label='Face north']");
+    await page.waitForTimeout(700);
+    const home = await needle();
+    check("and tapping it faces north", Math.min(home, 360 - home) < 2,
+      `${home} degrees round from up`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
+// ===================== 17. THE ARROW POINTS WHERE YOU ARE GOING ==
+// The dot on the map carries a tip showing which way to go next. It is painted
+// on a canvas in the dot's own colour, so checking it needs the projection: ask
+// the map where the ends of the current leg land, then look at which way the
+// pixels beyond the dot's edge lie.
+if (feature("17. The arrow points where you are going")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, `${url}?maptest=1`);
+  await solve(page);
+  await page.click(".routecard");
+  await page.waitForSelector(".sheet__foot .btn");
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 10000 });
+  await page.waitForTimeout(1800);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  if (!(await page.$(SEL))) {
+    check("the cut-out is on screen", false, "no schematic canvas");
+    await page.context_.close();
+  } else {
+    const offBy = async () => {
+      const ends = await page.evaluate(() => {
+        const l = window.__skisNavLeg;
+        if (!l || !window.__skisProject) return null;
+        return { from: window.__skisProject(l.from[0], l.from[1]), to: window.__skisProject(l.to[0], l.to[1]) };
+      });
+      if (!ends?.from || !ends?.to) return null;
+      const arrow = await page.evaluate(({ sel, at }) => {
+        const c = document.querySelector(sel);
+        const dpr = c.width / c.getBoundingClientRect().width;
+        const R = 40;
+        const x0 = Math.max(0, Math.round((at.x - R) * dpr));
+        const y0 = Math.max(0, Math.round((at.y - R) * dpr));
+        const w = Math.min(c.width - x0, Math.round(2 * R * dpr));
+        const h = Math.min(c.height - y0, Math.round(2 * R * dpr));
+        if (w <= 0 || h <= 0) return null;
+        const { data } = c.getContext("2d").getImageData(x0, y0, w, h);
+        // Only past the dot's own edge: it is r=8 with a 2px ring, so anything
+        // beyond 11px from its centre is arrow. The centroid of dot plus arrow
+        // shifts about a pixel, which is far too little to take an angle from.
+        let vx = 0, vy = 0, far = 0;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            if (!(Math.abs(data[i]) < 14 && Math.abs(data[i + 1] - 0x77) < 14 && Math.abs(data[i + 2] - 0xa3) < 14)) continue;
+            const px = (x0 + x) / dpr - at.x;
+            const py = (y0 + y) / dpr - at.y;
+            const d = Math.hypot(px, py);
+            if (d < 11) continue;
+            vx += px / d; vy += py / d; far++;
+          }
+        }
+        return far ? { ang: Math.atan2(vy, vx), far } : null;
+      }, { sel: SEL, at: ends.from });
+      if (!arrow) return null;
+      const want = Math.atan2(ends.to.y - ends.from.y, ends.to.x - ends.from.x);
+      return { deg: Math.abs((((arrow.ang - want) * 180) / Math.PI + 540) % 360 - 180), far: arrow.far };
+    };
+
+    // Four legs, because a single one can be right by accident: the first
+    // happened to sit close to the direction of travel even when the reading
+    // was pure noise.
+    const seen = [];
+    for (let step = 0; step < 4; step++) {
+      const r = await offBy();
+      if (r) seen.push(r);
+      check(`leg ${step + 1}: the arrow points at the end of this leg`,
+        r !== null && r.deg < 12, r ? `${r.deg.toFixed(0)} degrees off, ${r.far} arrow pixels` : "could not read it");
+      const next = await page.$(".nav__foot .btn--nav");
+      if (!next) break;
+      await next.click();
+      await page.waitForTimeout(900);
+    }
+    check("and it was actually drawn every time", seen.length === 4 && seen.every((r) => r.far >= 4),
+      seen.map((r) => r.far).join(", "));
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }

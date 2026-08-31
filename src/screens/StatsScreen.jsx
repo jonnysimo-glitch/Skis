@@ -47,7 +47,10 @@ export default function StatsScreen({ version, onChanged }) {
           </div>
           <div className="stat">
             <span className="stat__v">
-              {(t.vertical / 1000).toFixed(1)}<span className="stat__u">k m</span>
+              {/* Metres with separators, the same as every other vertical in
+                  the app. The compact form was a literal "k m", meaning 11.9
+                  thousand metres, and it read as a typo or as kilometres. */}
+              {t.vertical.toLocaleString()}<span className="stat__u"> m</span>
             </span>
             <span className="stat__k">descended</span>
           </div>

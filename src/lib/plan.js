@@ -243,15 +243,26 @@ export function legClocks(route, startClock) {
  * Why nothing fits, in plain language, plus the changes that would actually
  * unblock it. Never invent a route that strands someone; do say what to change.
  */
-export function diagnose(plan, ability, opts) {
+export function diagnose(plan, ability, opts, resort) {
   const window = plan.t1 - plan.t0;
   const sameBase = plan.start === plan.finish;
+  // Whether there is any later finish to offer, or whether the mountain itself
+  // is the thing in the way.
+  const shutsAt = resort?.lastDown;
+  const roomToExtend = shutsAt == null || plan.t1 < shutsAt - 1;
 
   if (window < 25) {
     return {
       headline: "There isn't enough time between those two clocks.",
-      body: `${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)} is ${window} minutes. One lap here is closer to 20 minutes before you have queued for anything.`,
-      fixes: ["laterFinish", ...(plan.lunch ? ["dropLunch"] : [])],
+      body: roomToExtend
+        ? `${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)} is ${window} minutes. One lap here is closer to 20 minutes before you have queued for anything.`
+        // No fix to offer, so the copy names the constraint and stops. The
+        // reader can draw the conclusion; spelling it out was editorialising.
+        : `${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)} is ${window} minutes, and the last lift is at ${minutesToClock(shutsAt)}. One lap here is closer to 20 minutes.`,
+      fixes: [
+        ...(roomToExtend ? ["laterFinish"] : []),
+        ...(plan.lunch ? ["dropLunch"] : []),
+      ],
     };
   }
 

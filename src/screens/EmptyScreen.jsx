@@ -9,11 +9,22 @@ import { minutesToClock } from "../lib/plan.js";
 import { NODES } from "../resort.js";
 import { Warning, Arrow } from "../ui/Icons.jsx";
 
+/**
+ * Each returns null when it would not actually change anything.
+ *
+ * A fix that cannot help is worse than no fix: at 16:20, with the last lift at
+ * 16:30, "give yourself until 16:30" was offered against a plan that already
+ * ran to 16:30. Tapping it re-solved the same impossible day and returned here.
+ */
 const FIXES = {
-  laterFinish: (plan, resort) => ({
-    title: `Give yourself until ${minutesToClock(Math.min(plan.t1 + 45, resort.lastDown))}`,
-    sub: "45 more minutes is usually the difference.",
-  }),
+  laterFinish: (plan, resort) => {
+    const later = Math.min(plan.t1 + 45, resort.lastDown);
+    if (later <= plan.t1 + 1) return null; // the mountain shuts first
+    return {
+      title: `Give yourself until ${minutesToClock(later)}`,
+      sub: `${later - plan.t1} more minutes is usually the difference.`,
+    };
+  },
   dropLunch: () => ({
     title: "Ski through lunch",
     sub: "Buys back 45 minutes.",
@@ -45,6 +56,8 @@ export default function EmptyScreen({ diagnosis, plan, resort, onFix, onBack }) 
           <p className="empty__big">{diagnosis.headline}</p>
           <p className="empty__p">{diagnosis.body}</p>
 
+          {/* Only what is actually left. When nothing can help, the copy
+              above has already said so and a list of dead ends adds nothing. */}
           <ul className="fixlist">
             {(diagnosis.fixes || []).map((id) => {
               const fix = FIXES[id]?.(plan, resort);

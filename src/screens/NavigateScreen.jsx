@@ -134,6 +134,14 @@ export default function NavigateScreen({
   const overrun = projectedFinish - plan.t1;
 
   const junction = NODES[leg.to];
+  // Test hook, same opt-in as the map's. The arrow is painted on a canvas in
+  // the dot's own colour, so a check needs to know which leg is current.
+  if (typeof window !== "undefined" && window.location.search.includes("maptest=1")) {
+    window.__skisNavLeg = {
+      from: [NODES[leg.from].lon, NODES[leg.from].lat],
+      to: [NODES[leg.to].lon, NODES[leg.to].lat],
+    };
+  }
   const isLift = leg.kind === "lift";
 
   // The distance reads better than the plan once there is a fix to compute it

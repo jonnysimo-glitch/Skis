@@ -155,6 +155,18 @@ console.log("\nWHICH WAY BEARING TURNS THE PICTURE");
     at10.v < at0.v, `a landmark on the right goes ${at0.v.toFixed(3)} to ${at10.v.toFixed(3)}`);
   check("and it is a real turn, not a wobble", Math.abs(at10.v - at0.v) > 0.005,
     `${Math.abs(at10.v - at0.v).toFixed(4)} of a screen per 10 degrees`);
+
+  // Which bearing actually faces north, for the compass button to reset to.
+  // 180, not 0: resort.js maps north to -z and the projection looks along +z,
+  // so at bearing 0 north is behind the camera, at the bottom of the frame.
+  const northOf = (bearing) => {
+    const u = toUnit(mono, mono.cx, mono.cy, mono.cz - mono.span * 0.3, view(bearing));
+    return ((Math.atan2(u.u, -u.v) * 180) / Math.PI + 360) % 360;
+  };
+  check("bearing 180 puts north at the top of the screen", northOf(180) < 1 || northOf(180) > 359,
+    `${northOf(180).toFixed(1)} degrees round from up`);
+  check("and bearing 0 puts it at the bottom, which is why it is not 0",
+    Math.abs(northOf(0) - 180) < 1, `${northOf(0).toFixed(1)} degrees round from up`);
 }
 
 console.log("\nAND IT IS THE SAME MOUNTAIN EVERY TIME");

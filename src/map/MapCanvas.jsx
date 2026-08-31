@@ -192,7 +192,15 @@ export default function MapCanvas({
     if (!controlRef) return;
     controlRef.current = {
       orbit: (deg) => mapRef.current?.easeTo({ bearing: (mapRef.current.getBearing() + deg), duration: 550 }),
-      resetNorth: () => mapRef.current?.easeTo({ bearing: 0, pitch: 60, duration: 650 }),
+      // North only. The framing you have chosen is yours to keep.
+      resetNorth: () => mapRef.current?.easeTo({ bearing: 0, duration: 650 }),
+      resetView: () => mapRef.current?.easeTo({
+        center: resort.center,
+        zoom: resort.zoom,
+        pitch: resort.pitch,
+        bearing: resort.bearing,
+        duration: 700,
+      }),
       zoom: (delta) => mapRef.current?.easeTo({ zoom: mapRef.current.getZoom() + delta, duration: 350 }),
     };
   }, [controlRef]);

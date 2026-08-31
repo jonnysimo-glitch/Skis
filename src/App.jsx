@@ -58,7 +58,7 @@ import {
   routeBounds,
   nearestNode,
 } from "./lib/geo.js";
-import { Compass, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
+import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
 
 const EDGES = buildEdges();
 const GRAPH_GEOJSON = graphToGeoJSON(EDGES);
@@ -232,10 +232,15 @@ export default function App() {
 
   const pins = useMemo(() => {
     if (!shownRoute) {
+      // Nothing on the mountain until there is a reason for it. The resort
+      // screen is the resort: a marker on your base before you have asked for
+      // anything says nothing you did not already know, and it is the only
+      // thing on an otherwise clean map. Ends appear once you are choosing
+      // them on the plan screen, and the route takes over from there.
+      if (screen === "explore") return nodesToGeoJSON([], () => ({}));
       // Start wins when a node is both. Most days are a loop, so start and
       // finish are the same place, and asking "is this the finish" first
-      // painted the one pin as a destination: on the resort screen, before any
-      // planning at all, your own base showed up as a black finish marker.
+      // painted the one pin as a destination.
       return nodesToGeoJSON([plan.start, plan.finish].filter((v, i, a) => a.indexOf(v) === i), (key) => ({
         role: key === plan.start ? "start" : "finish",
       }));
@@ -394,7 +399,7 @@ export default function App() {
         setScreen("choose");
       } else if (!result.routes.length) {
         // The refined ability is what actually constrained the search.
-        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts));
+        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts, resort));
         setScreen("empty");
       } else {
         setScreen("choose");
@@ -613,10 +618,19 @@ export default function App() {
       >
         <button
           className="iconbtn iconbtn--compass"
-          aria-label="Face north and tilt"
+          aria-label="Face north"
           onClick={() => mapControl.current?.resetNorth()}
         >
           <Compass />
+        </button>
+        {/* Two controls, two meanings. The compass faces north and leaves your
+            framing alone; this puts the whole camera back where it started. */}
+        <button
+          className="iconbtn"
+          aria-label="Recentre the view"
+          onClick={() => mapControl.current?.resetView()}
+        >
+          <Locate />
         </button>
         <button className="iconbtn" aria-label="Zoom in" onClick={() => mapControl.current?.zoom(1)}>
           <Plus />
