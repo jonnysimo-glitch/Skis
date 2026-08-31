@@ -12,6 +12,7 @@
 import { NODES } from "../src/resort.js";
 import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR } from "../src/map/field.js";
 import { DWELL_MS as DWELL } from "../src/lib/progress.js";
+import { PNG } from "pngjs";
 import {
   serve,
   newPage,
@@ -1534,6 +1535,116 @@ if (feature("17. The arrow points where you are going")) {
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
+}
+
+// ===================== 18. THE REST OF THE DAY, WITHOUT LEAVING NAVIGATION ==
+// Navigate is pinned on purpose: nothing on it can be dragged out of the way by
+// a glove. That is also why the whole route needs a button rather than a drag —
+// on a chairlift the question is the way home, not the next hundred metres.
+if (feature("18. The rest of the day, without leaving navigation")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, url);
+  await solve(page);
+  await page.click(".routecard");
+  await page.waitForSelector(".sheet__foot .btn");
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 10000 });
+  await page.waitForTimeout(1200);
+
+  // Three legs in, so there is a past, a present and a future to show.
+  for (let i = 0; i < 3; i++) {
+    await page.click(".nav__foot .btn--nav");
+    await page.waitForTimeout(400);
+  }
+  await page.waitForTimeout(600);
+
+  const legTotal = await page.evaluate(() => window.__skisRouteLegs ?? null);
+  check("the map is what you see until you ask for the list",
+    (await page.$(".nav__all")) === null, "no panel at rest");
+
+  const handle = await page.$(".nav__more");
+  check("and there is a button to ask with", handle !== null);
+
+  await page.click(".nav__more");
+  await page.waitForTimeout(500);
+
+  const rows = await page.$$(".nav__all .leg");
+  check("it opens the whole route, not just what is left",
+    legTotal === null ? rows.length > 8 : rows.length === legTotal,
+    `${rows.length} legs listed`);
+
+  const nowRows = await page.$$(".nav__all .leg--now");
+  check("with the leg you are on marked once", nowRows.length === 1, `${nowRows.length} marked now`);
+
+  const nowIndex = await page.evaluate(() =>
+    [...document.querySelectorAll(".nav__all .leg")].findIndex((n) => n.classList.contains("leg--now")));
+  check("and it is the leg navigation is actually on", nowIndex === 3, `index ${nowIndex}, expected 3`);
+
+  // A leg behind you has a real arrival time and this is not it, so it shows
+  // none rather than the pace implied by where you are now.
+  const times = await page.evaluate(() =>
+    [...document.querySelectorAll(".nav__all .leg")].map((n) => ({
+      done: n.classList.contains("leg--done"),
+      t: n.querySelector(".leg__t")?.textContent.trim() ?? "",
+    })));
+  check("legs behind you do not carry an invented clock time",
+    times.slice(0, 3).every((r) => r.done && r.t === ""), JSON.stringify(times.slice(0, 3)));
+  check("legs ahead of you all carry one",
+    times.slice(3).every((r) => /^\d\d:\d\d$/.test(r.t)),
+    times.slice(3).map((r) => r.t).join(" ") || "none");
+  // Reading down the list, the times only ever go forward.
+  const ahead = times.slice(3).map((r) => Number(r.t.slice(0, 2)) * 60 + Number(r.t.slice(3)));
+  check("and they run forwards", ahead.every((v, i) => i === 0 || v >= ahead[i - 1]),
+    `${ahead[0]} to ${ahead[ahead.length - 1]}`);
+
+  // The point of a pinned screen is that the thing you came to tap is still
+  // there. Opening the route must not bury it.
+  const stillThere = await page.$(".nav__foot .btn--nav");
+  check("the button you came to tap is still on screen", stillThere !== null);
+  const covered = await page.evaluate(() => {
+    const b = document.querySelector(".nav__foot .btn--nav")?.getBoundingClientRect();
+    if (!b) return null;
+    const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+    return hit?.closest(".btn--nav") !== null;
+  });
+  check("and nothing is sitting on top of it", covered === true);
+
+  // No hole through to the terrain: the panel and its footer are one surface.
+  // Read the composited screen, not the DOM. elementFromPoint answers "what
+  // would a tap hit", and the footer catches taps whether or not you can see
+  // through it — so it called a fully transparent footer solid. What matters
+  // here is only what the eye gets.
+  const box = await page.evaluate(() => {
+    const f = document.querySelector(".nav__foot").getBoundingClientRect();
+    return { y: Math.round(f.y) + 3, h: Math.round(f.height) - 6, w: Math.round(window.innerWidth) };
+  });
+  const png = PNG.sync.read(await page.screenshot());
+  const at = (x, y) => {
+    const i = (png.width * y + x) << 2;
+    return [png.data[i], png.data[i + 1], png.data[i + 2]];
+  };
+  const scale = png.width / box.w;
+  // The panel is one flat colour. Terrain behind a translucent footer is not:
+  // it carries the sky gradient, the shading and the route line.
+  const surface = at(Math.round(4 * scale), Math.round((box.y - 30) * scale));
+  let seam = null;
+  for (const x of [3, box.w - 4]) {
+    for (let y = box.y; y < box.y + box.h && seam === null; y += 3) {
+      const px = at(Math.round(x * scale), Math.round(y * scale));
+      const off = Math.max(...px.map((v, i) => Math.abs(v - surface[i])));
+      if (off > 18) seam = `${x},${y} is ${px.join()} against ${surface.join()}`;
+    }
+  }
+  check("the map does not show through the panel's footer", seam === null,
+    seam === null ? "solid" : `terrain visible at ${seam}`);
+
+  await page.click(".nav__more");
+  await page.waitForTimeout(500);
+  check("and it puts the map back", (await page.$(".nav__all")) === null);
+  check("with the instruction never having gone away",
+    (await page.$(".nav__head .nav__do")) !== null);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
 }
 
 } finally {

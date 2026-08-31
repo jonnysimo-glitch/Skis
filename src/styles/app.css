@@ -1113,6 +1113,48 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   margin-top: auto;
   padding: var(--s-3) var(--gutter) calc(var(--safe-bottom) + var(--s-5));
   background: linear-gradient(to top, rgba(11, 26, 36, 0.6), rgba(11, 26, 36, 0));
+  display: grid; gap: var(--s-2);
+}
+
+/* The rest of the day, over the map.
+
+   The pinned panel has room for the leg you are on and the one after it. On a
+   chairlift the question is usually the whole way home, and dragging is not an
+   answer here: this screen is deliberately pinned so nothing moves inside a
+   glove. So it is a button, and it goes to the panel directly. */
+.nav__more {
+  justify-self: stretch;
+  display: flex; align-items: center; justify-content: center; gap: var(--s-2);
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  background: rgba(11, 26, 36, 0.72);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  color: #fff;
+  font-size: var(--t-footnote); font-weight: 600;
+  box-shadow: var(--e-1);
+}
+.nav__more:active { background: rgba(11, 26, 36, 0.86); }
+/* Over the panel there is no terrain to sit on, so the footer stops
+   pretending to float and becomes the bottom of the panel. */
+.nav__foot--solid { background: var(--surface); }
+/* Against the panel a surface-coloured pill disappears; it needs the step. */
+.nav__more--open { background: var(--surface-2); color: var(--ink); box-shadow: none; }
+.nav__more--open:active { background: var(--n-10); }
+
+.nav__all {
+  flex: 1; min-height: 0;
+  background: var(--surface);
+  display: flex; flex-direction: column;
+}
+.nav__allbody {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--s-4) var(--gutter) var(--s-6);
+  -webkit-mask-image: var(--scrollfade);
+  mask-image: var(--scrollfade);
 }
 /* Same height as every other primary; the shadow is what separates it from
    the terrain behind it. */

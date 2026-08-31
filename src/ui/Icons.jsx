@@ -22,6 +22,12 @@ const base = {
 export const Back = (p) => (
   <svg {...base} {...p}><path d="M12 4 6 10l6 6" /></svg>
 );
+export const ChevronDown = (p) => (
+  <svg {...base} {...p}><path d="M4 7.5 10 13.5l6-6" /></svg>
+);
+export const ChevronUp = (p) => (
+  <svg {...base} {...p}><path d="M4 12.5 10 6.5l6 6" /></svg>
+);
 export const Close = (p) => (
   <svg {...base} {...p}><path d="M5 5l10 10M15 5 5 15" /></svg>
 );

@@ -22,7 +22,9 @@ import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
 import { LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
 import { NODES } from "../resort.js";
-import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Close } from "../ui/Icons.jsx";
+import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Close, ChevronDown, ChevronUp } from "../ui/Icons.jsx";
+import { LegList } from "../ui/RouteBits.jsx";
+import { legClocks } from "../lib/plan.js";
 
 /** Why the screen is not following along, in words a skier can act on. */
 function gpsExplanation(state) {
@@ -57,6 +59,10 @@ export default function NavigateScreen({
   // produces nonsense like "29 minutes ahead, back at 06:49". In that case the
   // screen runs off the plan's own clock and says so.
   const [statusOpen, setStatusOpen] = useState(true);
+  // The rest of the day, over the map. The pinned panel only has room for the
+  // leg you are on and the one after it, and on a chairlift the question is
+  // usually about the whole run home rather than the next hundred metres.
+  const [expanded, setExpanded] = useState(false);
   const foot = useRef(null);
   // The footer is not a fixed height: the overrun banner adds about ninety
   // pixels to it. Anything positioned above it has to know, or the zoom
@@ -133,6 +139,7 @@ export default function NavigateScreen({
   const drift = live ? Math.max(0, wall - startedAt.current) - plannedElapsed : 0;
   const projectedFinish = clock + remaining + (opts.lunch ? LUNCH_MINUTES : 0);
   const overrun = projectedFinish - plan.t1;
+  const clocks = legClocks(route, clock - plannedElapsed);
 
   const junction = NODES[leg.to];
   const isLift = leg.kind === "lift";
@@ -201,6 +208,7 @@ export default function NavigateScreen({
           explanation only needs reading once: after that it is a caption
           sitting on the terrain you are trying to look at. Where you are in the
           route is worth keeping, so that is what stays. */}
+      {!expanded && (
       <div className={`nav__status${statusOpen ? "" : " nav__status--small"}`}>
         {statusOpen && (
           <>
@@ -231,10 +239,39 @@ export default function NavigateScreen({
           </button>
         )}
       </div>
+      )}
 
-      {/* The map is what sits here. Left alone so it can be dragged. */}
+      {/* The map is what sits here, unless the whole route is over it. */}
 
-      <footer className="nav__foot" ref={foot}>
+      {expanded && (
+        <div className="nav__all">
+          <div className="nav__allbody">
+            <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>
+              {route.title}
+            </div>
+            <LegList
+              route={route}
+              clocks={clocks}
+              current={step}
+              doneThrough={step}
+            />
+          </div>
+        </div>
+      )}
+
+      <footer className={`nav__foot${expanded ? " nav__foot--solid" : ""}`} ref={foot}>
+        <button
+          className={`nav__more${expanded ? " nav__more--open" : ""}`}
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          {expanded ? <ChevronDown width="18" height="18" /> : <ChevronUp width="18" height="18" />}
+          {expanded
+            ? "Back to the map"
+            : last
+              ? "The whole route"
+              : `The rest of the day · ${route.segments.length - step - 1} to go`}
+        </button>
         {overrun > 0 && (
           <div className="nav__over">
             <Warning width="17" height="17" style={{ flex: "none" }} />

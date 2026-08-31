@@ -80,7 +80,12 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
               </span>
               <span className="leg__sub">{sub}</span>
             </span>
-            {clocks && <span className="leg__t">{minutesToClock(clocks[i])}</span>}
+            {/* A leg already behind you has a real arrival time, and this is
+                not it: nothing records when you actually tapped through, so
+                the clock here is only the pace implied by where you are now.
+                Blank beats a wrong time on a screen whose whole job is
+                getting you down before the lifts stop. */}
+            {clocks && <span className="leg__t">{done ? "" : minutesToClock(clocks[i])}</span>}
           </li>
         );
       })}
