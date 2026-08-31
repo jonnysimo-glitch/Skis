@@ -26,11 +26,27 @@ export const MODES = [
   { id: "direct", label: "Straight there" },
 ];
 
-/** Three entry contexts change DEFAULTS, not screens. */
-export function detectContext(nowMinutes) {
-  if (nowMinutes >= 10 * 60 && nowMinutes < 16 * 60) return "midday";
-  if (nowMinutes >= 6 * 60 && nowMinutes < 10 * 60) return "firstlift";
-  return "nightbefore";
+/**
+ * Three entry contexts change DEFAULTS, not screens.
+ *
+ * Measured against the resort's own hours rather than fixed clock times. The
+ * boundaries used to be hardcoded at 10:00 and 16:00, so at 16:10 — lifts still
+ * running, twenty minutes left, the exact moment this app exists for — it
+ * decided you were planning tomorrow and offered a seven hour day starting at
+ * 09:00. It then found a six hour route home "by 15:23", a time already gone.
+ * Handing a skier a plan that ends in the past is the one thing the brief says
+ * never to do.
+ *
+ * Once the lifts have actually stopped, tomorrow is the right answer.
+ */
+export function detectContext(nowMinutes, resort) {
+  const firstLift = resort?.firstLift ?? 8 * 60 + 30;
+  const lastDown = resort?.lastDown ?? 16 * 60 + 30;
+  // Lifts are done, or it is the middle of the night.
+  if (nowMinutes >= lastDown || nowMinutes < firstLift - 150) return "nightbefore";
+  // Early enough that the day is still whole.
+  if (nowMinutes < firstLift + 90) return "firstlift";
+  return "midday";
 }
 
 export const CONTEXT_COPY = {
@@ -69,7 +85,10 @@ export function defaultPlan(resort, context, at, here) {
     return {
       start: here || base,
       finish: base,
-      t0: Math.min(roundUp5(at), resort.lastDown - 30),
+      // Never later than the last lift, and never rolled back half an hour to
+      // manufacture a window that is not there: if only ten minutes are left,
+      // ten minutes is the honest answer and the empty state explains it.
+      t0: Math.min(roundUp5(at), resort.lastDown - 5),
       t1: resort.lastDown,
       noDrags: false,
       lunch: false,

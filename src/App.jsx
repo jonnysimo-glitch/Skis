@@ -151,9 +151,11 @@ export default function App() {
 
   // ---- profile and plan ---------------------------------------------------
   const [ability, setAbilityState] = useState(() => load("profile")?.ability ?? "red");
-  const context = useMemo(() => detectContext(nowMinutes()), []);
+  const context = useMemo(() => detectContext(nowMinutes(), resort), [resort]);
   const [plan, setPlan] = useState(() =>
-    defaultPlan(getResort(load("resortId")) || defaultResort, detectContext(nowMinutes()), nowMinutes())
+    ((r) => defaultPlan(r, detectContext(nowMinutes(), r), nowMinutes()))(
+      getResort(load("resortId")) || defaultResort
+    )
   );
   // null | {state:'ok', key} | {state:'far', km} | {state:'denied'}
   //      | {state:'insecure'} | {state:'unavailable'} | {state:'locating'}
@@ -466,7 +468,14 @@ export default function App() {
     setPreviewIndex(0);
     setStep(0);
     const next = getResort(id);
-    setPlan(defaultPlan(next, context, nowMinutes(), gps?.state === "ok" ? gps.key : null));
+    // Recomputed for the resort being switched to: the context depends on that
+    // resort's lift hours, so the one memoised for the old resort can be wrong.
+    setPlan(defaultPlan(
+      next,
+      detectContext(nowMinutes(), next),
+      nowMinutes(),
+      gps?.state === "ok" ? gps.key : null
+    ));
     setScreen("explore");
   };
 

@@ -103,11 +103,11 @@ export default function ResortStatus({ resort, onClose }) {
           <div className="field">
             <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>Lifts</div>
             <ul className="rows">
-              {LIFTS.map(([, , name, type, ride, lastUp]) => (
+              {LIFTS.map(([, , name, type, , lastUp]) => (
                 <li className="row" key={name}>
                   <span>{name}</span>
                   <span className="row__v">
-                    {type}, {ride} min, last up {hhmm(lastUp)}
+                    {type}, last up {hhmm(lastUp)}
                   </span>
                 </li>
               ))}
