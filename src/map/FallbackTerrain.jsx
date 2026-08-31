@@ -89,12 +89,23 @@ const NORTH_UP = 180;
  * air around it.
  */
 const ZOOM_MIN = 0.34;
-const ZOOM_MAX = 5.2;
+// Room to get right in over a single summit. At 5.2 you ran out of zoom while
+// the peak was still small, and the pan limit grows with the excess, so this
+// also buys the reach to bring that peak to the middle of the screen.
+const ZOOM_MAX = 9;
 /** How far past the frame the subject may be pushed, as a share of the frame. */
-// 0.44 was too loose: a fling could put the whole model off screen, which is
-// the wall not holding. The flexibility that was actually missing is in the
-// zoom range above, not here.
-const OVERSCROLL = 0.28;
+/**
+ * How far past the wall a push is allowed, as a share of the frame.
+ *
+ * Small, because the real reach comes from the rule below rather than from
+ * this: you can bring any part of the mountain to the middle of the screen,
+ * which is what "let me look at Champoluc" means, and no further, which is
+ * what stops the mountain being thrown away. This is only the little bit of
+ * give past that.
+ */
+const OVERSCROLL = 0.06;
+/** How much of a frame you may pan beyond the subject's own overflow. */
+const PAN_REACH = 0.45;
 /**
  * The block.
  *
@@ -402,23 +413,35 @@ export default function FallbackTerrain({
         ? Math.min((availW / spanU) * BLOCK_BLEED, (availH * BLOCK_FILL) / spanV)
         : Math.min(availW / spanU, availH / spanV)) * v.zoom;
 
-      // Pan is unbounded by nature: it is a screen-space nudge applied after
-      // the camera has framed the subject, so nothing stops you flicking the
-      // mountain off the edge and being left with an empty sky and no way back.
+      // Half the subject, plus a little.
       //
-      // Two things have to hold. You can always bring any part of the subject
-      // to the middle of the screen, which needs a limit of half the subject
-      // when the subject is larger than the frame. And a good part of it stays
-      // in view, which needs a much tighter limit when it is smaller: allowing
-      // its centre to reach the frame edge is enough to leave a sliver of
-      // mountain at the bottom and a screen full of sky.
-      // Based on how much bigger the subject is than the frame, not on its
-      // total size: fit() sizes it TO the frame, so "half the subject" is
-      // "half the frame" and never binds. The excess is what you need to be
-      // able to scroll through when zoomed in, plus a small allowance so the
-      // view can be nudged off centre at rest.
-      const limitX = Math.max(0, f * spanU - availW) / 2 + availW * OVERSCROLL;
-      const limitY = Math.max(0, f * spanV - availH) / 2 + availH * OVERSCROLL;
+      // Pan is a screen-space nudge applied after the camera has framed the
+      // subject, so nothing bounds it by nature and you could flick the
+      // mountain away and be left with sky. But the bound was the wrong shape:
+      // it allowed half the OVERFLOW, which only brings the far edge of the
+      // mountain to the edge of the screen. At rest there is no overflow at
+      // all, so all you had was the small overscroll and the far end of the
+      // resort could not be brought anywhere near the middle.
+      //
+      // Half the subject is the honest rule. It lets you put any point of the
+      // mountain in the centre of the screen, which is the whole ask, and it
+      // is self-limiting: at that extreme the mountain's edge is at the centre
+      // and half of it is still on screen. It also grows with the zoom for
+      // free, because f does.
+      // Whichever is smaller: half the subject, or enough to scroll through
+      // the overflow plus most of a frame.
+      //
+      // Half the subject alone is the right idea at rest, where it lets you
+      // put the far end of the resort near the middle of the screen. Zoomed
+      // in it is far too much: the subject is several frames wide, so half of
+      // it pans past everything and leaves sky. The second term is the
+      // traversal rule, which already handled zoom correctly, opened up from
+      // the tenth of a frame it used to allow to nearly half of one.
+      const reach = (span, avail) =>
+        Math.min((f * span) / 2, Math.max(0, f * span - avail) / 2 + avail * PAN_REACH) +
+        avail * OVERSCROLL;
+      const limitX = reach(spanU, availW);
+      const limitY = reach(spanV, availH);
       // Only hard clamped when the finger is off the glass. While dragging the
       // pan is allowed past the limit under resistance and springs back on
       // release, because a dead stop under your thumb is what reads as broken.
@@ -658,35 +681,6 @@ export default function FallbackTerrain({
         const role = feature.properties.role;
         const r = role === "now" ? 8 : 6;
 
-        // Which way to go next, drawn under the dot so the two read as one
-        // object. It points at the end of the current leg: the top station of
-        // the lift you are riding, or the junction the run finishes at. Aimed
-        // from the target's projected position rather than from a stored
-        // heading, so it stays right while the map is turned.
-        if (role === "now" && feature.properties.aim) {
-          const [alon, alat] = feature.properties.aim;
-          const t = field.proj.project(alat, alon);
-          const target = project(t.x, field.sample(t.x, t.z), t.z, v, cam);
-          const ang = Math.atan2(target.y - s.y, target.x - s.x);
-          const at = (rad, d) => [s.x + Math.cos(rad) * d, s.y + Math.sin(rad) * d];
-          // A tip, not a full arrow. It says which way, and the dot is still
-          // the thing you look at.
-          const tip = at(ang, r + 9);
-          const left = at(ang + 0.95, r - 2);
-          const right = at(ang - 0.95, r - 2);
-          ctx.beginPath();
-          ctx.moveTo(tip[0], tip[1]);
-          ctx.lineTo(left[0], left[1]);
-          ctx.lineTo(right[0], right[1]);
-          ctx.closePath();
-          ctx.lineJoin = "round";
-          ctx.lineWidth = 3.5;
-          ctx.strokeStyle = "#ffffff"; // a casing, so it reads over snow too
-          ctx.stroke();
-          ctx.fillStyle = ACCENT;
-          ctx.fill();
-        }
-
         ctx.beginPath();
         ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(11,26,36,0.22)";
@@ -698,6 +692,36 @@ export default function FallbackTerrain({
         ctx.lineWidth = 2.5;
         ctx.strokeStyle = role === "start" ? "#0b1a24" : "#ffffff";
         ctx.stroke();
+
+        // Which way to go next. It points at the end of the current leg: the
+        // top station of the lift you are riding, or the junction the run
+        // finishes at. Aimed from the target's projected position rather than
+        // a stored heading, so it stays right while the map turns.
+        //
+        // Clear of the dot rather than tucked under it: underneath, its white
+        // casing merged with the casing on the route running through the same
+        // pixels and it read as a smudge.
+        if (role === "now" && feature.properties.aim) {
+          const [alon, alat] = feature.properties.aim;
+          const t = field.proj.project(alat, alon);
+          const target = project(t.x, field.sample(t.x, t.z), t.z, v, cam);
+          const ang = Math.atan2(target.y - s.y, target.x - s.x);
+          const at = (rad, d) => [s.x + Math.cos(rad) * d, s.y + Math.sin(rad) * d];
+          const tip = at(ang, r + 15);
+          const left = at(ang + 0.62, r + 6);
+          const right = at(ang - 0.62, r + 6);
+          ctx.beginPath();
+          ctx.moveTo(tip[0], tip[1]);
+          ctx.lineTo(left[0], left[1]);
+          ctx.lineTo(right[0], right[1]);
+          ctx.closePath();
+          ctx.lineJoin = "round";
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = "#ffffff";
+          ctx.stroke();
+          ctx.fillStyle = ACCENT;
+          ctx.fill();
+        }
 
         ctx.font = "600 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
         ctx.textAlign = "center";

@@ -260,13 +260,46 @@ export default function App() {
         // finishes at. Passed as a position rather than a heading because the
         // direction on screen depends on where the camera is.
         if (screen === "navigate" && key === shownRoute.segments[step]?.from) {
-          const to = NODES[shownRoute.segments[step].to];
-          return { role: "now", ...(to ? { aim: [to.lon, to.lat] } : {}) };
+          // Along the leg, not at the end of it.
+          //
+          // Aiming at the far node points through the mountain when a piste
+          // snakes: you set off one way and the arrow says another. This walks
+          // a fifth of the way down the leg's own geometry, which is the
+          // direction you actually leave in.
+          const line = routeGeo.features.find((f) => f.properties.i === step);
+          const pts = line?.geometry?.coordinates ?? [];
+          let aim = null;
+          if (pts.length >= 2) {
+            const seg = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+            let total = 0;
+            for (let i = 1; i < pts.length; i++) total += seg(pts[i - 1], pts[i]);
+            let run = 0;
+            for (let i = 1; i < pts.length; i++) {
+              run += seg(pts[i - 1], pts[i]);
+              if (run >= total * 0.2) { aim = pts[i]; break; }
+            }
+            aim = aim || pts[pts.length - 1];
+          } else {
+            const to = NODES[shownRoute.segments[step].to];
+            if (to) aim = [to.lon, to.lat];
+          }
+          return { role: "now", ...(aim ? { aim } : {}) };
         }
         return key === startKey ? { role: "start" } : { role: "finish" };
       }
     );
   }, [screen, shownRoute, step, plan.start, plan.finish]);
+
+  // Test hook, same opt-in as the map's. The heading arrow is painted on a
+  // canvas in the dot's own colour, so a check needs the leg it should be
+  // following in order to work out where that is.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.location.search.includes("maptest=1")) return;
+    const line = routeGeo.features.find((f) => f.properties.i === step);
+    window.__skisNavLeg =
+      screen === "navigate" && line ? { coords: line.geometry.coordinates } : null;
+  }, [screen, step, routeGeo]);
 
   const focus = useMemo(() => {
     if (screen === "explore" || screen === "plan" || screen === "empty") {

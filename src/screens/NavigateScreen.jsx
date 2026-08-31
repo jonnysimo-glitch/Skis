@@ -56,6 +56,7 @@ export default function NavigateScreen({
   // a finished day — then live timing is meaningless and pretending otherwise
   // produces nonsense like "29 minutes ahead, back at 06:49". In that case the
   // screen runs off the plan's own clock and says so.
+  const [statusOpen, setStatusOpen] = useState(true);
   const foot = useRef(null);
   // The footer is not a fixed height: the overrun banner adds about ninety
   // pixels to it. Anything positioned above it has to know, or the zoom
@@ -134,14 +135,6 @@ export default function NavigateScreen({
   const overrun = projectedFinish - plan.t1;
 
   const junction = NODES[leg.to];
-  // Test hook, same opt-in as the map's. The arrow is painted on a canvas in
-  // the dot's own colour, so a check needs to know which leg is current.
-  if (typeof window !== "undefined" && window.location.search.includes("maptest=1")) {
-    window.__skisNavLeg = {
-      from: [NODES[leg.from].lon, NODES[leg.from].lat],
-      to: [NODES[leg.to].lon, NODES[leg.to].lat],
-    };
-  }
   const isLift = leg.kind === "lift";
 
   // The distance reads better than the plan once there is a fix to compute it
@@ -202,22 +195,41 @@ export default function NavigateScreen({
         </div>
       </div>
 
-      <div className="nav__status">
-        {following ? (
+      {/* Dismissible, and it collapses to the leg count.
+          
+          Expanded it is a wide strip across the top of the map, and the
+          explanation only needs reading once: after that it is a caption
+          sitting on the terrain you are trying to look at. Where you are in the
+          route is worth keeping, so that is what stays. */}
+      <div className={`nav__status${statusOpen ? "" : " nav__status--small"}`}>
+        {statusOpen && (
           <>
-            <Satellite width="14" height="14" />
-            <span>Following you</span>
-          </>
-        ) : (
-          <>
-            <Locate width="14" height="14" />
-            <span>{gpsExplanation(gps.state)}</span>
+            {following ? (
+              <>
+                <Satellite width="14" height="14" />
+                <span>Following you</span>
+              </>
+            ) : (
+              <>
+                <Locate width="14" height="14" />
+                <span>{gpsExplanation(gps.state)}</span>
+              </>
+            )}
+            {!live && <span className="nav__legcount">Times are from your plan.</span>}
           </>
         )}
-        {!live && <span className="nav__legcount">Times are from your plan.</span>}
         <span className="nav__legcount">
           Leg {step + 1} of {route.segments.length}
         </span>
+        {statusOpen && (
+          <button
+            className="nav__statusx"
+            onClick={() => setStatusOpen(false)}
+            aria-label="Hide the location note"
+          >
+            <Close width="14" height="14" />
+          </button>
+        )}
       </div>
 
       {/* The map is what sits here. Left alone so it can be dragged. */}

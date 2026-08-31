@@ -1082,6 +1082,18 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   display: flex; align-items: center; gap: var(--s-2);
 }
 .nav__legcount { color: rgba(255, 255, 255, 0.6); }
+/* Collapsed: just where you are in the route. */
+.nav__status--small { padding: var(--s-1) var(--s-3); }
+.nav__statusx {
+  flex: none;
+  /* A 44pt target around a 14px glyph. The negative margins keep the pill the
+     size the glyph implies while the thumb gets the whole square. */
+  min-width: var(--tap); min-height: var(--tap);
+  margin: calc(var(--tap) / -2 + 10px) calc(var(--s-3) * -1) calc(var(--tap) / -2 + 10px) 0;
+  color: rgba(255, 255, 255, 0.6);
+  display: grid; place-items: center;
+}
+.nav__statusx:active { color: #fff; }
 
 .nav__foot {
   margin-top: auto;

@@ -931,7 +931,13 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
     // Relative, not absolute. The mountain is a model sitting in sky, so the
     // resting fraction is naturally low and a fixed threshold measures how big
     // the model happens to be rather than whether it is still there.
-    const enough = Math.max(3, rest * 0.35);
+    //
+    // A fifth, not a third. The pan limit is half the subject, so that you can
+    // bring the far end of the resort to the middle of the screen, and at that
+    // extreme half the mountain is off frame by design. Pushed to both limits
+    // at once only a corner is left. What this still catches is the mountain
+    // going entirely, which is what the limit exists for.
+    const enough = Math.max(3, rest * 0.18);
 
     // Pan is a screen-space offset with nothing bounding it by nature, so each
     // direction gets flung hard enough to clear the viewport several times over.
@@ -1450,10 +1456,26 @@ if (feature("17. The arrow points where you are going")) {
     await page.context_.close();
   } else {
     const offBy = async () => {
+      // The direction you actually leave in, not the direction of the far end:
+      // a piste that snakes points through the mountain if you aim at its
+      // finish. A fifth of the way along the leg's own geometry is what the
+      // arrow follows, so that is what this measures against, with the far end
+      // kept as a sanity bound that it is not pointing backwards.
       const ends = await page.evaluate(() => {
         const l = window.__skisNavLeg;
         if (!l || !window.__skisProject) return null;
-        return { from: window.__skisProject(l.from[0], l.from[1]), to: window.__skisProject(l.to[0], l.to[1]) };
+        const pts = l.coords;
+        const seg = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+        let total = 0;
+        for (let i = 1; i < pts.length; i++) total += seg(pts[i - 1], pts[i]);
+        let run = 0;
+        let early = pts[pts.length - 1];
+        for (let i = 1; i < pts.length; i++) {
+          run += seg(pts[i - 1], pts[i]);
+          if (run >= total * 0.2) { early = pts[i]; break; }
+        }
+        const at = (q) => window.__skisProject(q[0], q[1]);
+        return { from: at(pts[0]), to: at(early), far: at(pts[pts.length - 1]) };
       });
       if (!ends?.from || !ends?.to) return null;
       const arrow = await page.evaluate(({ sel, at }) => {
@@ -1484,8 +1506,11 @@ if (feature("17. The arrow points where you are going")) {
         return far ? { ang: Math.atan2(vy, vx), far } : null;
       }, { sel: SEL, at: ends.from });
       if (!arrow) return null;
-      const want = Math.atan2(ends.to.y - ends.from.y, ends.to.x - ends.from.x);
-      return { deg: Math.abs((((arrow.ang - want) * 180) / Math.PI + 540) % 360 - 180), far: arrow.far };
+      const off = (t) => {
+        const want = Math.atan2(t.y - ends.from.y, t.x - ends.from.x);
+        return Math.abs((((arrow.ang - want) * 180) / Math.PI + 540) % 360 - 180);
+      };
+      return { deg: off(ends.to), toFar: off(ends.far), far: arrow.far };
     };
 
     // Four legs, because a single one can be right by accident: the first
@@ -1495,8 +1520,10 @@ if (feature("17. The arrow points where you are going")) {
     for (let step = 0; step < 4; step++) {
       const r = await offBy();
       if (r) seen.push(r);
-      check(`leg ${step + 1}: the arrow points at the end of this leg`,
+      check(`leg ${step + 1}: the arrow points the way this leg sets off`,
         r !== null && r.deg < 12, r ? `${r.deg.toFixed(0)} degrees off, ${r.far} arrow pixels` : "could not read it");
+      check(`leg ${step + 1}: and not back the way you came`,
+        r !== null && r.toFar < 90, r ? `${r.toFar.toFixed(0)} degrees from the far end` : "could not read it");
       const next = await page.$(".nav__foot .btn--nav");
       if (!next) break;
       await next.click();
