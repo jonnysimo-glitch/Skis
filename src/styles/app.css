@@ -92,6 +92,12 @@ input, select { font: inherit; color: inherit; }
 }
 .iconbtn > * { position: relative; }
 .iconbtn:active { transform: scale(0.92); }
+/* A real compass, not a glyph of one: the needle turns with the map and points
+   at north, so tapping it to face north is a visible undo rather than a guess.
+   --map-north is written on the root by the terrain view every frame it turns;
+   the fallback keeps it pointing up before the map has drawn. */
+.iconbtn--compass svg { transform: rotate(calc(var(--map-north, 0) * 1deg)); }
+
 .iconbtn--on { color: #fff; }
 .iconbtn--on::before { background: var(--accent); }
 .iconbtn[disabled] { opacity: 0.4; cursor: default; }

@@ -232,8 +232,12 @@ export default function App() {
 
   const pins = useMemo(() => {
     if (!shownRoute) {
+      // Start wins when a node is both. Most days are a loop, so start and
+      // finish are the same place, and asking "is this the finish" first
+      // painted the one pin as a destination: on the resort screen, before any
+      // planning at all, your own base showed up as a black finish marker.
       return nodesToGeoJSON([plan.start, plan.finish].filter((v, i, a) => a.indexOf(v) === i), (key) => ({
-        role: key === plan.finish ? "finish" : "start",
+        role: key === plan.start ? "start" : "finish",
       }));
     }
     const startKey = shownRoute.segments[0].from;
@@ -245,12 +249,17 @@ export default function App() {
     }
     return nodesToGeoJSON(
       [...new Set(keys)],
-      (key) =>
-        screen === "navigate" && key === shownRoute.segments[step]?.from
-          ? { role: "now" }
-          : key === finishKey
-            ? { role: "finish" }
-            : { role: "start" }
+      (key) => {
+        // Where you are gets an arrow, and it points at wherever this leg
+        // ends: the top of the lift you are riding, or the junction the run
+        // finishes at. Passed as a position rather than a heading because the
+        // direction on screen depends on where the camera is.
+        if (screen === "navigate" && key === shownRoute.segments[step]?.from) {
+          const to = NODES[shownRoute.segments[step].to];
+          return { role: "now", ...(to ? { aim: [to.lon, to.lat] } : {}) };
+        }
+        return key === startKey ? { role: "start" } : { role: "finish" };
+      }
     );
   }, [screen, shownRoute, step, plan.start, plan.finish]);
 
@@ -603,7 +612,7 @@ export default function App() {
         {...(chromeHidden ? { inert: "" } : {})}
       >
         <button
-          className="iconbtn"
+          className="iconbtn iconbtn--compass"
           aria-label="Face north and tilt"
           onClick={() => mapControl.current?.resetNorth()}
         >

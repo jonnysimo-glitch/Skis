@@ -1334,8 +1334,15 @@ if (feature("16. One gesture at a time")) {
     }
     await twoFinger(twist);
     b = await view();
-    check("a twist rotates", Math.abs(b.bearing - a.bearing) > 5,
-      `${a.bearing.toFixed(0)} to ${b.bearing.toFixed(0)}`);
+    // Direction, not just magnitude. Every twist check here used to ask
+    // whether the bearing moved and never which way, so an inverted sign sat
+    // in the code untouched: the mountain turned against the fingers.
+    //
+    // These fingers twist clockwise on screen. Increasing the bearing turns
+    // the picture anticlockwise, which field.test.js pins, so a clockwise
+    // twist has to bring the bearing down.
+    check("a twist rotates, and with the fingers not against them",
+      b.bearing - a.bearing < -5, `${a.bearing.toFixed(0)} to ${b.bearing.toFixed(0)}`);
     check("and does not zoom on the way", Math.abs(b.zoom - a.zoom) < 0.05,
       `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
 
@@ -1377,14 +1384,16 @@ if (feature("16. One gesture at a time")) {
     await reset();
     a = await view();
     // A twist, with the hand sliding and spreading a little as it turns.
-    await twoFinger(hand((t, i) => pair(90 * (1 + 0.02 * t), rad(26) * t, 0, 8 * t, i)));
+    // 40 degrees, because the arc-length gate eats the first 18 or so before
+    // rotation engages at all. That deadzone is the point of it.
+    await twoFinger(hand((t, i) => pair(90 * (1 + 0.02 * t), rad(40) * t, 0, 8 * t, i)));
     b = await view();
     const panMoved = await page.evaluate(() => {
       const v = window.__skisView;
       return Math.round(Math.hypot(v.panX, v.panY));
     });
-    check("a real hand's twist rotates", Math.abs(b.bearing - a.bearing) > 8,
-      `${(b.bearing - a.bearing).toFixed(0)} degrees`);
+    check("a real hand's twist rotates the way the hand turned",
+      b.bearing - a.bearing < -8, `${(b.bearing - a.bearing).toFixed(0)} degrees`);
     check("and does not slide the mountain at the same time", panMoved < 6,
       `${panMoved}px of pan`);
     check("nor zoom it", Math.abs(b.zoom - a.zoom) < 0.02, `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);

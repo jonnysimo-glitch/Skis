@@ -139,6 +139,24 @@ for (const pitch of [0, 20, 46, 75]) {
 }
 check("no corner of the slab projects to infinity", worstW !== 0);
 
+console.log("\nWHICH WAY BEARING TURNS THE PICTURE");
+
+// The gesture code subtracts the finger twist from the bearing, and that sign
+// is only correct because of what is asserted here. If the projection is ever
+// changed so bearing turns the picture the other way, this fires and the
+// rotate branch in FallbackTerrain.jsx has to flip with it.
+{
+  const view = (bearing) => ({ bearing, pitch: 46, zoom: 1 });
+  const right = { x: mono.cx + mono.span * 0.3, y: mono.cy, z: mono.cz };
+  const at0 = toUnit(mono, right.x, right.y, right.z, view(0));
+  const at10 = toUnit(mono, right.x, right.y, right.z, view(10));
+  // Screen v points down, so a landmark rising means a smaller v.
+  check("increasing the bearing turns the picture anticlockwise",
+    at10.v < at0.v, `a landmark on the right goes ${at0.v.toFixed(3)} to ${at10.v.toFixed(3)}`);
+  check("and it is a real turn, not a wobble", Math.abs(at10.v - at0.v) > 0.005,
+    `${Math.abs(at10.v - at0.v).toFixed(4)} of a screen per 10 degrees`);
+}
+
 console.log("\nAND IT IS THE SAME MOUNTAIN EVERY TIME");
 const again = buildField(OTHER, projectorFor(OTHER));
 check("rebuilding a resort gives an identical field",

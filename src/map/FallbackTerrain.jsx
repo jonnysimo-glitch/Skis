@@ -603,6 +603,35 @@ export default function FallbackTerrain({
         const role = feature.properties.role;
         const r = role === "now" ? 8 : 6;
 
+        // Which way to go next, drawn under the dot so the two read as one
+        // object. It points at the end of the current leg: the top station of
+        // the lift you are riding, or the junction the run finishes at. Aimed
+        // from the target's projected position rather than from a stored
+        // heading, so it stays right while the map is turned.
+        if (role === "now" && feature.properties.aim) {
+          const [alon, alat] = feature.properties.aim;
+          const t = field.proj.project(alat, alon);
+          const target = project(t.x, field.sample(t.x, t.z), t.z, v, cam);
+          const ang = Math.atan2(target.y - s.y, target.x - s.x);
+          const at = (rad, d) => [s.x + Math.cos(rad) * d, s.y + Math.sin(rad) * d];
+          // A tip, not a full arrow. It says which way, and the dot is still
+          // the thing you look at.
+          const tip = at(ang, r + 9);
+          const left = at(ang + 0.95, r - 2);
+          const right = at(ang - 0.95, r - 2);
+          ctx.beginPath();
+          ctx.moveTo(tip[0], tip[1]);
+          ctx.lineTo(left[0], left[1]);
+          ctx.lineTo(right[0], right[1]);
+          ctx.closePath();
+          ctx.lineJoin = "round";
+          ctx.lineWidth = 3.5;
+          ctx.strokeStyle = "#ffffff"; // a casing, so it reads over snow too
+          ctx.stroke();
+          ctx.fillStyle = ACCENT;
+          ctx.fill();
+        }
+
         ctx.beginPath();
         ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(11,26,36,0.22)";
@@ -615,7 +644,7 @@ export default function FallbackTerrain({
         ctx.strokeStyle = role === "start" ? "#0b1a24" : "#ffffff";
         ctx.stroke();
 
-        ctx.font = "600 12px 'Inter Variable', Inter, system-ui, sans-serif";
+        ctx.font = "600 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.lineWidth = 3.5;
         ctx.lineJoin = "round";
@@ -636,6 +665,7 @@ export default function FallbackTerrain({
 
     // ---- loop ------------------------------------------------------------
     let raf = 0;
+    let lastBearing = null;
     const frame = () => {
       const v = view.current;
       const gap = v.targetZoom - v.zoom;
@@ -669,6 +699,27 @@ export default function FallbackTerrain({
             dirty.current = true;
           }
         }
+      }
+
+      // Publish where north actually is, for the compass to point at. A CSS
+      // variable rather than React state: this changes every frame of a turn,
+      // and re-rendering the app for it would stutter the very gesture that is
+      // producing it.
+      //
+      // The angle, not the bearing. Rotating a needle by the bearing alone is
+      // what MapLibre's compass does and it is only right at the cardinals:
+      // the vertical axis is foreshortened by the pitch, so at bearing 152 and
+      // pitch 46 north sits 37 degrees round, not 28.
+      const br = (v.bearing * Math.PI) / 180;
+      const pt = (v.pitch * Math.PI) / 180;
+      const north = Math.round(
+        ((Math.atan2(Math.sin(br), -Math.cos(br) * Math.cos(pt)) * 180) / Math.PI + 360) % 360
+      );
+      if (north !== lastBearing) {
+        lastBearing = north;
+        // On the root, because the compass is a sibling of the canvas and a
+        // custom property only inherits downwards.
+        document.documentElement.style.setProperty("--map-north", String(north));
       }
 
       // Redraw only when something moved. 3,600 filled quads a frame is not a
@@ -727,17 +778,28 @@ export default function FallbackTerrain({
     const startGesture = () => {
       const c = centroid();
       const sp = pointers.size >= 2 ? spread() : {};
+      const pts = [...pointers.values()];
       gesture = {
         x: c.x, y: c.y,
         ...sp,
         // Two fingers can mean three different things, so the first bit of
         // movement decides which and the rest of the gesture sticks to it.
-        // Where it all started, so the decision can be made on the whole
-        // movement rather than on one frame of it.
-        x0: c.x, y0: c.y, dist0: sp.dist ?? 0,
+        x0: c.x, y0: c.y, dist0: sp.dist ?? 0, angle0: sp.angle ?? 0,
+        // The narrowest the fingers have been. Rotation is gated on arc
+        // travel, and using the smallest separation keeps the gate honest
+        // while a pinch is closing.
+        minDist: sp.dist ?? 0,
+        last: pts.map((q) => ({ ...q })),
+        // Where the fingers were when the pair was complete. The tilt test
+        // measures against this rather than against the previous frame.
+        ref: pts.map((q) => ({ ...q })),
+        // undefined until the first real movement decides, then latched, the
+        // way MapLibre latches it. Fingers stacked one above the other are
+        // ambiguous with a pinch, so tilt is off from the start there.
+        canTilt: pts.length >= 2 && isVertical(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+          ? false
+          : undefined,
         mode: null,
-        turned: 0,
-        pinched: 1,
       };
     };
 
@@ -783,11 +845,27 @@ export default function FallbackTerrain({
       return Math.sign(next) * (lim + wasOver + (nowOver - wasOver) * OVERSHOOT);
     };
 
-    const PINCH_START = 0.05;   // 5% change in finger separation
-    const TWIST_START = 0.14;   // radians, about 8 degrees
-    const TILT_START = 18;      // pixels the pair has to travel as one
-    /** How much more the pair must move together than apart to count as a tilt. */
-    const TILT_BIAS = 1.6;
+    /**
+     * Thresholds, taken from MapLibre's own touch handlers rather than guessed.
+     *
+     * Two of mine were wrong in ways that caused exactly the cross-talk that
+     * kept being reported.
+     *
+     * Zoom is measured in zoom levels, log2 of the change in separation, not
+     * as a percentage. Rotation is measured as ARC TRAVEL — how far the
+     * fingertips actually moved along the circle — and only then converted to
+     * an angle using the current separation. That is the part I had missed. A
+     * fixed 8 degree gate is trivially tripped by fingers 160px apart, where
+     * 8 degrees is 11px of travel; the same 25px of arc asks for 18 degrees
+     * there and 36 degrees when the fingers are close. It scales because what
+     * your hand actually does is move a distance, not sweep an angle.
+     */
+    const ZOOM_START = 0.1;         // zoom levels, |log2(d / d0)|
+    const ROTATE_ARC = 25;          // pixels of fingertip travel along the arc
+    const PITCH_MIN_MOVE = 2;       // pixels before a finger counts as moving
+    const PITCH_RATE = 0.5;         // degrees of pitch per pixel of travel
+    const SINGLE_TOUCH_GRACE = 100; // ms to wait for the second finger to move
+    const isVertical = (dx, dy) => Math.abs(dy) > Math.abs(dx);
 
     /**
      * Double tap to zoom, and only a tap counts.
@@ -843,56 +921,80 @@ export default function FallbackTerrain({
         velocity.x = velocity.x * 0.7 + dx * 0.3;
         velocity.y = velocity.y * 0.7 + dy * 0.3;
       } else if (pointers.size >= 2) {
+        const pts = [...pointers.values()];
         const { dist, angle } = spread();
         let turn = angle - gesture.angle;
         // atan2 wraps; without this a gesture crossing the cut spins the map.
         if (turn > Math.PI) turn -= 2 * Math.PI;
         if (turn < -Math.PI) turn += 2 * Math.PI;
-        const scale = gesture.dist > 0 ? dist / gesture.dist : 1;
+        gesture.minDist = Math.min(gesture.minDist || dist, dist);
 
-        // Accumulate before committing, so the mode is chosen on what the
-        // gesture is actually doing rather than on its first noisy frame.
-        gesture.pinched *= scale;
-        gesture.turned += turn;
-
-        if (!gesture.mode) {
-          // Tilt is decided by direction, not by distance.
-          //
-          // Fingers travelling together is a tilt; fingers travelling against
-          // each other is a pinch or a twist. Comparing those two directly is
-          // what makes this robust, because it does not depend on how far
-          // anything has gone. Checking a tilt threshold last, after zoom and
-          // rotate, meant a hand that spread as it slid — which is what hands
-          // do — locked to zoom before the tilt gate was ever reached, and the
-          // gesture was unreachable in practice.
-          const parallel = Math.hypot(c.x - gesture.x0, c.y - gesture.y0);
-          const opposed = Math.abs(dist - gesture.dist0);
-          if (parallel > TILT_START && parallel > opposed * TILT_BIAS) {
-            gesture.mode = "tilt";
-          } else {
-            const zoomP = Math.abs(gesture.pinched - 1) / PINCH_START;
-            const turnP = Math.abs(gesture.turned) / TWIST_START;
-            if (Math.max(zoomP, turnP) >= 1) gesture.mode = zoomP >= turnP ? "zoom" : "rotate";
+        // ---- tilt ----------------------------------------------------------
+        // Decided per finger, not from the midpoint: both have to have moved,
+        // both have to be travelling mostly vertically, and both the same way.
+        // Latched on the first real movement and never revisited, so a pinch
+        // that develops later cannot steal a tilt already under way, and a
+        // tilt cannot appear part way through a pinch.
+        if (gesture.canTilt === undefined && gesture.ref.length >= 2) {
+          // Measured from where the fingers were when the second one landed,
+          // not from the previous frame. The browser fires one pointermove per
+          // finger, so in any single call only one of them is new: comparing
+          // both against the last frame meant "both moved" was never true on
+          // the same tick and nothing was ever decided. MapLibre reads the
+          // whole touch list at once and does not hit this.
+          const a = { x: pts[0].x - gesture.ref[0].x, y: pts[0].y - gesture.ref[0].y };
+          const b = { x: pts[1].x - gesture.ref[1].x, y: pts[1].y - gesture.ref[1].y };
+          const movedA = Math.hypot(a.x, a.y) >= PITCH_MIN_MOVE;
+          const movedB = Math.hypot(b.x, b.y) >= PITCH_MIN_MOVE;
+          if (movedA && movedB) {
+            gesture.canTilt =
+              isVertical(a.x, a.y) && isVertical(b.x, b.y) && a.y > 0 === b.y > 0;
+          } else if (movedA || movedB) {
+            // One finger alone says nothing yet. Give the other a moment to
+            // catch up, then take the silence as a no.
+            gesture.firstMove ??= performance.now();
+            if (performance.now() - gesture.firstMove > SINGLE_TOUCH_GRACE) {
+              gesture.canTilt = false;
+            }
           }
         }
 
-        // One gesture, exclusively, for the rest of the touch. Zoom used to
-        // rotate alongside, and both used to drag the map with the midpoint,
-        // so a twist turned the mountain and slid it across the screen at the
-        // same time. The only pan left is the one inside zoomAbout, which is
-        // not a second gesture: it is what keeps the point between your
-        // fingers under your fingers.
+        if (!gesture.mode && gesture.canTilt) gesture.mode = "tilt";
+
+        // ---- zoom and rotate ------------------------------------------------
+        if (!gesture.mode && gesture.canTilt === false) {
+          const zoomed = Math.abs(Math.log2(dist / (gesture.dist0 || dist)));
+          // Arc travel, converted to an angle by the separation. See the note
+          // on ROTATE_ARC: this is why a fixed angle gate cross-talks.
+          const gate = (2 * ROTATE_ARC) / Math.max(gesture.minDist, 1);
+          let swept = angle - gesture.angle0;
+          if (swept > Math.PI) swept -= 2 * Math.PI;
+          if (swept < -Math.PI) swept += 2 * Math.PI;
+          if (zoomed >= ZOOM_START) gesture.mode = "zoom";
+          else if (Math.abs(swept) >= gate) gesture.mode = "rotate";
+        }
+
         if (gesture.mode === "tilt") {
-          v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - (c.y - gesture.y) * 0.4));
+          const dy =
+            ((pts[0].y - gesture.last[0].y) + (pts[1].y - gesture.last[1].y)) / 2;
+          v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - dy * PITCH_RATE));
         } else if (gesture.mode === "rotate") {
-          v.bearing += (turn * 180) / Math.PI;
+          // Minus, and it matters. Screen y points down, so atan2 between the
+          // two fingers grows as they turn clockwise, while the projection
+          // turns the picture anticlockwise as bearing grows: a point to the
+          // right of centre rises as bearing increases. Adding one to the
+          // other rotated the mountain against the fingers. Pinned by "a
+          // clockwise twist turns the mountain clockwise" in features, and by
+          // the bearing check in field.test.js that this depends on.
+          v.bearing -= (turn * 180) / Math.PI;
         } else if (gesture.mode === "zoom") {
-          zoomAbout(v, scale, c.x, c.y);
+          zoomAbout(v, dist / (gesture.dist || dist), c.x, c.y);
           v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
         }
 
         gesture.dist = dist;
         gesture.angle = angle;
+        gesture.last = pts.map((q) => ({ ...q }));
       }
 
       gesture.x = c.x;

@@ -25,8 +25,23 @@ export const Back = (p) => (
 export const Close = (p) => (
   <svg {...base} {...p}><path d="M5 5l10 10M15 5 5 15" /></svg>
 );
+/**
+ * A needle, not a dial.
+ *
+ * This was a ring with a small symmetric diamond in it, which read as an eye
+ * and, worse, looked the same whichever way it was turned — no use at all on a
+ * control whose whole job is to show you where north is. Two triangles: the
+ * north half solid, the south half hollow. No ring, because the button it sits
+ * in is already a circle.
+ *
+ * Not red for north, however conventional. Red is a piste grade here, and a
+ * grade colour used as decoration is a safety problem rather than a taste one.
+ */
 export const Compass = (p) => (
-  <svg {...base} {...p}><circle cx="10" cy="10" r="7" /><path d="m12.6 7.4-1.4 3.8-3.8 1.4 1.4-3.8z" /></svg>
+  <svg {...base} {...p}>
+    <path d="M10 2.8L13.4 10L6.6 10Z" fill="currentColor" stroke="none" />
+    <path d="M10 17.2L13.4 10L6.6 10Z" />
+  </svg>
 );
 export const Layers = (p) => (
   <svg {...base} {...p}><path d="m10 3 7 4-7 4-7-4z" /><path d="m3.5 10.5 6.5 3.7 6.5-3.7" /></svg>
