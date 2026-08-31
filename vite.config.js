@@ -1,6 +1,40 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+
+/**
+ * MapLibre's worker, emitted where MapLibre will look for it.
+ *
+ * MapLibre 6 builds its worker URL from `import.meta.url`:
+ *   new URL("./maplibre-gl-worker.mjs", import.meta.url)
+ * After bundling that resolves next to the emitted chunk, in assets/, and Vite
+ * has no reason to copy anything there — nothing imports the file statically.
+ * The result is a 404 for the worker and a map that cannot start.
+ *
+ * It is invisible until a MapTiler key is set, because without one the app is
+ * already on the schematic terrain and never asks MapLibre for tiles. Adding
+ * the key is a documented next step, so this would have broken exactly when
+ * the 3D map was first switched on.
+ */
+function maplibreWorker() {
+  const require = createRequire(import.meta.url);
+  // The worker imports the shared chunk by the same relative rule, so both go.
+  const files = ["maplibre-gl-worker.mjs", "maplibre-gl-shared.mjs"];
+  return {
+    name: "maplibre-worker",
+    generateBundle() {
+      for (const name of files) {
+        this.emitFile({
+          type: "asset",
+          fileName: `assets/${name}`, // exact name: MapLibre resolves it by string
+          source: readFileSync(require.resolve(`maplibre-gl/dist/${name}`)),
+        });
+      }
+    },
+  };
+}
 
 
 /**
@@ -20,6 +54,7 @@ export default defineConfig(() => {
   base: BASE,
   plugins: [
     react(),
+    maplibreWorker(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icons/*.png"],
@@ -45,7 +80,7 @@ export default defineConfig(() => {
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        globPatterns: ["**/*.{js,mjs,css,html,svg,png,woff2}"],
         // MapLibre is precached whether or not there is a key: without one it
         // still renders real terrain from open elevation data, and a lazy
         // chunk that is missing offline fails the import rather than merely
