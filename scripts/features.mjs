@@ -10,12 +10,14 @@
  * Pass --only=<word> to run one feature.
  */
 import { NODES } from "../src/resort.js";
+import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR } from "../src/map/field.js";
 import { DWELL_MS as DWELL } from "../src/lib/progress.js";
 import {
   serve,
   newPage,
   launch,
   toPlan,
+  toForm,
   solve,
   routeCount,
   toMinutes,
@@ -719,6 +721,24 @@ if (feature("9. Navigating is pinned, not dragged")) {
   check("there is map between the panels", gap.height > 200, `${gap.height}px`);
   check("and a tap in it reaches the map, not the chrome", ["canvas", "div"].includes(gap.hits), gap.hits);
 
+  // The tab bar slides off the bottom while navigating, which hides it from
+  // the eye and the thumb but not from the tab key. Three buttons sat just
+  // past the edge of the screen and tabbing reached them, and landing on Stats
+  // halfway down a run is not something anyone meant to do.
+  // It is hidden with opacity and a transform, which stops the eye and the
+  // thumb but not the tab key. Its three buttons stayed in the tab order, and
+  // landing on Stats halfway down a run is not something anyone meant to do.
+  check("the hidden tab bar is out of the tab order, not just out of sight",
+    await page.$eval(".tabbar", (n) => n.hasAttribute("inert")));
+
+  await page.evaluate(() => document.querySelector(".nav__stop")?.focus());
+  let hitTabBar = false;
+  for (let i = 0; i < 16; i++) {
+    await page.keyboard.press("Tab");
+    if (await page.evaluate(() => !!document.activeElement?.closest(".tabbar"))) hitTabBar = true;
+  }
+  check("so sixteen tabs never land on it", !hitTabBar);
+
   await page.click(".nav__stop");
   await page.waitForTimeout(500);
   check("stopping returns to the route", (await page.$(".sheet")) !== null);
@@ -983,10 +1003,10 @@ if (feature("13. The block is under the mountain, not in front of it")) {
     check("the schematic terrain is the layer on screen", false, "MapLibre took over; nothing to measure");
     await page.context_.close();
   } else {
-    const shot = await page.$eval(SEL, (c) => {
-      // Kept in step with SKIRT_LIT, SKIRT_SHADE and BASE_COLOUR in
-      // src/map/FallbackTerrain.jsx.
-      const FLAT = [[236, 243, 249], [214, 227, 238], [199, 216, 230]];
+    // Passed in from the module that defines them. A copy of these numbers
+    // lived here once and went stale the first time the slab was recoloured,
+    // which read as the slab having vanished.
+    const shot = await page.$eval(SEL, (c, FLAT) => {
       const g = c.getContext("2d");
       const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
       let slab = 0, terrain = 0, top = 1e9, bottom = -1;
@@ -1015,7 +1035,7 @@ if (feature("13. The block is under the mountain, not in front of it")) {
         upperSlab += r.rSlab;
       }
       return { slab, terrain, upperTerrain, upperSlab };
-    });
+    }, [SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR]);
 
     const model = shot.slab + shot.terrain;
     const slabPct = (shot.slab / model) * 100;
@@ -1048,6 +1068,9 @@ if (feature("14. The real map cannot leave the resort")) {
   await page.click(".hero");
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
+
+  // The cut-out is the default now, so the world map has to be asked for.
+  await page.click("[aria-label='Show the world map']");
 
   let present = true;
   try {
@@ -1098,6 +1121,101 @@ if (feature("14. The real map cannot leave the resort")) {
       `reached ${state.deep}, ceiling ${state.maxZoom}`);
     check("the world is not drawn more than once", state.worldCopies === false,
       `renderWorldCopies ${state.worldCopies}`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
+// ========= 15. GESTURES AND THE SLOPES DRAWN OVER THE TERRAIN ==
+// Two things about the cut-out that are easy to break and hard to see.
+//
+// A drag is not a tap. Double tap to zoom used to fire on any second
+// pointerdown inside 300ms, whatever happened in between, so two quick drags
+// in a row zoomed the map and four put it at the ceiling. It surfaced as a
+// confusing pan-clamp failure rather than as itself.
+//
+// And the pistes are drawn over the terrain rather than draped into it, so a
+// run on the far side of a ridge is still visible. That is deliberate: on a
+// route planner the shape of the day has to be legible in one look, and half a
+// route hidden behind a mountain is not.
+if (feature("15. Gestures, and slopes drawn over the terrain")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1300);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  if (!(await page.$(SEL))) {
+    check("the cut-out is on screen", false, "no schematic canvas");
+    await page.context_.close();
+  } else {
+    const box = await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const zoom = () => page.evaluate(() => window.__skisView?.targetZoom);
+
+    const before = await zoom();
+    // Two drags in quick succession, the gesture that used to zoom.
+    for (let i = 0; i < 2; i++) {
+      await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.w / 2 - 120, box.y + box.h / 2, { steps: 6 });
+      await page.mouse.up();
+    }
+    await page.waitForTimeout(500);
+    check("two quick drags do not zoom the map", Math.abs((await zoom()) - before) < 0.01,
+      `${before?.toFixed(2)} then ${(await zoom())?.toFixed(2)}`);
+
+    // A real double tap still does, or the gesture has been broken instead.
+    for (let i = 0; i < 2; i++) {
+      await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(60);
+    }
+    await page.waitForTimeout(500);
+    check("a real double tap still zooms", (await zoom()) > before + 0.1,
+      `${before?.toFixed(2)} then ${(await zoom())?.toFixed(2)}`);
+
+    // ---- slopes over terrain ---------------------------------------------
+    await toForm(page);
+    await solve(page);
+    await page.waitForSelector(".routecard", { timeout: 15000 });
+    await page.waitForTimeout(1200);
+
+    /** Pixels close to the route casing colour, #2ac4ee. */
+    const routePixels = () =>
+      page.$eval(SEL, (c) => {
+        const g = c.getContext("2d");
+        const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
+        let n = 0;
+        for (let y = 0; y < height; y += 2) {
+          for (let x = 0; x < width; x += 2) {
+            const i = (y * width + x) * 4;
+            if (Math.abs(data[i] - 0x2a) < 46 && Math.abs(data[i + 1] - 0xc4) < 46 &&
+                Math.abs(data[i + 2] - 0xee) < 46) n++;
+          }
+        }
+        return n;
+      });
+
+    const front = await routePixels();
+    check("the route is drawn on the mountain", front > 40, `${front} sampled pixels`);
+
+    // From the other side, terrain that was behind the route is now in front
+    // of it. A depth test would take a large bite out of the line here.
+    await page.evaluate(() => window.__skisSetBearing(152));
+    await page.waitForTimeout(1400);
+    const bearing = await page.evaluate(() => window.__skisView?.bearing);
+    const back = await routePixels();
+    check("orbiting actually turned the mountain", Math.abs((bearing ?? 0) + 28) > 25,
+      `bearing ${bearing?.toFixed(0)}`);
+    check("and the route is still fully drawn from the far side",
+      back > front * 0.45, `${back} pixels against ${front} before`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }

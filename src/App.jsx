@@ -26,6 +26,7 @@ const MapCanvas = lazy(() =>
 import HomeScreen from "./screens/HomeScreen.jsx";
 import StatsScreen from "./screens/StatsScreen.jsx";
 import SettingsSheet from "./screens/SettingsSheet.jsx";
+import ResortStatus from "./screens/ResortStatus.jsx";
 import TabBar from "./ui/TabBar.jsx";
 import PlanScreen from "./screens/PlanScreen.jsx";
 import SolvingScreen from "./screens/SolvingScreen.jsx";
@@ -73,10 +74,15 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 const MAX_SNAP_METRES = 6000;
 
 /** How tall the sheet opens for each screen. */
+/**
+ * Every screen opens on one of the three named stops rather than a fraction of
+ * its own. A bespoke target gets added to the snap list, so it used to put two
+ * stops a tenth apart and the drag lost its snap.
+ */
 const SNAP_FOR = {
   solving: "peek",
-  choose: 0.66,
-  detail: 0.64,
+  choose: "half",
+  detail: "half",
   summary: "half",
   empty: "half",
 };
@@ -175,25 +181,30 @@ export default function App() {
   const [noteOpen, setNoteOpen] = useState(!load("seenMapNote"));
   const [sheetHeight, setSheetHeight] = useState(0);
 
-  // Two map layers, briefly.
+  // Two map layers, and the cut-out is the default.
   //
-  // The schematic draws instantly from the graph's own altitudes and needs
-  // neither a GPU nor a network, so it goes up first and there is never an
-  // empty rectangle where the mountain should be. MapLibre loads underneath
-  // it and takes over once it is genuinely painting — real elevation, real
-  // relief. If it never gets there, the schematic simply stays.
-  // The map is the skiing tab. Choosing a resort while already looking at that
-  // resort's terrain is backwards, and mounting MapLibre behind a page that
-  // never shows it is wasted battery.
+  // The cut-out shows the resort and nothing else: a slab of terrain with an
+  // edge and a bottom, so you can see the whole mountain as one object and
+  // tell where it stops. A continuous world map cannot do that. It has real
+  // imagery, which is prettier, but it also runs to the horizon in every
+  // direction, and on a phone that reads as being lost rather than as being
+  // somewhere. The resort is the subject; the rest of the Alps is not.
+  //
+  // The world map stays one tap away rather than being deleted, because it is
+  // the better view once you know where you are, and because the brief asks
+  // for real terrain.
   const onMountain = tab === "skiing";
-  const showSchematic = mapBroken || !mapLive;
+  const [mapMode, setMapMode] = useState("cutout"); // 'cutout' | 'world'
+  const [statusOpen, setStatusOpen] = useState(false);
+  const wantWorld = mapMode === "world";
+  const showSchematic = !wantWorld || mapBroken || !mapLive;
   // MapLibre spawns its own workers for tile parsing, which cannot be
   // constructed from a file:// page's opaque origin. It would fail four times
   // over and then hit the watchdog, so on file:// go straight to the schematic
   // — which is the whole point of having one.
   const canRunMapLibre =
     typeof location === "undefined" || location.protocol !== "file:";
-  const tryMapLibre = onMountain && !mapBroken && canRunMapLibre;
+  const tryMapLibre = onMountain && wantWorld && !mapBroken && canRunMapLibre;
 
   const chosen = routes[pickIndex] || null;
   const shownRoute =
@@ -507,7 +518,7 @@ export default function App() {
           viewportBottom={
             navigating ? NAV_FOOT_H : exploring ? PLAN_BUTTON_H + 28 : sheetHeight
           }
-          block={exploring}
+          block={!navigating}
           viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}
@@ -520,11 +531,20 @@ export default function App() {
 
       <div className="topbar">
         {onMountain && screen === "explore" && (
-          <button className="resortpill" onClick={() => setTab("home")}>
-            <Mountain width="16" height="16" />
-            <span className="resortpill__nm">{resort.name}</span>
-            <span className="resortpill__x">Change</span>
-          </button>
+          <>
+            <button className="resortpill" onClick={() => setTab("home")}>
+              <Mountain width="16" height="16" />
+              <span className="resortpill__nm">{resort.name}</span>
+              <span className="resortpill__x">Change</span>
+            </button>
+            {/* Beside the resort name rather than in a card over the terrain.
+                What is open is a fact about the resort, and this screen is
+                deliberately the mountain and one button. */}
+            <button className="openbtn" onClick={() => setStatusOpen(true)}>
+              <Info width="15" height="15" />
+              Open
+            </button>
+          </>
         )}
         {!["explore", "plan", "solving", "summary", "navigate"].includes(screen) && (
           <button
@@ -564,9 +584,14 @@ export default function App() {
           <Compass />
         </button>
         <button
-          className="iconbtn"
-          aria-label="Toggle flat and tilted view"
-          onClick={() => mapControl.current?.flat()}
+          className={`iconbtn${wantWorld ? " iconbtn--on" : ""}`}
+          aria-label={wantWorld ? "Show the resort cut-out" : "Show the world map"}
+          aria-pressed={wantWorld}
+          onClick={() => {
+            setMapMode(wantWorld ? "cutout" : "world");
+            // A previous failure should not stop the user asking again.
+            if (!wantWorld) setMapBroken(false);
+          }}
         >
           <Layers />
         </button>
@@ -591,15 +616,24 @@ export default function App() {
           do every single time. */}
       {exploring && <PlanButton onPlan={() => setScreen("plan")} />}
 
-      {noteOpen && mapShowing && showSchematic && (!hasMapKey || mapBroken) && !chromeHidden &&
-        screen === "plan" && (
+      {noteOpen && mapShowing && !chromeHidden && (
+        mapBroken && wantWorld ? (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
-          <span className="mapnote__t">Simplified terrain. Drag to orbit.</span>
+          <span className="mapnote__t">The world map would not load. Showing the cut-out.</span>
           <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">
             <Close width="16" height="16" />
           </button>
         </div>
+        ) : screen === "plan" ? (
+        <div className="mapnote" style={{ bottom: chromeBottom }}>
+          <Info width="16" height="16" style={{ flex: "none" }} />
+          <span className="mapnote__t">Drag to orbit the resort. Pinch to zoom.</span>
+          <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">
+            <Close width="16" height="16" />
+          </button>
+        </div>
+        ) : null
       )}
 
       {tab === "home" && (
@@ -728,6 +762,10 @@ export default function App() {
           setAbility={setAbility}
           onClose={() => setSettingsOpen(false)}
         />
+      )}
+
+      {statusOpen && (
+        <ResortStatus resort={resort} onClose={() => setStatusOpen(false)} />
       )}
     </main>
   );

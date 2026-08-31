@@ -11,10 +11,23 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-export const SNAP = { peek: 0.3, half: 0.56, tall: 0.86 };
+/**
+ * Three stops, well apart.
+ *
+ * Peek was 0.3, which is a third of the screen for a state whose job is to show
+ * a title and get out of the way, and tall was 0.86, which left content behind
+ * a scroll on a sheet the user had just dragged all the way up. So it managed
+ * to be too much when down and not enough when up.
+ *
+ * The spacing matters as much as the values. Screens used to open at their own
+ * fraction, and `points()` adds that to the list, so choose had stops at 0.3,
+ * 0.56, 0.66 and 0.86 — two of them a tenth apart, which is what makes a drag
+ * feel indecisive rather than magnetic. Screens now open on one of these three.
+ */
+export const SNAP = { peek: 0.24, half: 0.58, tall: 0.92 };
 
 /** Never let the sheet cover everything: a strip of mountain always shows. */
-const MAX_FRACTION = 0.9;
+const MAX_FRACTION = 0.94;
 const MIN_FRACTION = 0.16;
 
 export default function Sheet({ snap = "half", snaps, children, onSnapChange }) {
@@ -63,6 +76,10 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
       if (e.target.closest?.(".sheet__body, .sheet__foot")) return;
       drag = { id: e.pointerId, y: e.clientY, from: heightRef.current };
       node.setPointerCapture(e.pointerId);
+      // A drag starting on the handle sweeps the pointer across the heading
+      // below it, and the sheet lands with half its text highlighted. Selection
+      // is suppressed for the gesture only, so text stays selectable at rest.
+      node.classList.add("sheet--dragging");
     };
 
     const onMove = (e) => {
@@ -78,6 +95,7 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
     const onUp = (e) => {
       if (!drag || drag.id !== e.pointerId) return;
       drag = null;
+      node.classList.remove("sheet--dragging");
       try { node.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
       const fraction = heightRef.current / vh();
       const nearest = points().reduce((best, p) =>

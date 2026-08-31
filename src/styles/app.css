@@ -148,6 +148,11 @@ input, select { font: inherit; color: inherit; }
   display: grid; place-items: center;
   cursor: grab;
 }
+/* Set for the duration of a drag; see the pointerdown handler in Sheet.jsx. */
+.sheet--dragging, .sheet--dragging * {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .sheet__grab:active { cursor: grabbing; }
 .sheet__grab i {
   display: block;
@@ -261,9 +266,15 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .chip[disabled] { opacity: 0.35; cursor: default; }
 .chip__swatch {
+  /* inline-block so a swatch keeps its size outside a flex parent. As a plain
+     inline element it collapsed to nothing anywhere but inside a chip. */
+  display: inline-block;
   width: 10px; height: 10px; border-radius: 3px; flex: none;
   box-shadow: 0 0 0 1px rgba(11, 26, 36, 0.14);
 }
+
+/* A row label that carries a swatch. */
+.row__k { display: inline-flex; align-items: center; gap: var(--s-2); }
 .chip[aria-pressed="true"] .chip__swatch { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
 .chip--busy { opacity: 0.5; }
 
@@ -595,6 +606,34 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .banner__s { font-size: var(--t-subhead); opacity: 0.66; margin-top: var(--s-1); line-height: 1.35; }
 
+/* A caution rather than a headline: something the user must read once and can
+   then get on with. Warm against an otherwise cold palette so it reads as a
+   note about the real world and not as part of the chrome. */
+.banner--warn {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  color: var(--warn);
+  display: flex; gap: var(--s-3); align-items: flex-start;
+  padding: var(--s-4);
+}
+.banner--warn p { font-size: var(--t-subhead); line-height: 1.4; }
+
+/* Sits beside the resort name. Same height as the pill so the row reads as one
+   object rather than two floating chips. */
+.openbtn {
+  flex: none;
+  height: var(--tap);
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  background: rgba(11, 26, 36, 0.72);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  color: #fff;
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-footnote); font-weight: 650;
+}
+.openbtn:active { transform: scale(0.97); }
+
 .warn, .info {
   border-radius: var(--r-md);
   padding: var(--s-3);
@@ -880,6 +919,9 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .modal__body {
   flex: 1; overflow-y: auto;
   padding: 0 var(--gutter) calc(var(--safe-bottom) + var(--s-6));
+  /* Sections in here are siblings with no margins of their own, so without a
+     gap a leading banner sits directly against the next heading. */
+  display: flex; flex-direction: column; gap: var(--s-5);
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { transform: translateY(100%); } }

@@ -6,7 +6,7 @@
  * when the resort changes" means in numbers: nothing about the slab is a
  * constant, and every dimension moves with the terrain it is under.
  */
-import { buildField, slabFor, SKIRT, GRID } from "./field.js";
+import { buildField, slabFor, toUnit, SKIRT, GRID } from "./field.js";
 import { NODES as MONTEROSA, projector as monterosaProjector } from "../resort.js";
 
 let failures = 0;
@@ -80,6 +80,64 @@ for (const [name, f, s] of [["monterosa", mono, sMono], ["the other", other, sOt
   check(`${name}: no rim face is taller than the slab is thick`,
     tallest <= s.thickness + 0.01, `tallest ${tallest.toFixed(1)}m, thickness ${s.thickness.toFixed(1)}m`);
 }
+
+console.log("\nTHE CAMERA IS ABOVE THE MOUNTAIN");
+
+// Pitch is measured from straight down, so every value in range is a camera
+// looking down on the resort from somewhere above it. It has not always been:
+// depth grew with altitude, which is a camera underneath the terrain looking
+// up, and the visible symptom was the slab's flat underside on screen.
+for (const pitch of [0, 20, 46, 75]) {
+  const view = { bearing: -28, pitch, zoom: 1 };
+  const mid = { x: mono.cx, z: mono.cz };
+  const high = toUnit(mono, mid.x, mono.hi, mid.z, view);
+  const low = toUnit(mono, mid.x, mono.lo, mid.z, view);
+
+  check(`pitch ${pitch}: high ground is nearer than low ground below it`,
+    high.depth < low.depth, `${high.depth | 0} against ${low.depth | 0}`);
+  // Straight down is the one pitch where altitude cannot move a point up or
+  // down the frame, because the frame is the ground plane.
+  if (pitch > 0) {
+    check(`pitch ${pitch}: and it is higher up the frame`,
+      high.v < low.v, `${high.v.toFixed(3)} against ${low.v.toFixed(3)}`);
+  }
+
+  // Ground further from the camera sits higher on screen, toward the horizon,
+  // and is drawn smaller. Both are the same fact about looking down at things.
+  //
+  // Which corner of the bbox is nearest depends on the bearing, so the probes
+  // are placed along the view axis rather than picked from the corners: at
+  // bearing 0 the rotation is the identity and +z is straight away from the
+  // camera.
+  const along = { bearing: 0, pitch, zoom: 1 };
+  const far = toUnit(mono, mono.cx, mono.lo, mono.maxZ, along);
+  const near = toUnit(mono, mono.cx, mono.lo, mono.minZ, along);
+  if (pitch > 0) {
+    check(`pitch ${pitch}: far ground is higher up the frame than near ground`,
+      far.v < near.v, `${far.v.toFixed(3)} against ${near.v.toFixed(3)}`);
+    check(`pitch ${pitch}: and further away`, far.depth > near.depth,
+      `${far.depth | 0} against ${near.depth | 0}`);
+    check(`pitch ${pitch}: so near ground is drawn larger`,
+      Math.abs(near.u - toUnit(mono, mono.cx + 1000, mono.lo, mono.minZ, along).u) >
+      Math.abs(far.u - toUnit(mono, mono.cx + 1000, mono.lo, mono.maxZ, along).u),
+      "same 1km, wider on screen when near");
+  }
+}
+
+// The perspective divisor is a distance, so it must never reach zero: a point
+// at w = 0 is in the camera's eye and projects to infinity.
+let worstW = Infinity;
+for (const pitch of [0, 20, 46, 75]) {
+  for (const x of [mono.minX, mono.maxX]) {
+    for (const z of [mono.minZ, mono.maxZ]) {
+      for (const y of [mono.lo - 400, mono.hi]) {
+        const { u, v } = toUnit(mono, x, y, z, { bearing: 152, pitch, zoom: 1 });
+        if (!Number.isFinite(u) || !Number.isFinite(v)) worstW = 0;
+      }
+    }
+  }
+}
+check("no corner of the slab projects to infinity", worstW !== 0);
 
 console.log("\nAND IT IS THE SAME MOUNTAIN EVERY TIME");
 const again = buildField(OTHER, projectorFor(OTHER));

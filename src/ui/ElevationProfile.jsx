@@ -74,10 +74,21 @@ export default function ElevationProfile({
         candidates.push({ i, alt, x: xs[i] });
       }
     });
-    const MIN_GAP = 30; // viewBox units, roughly the width of a four-digit label
+    const MIN_GAP = 34; // viewBox units, roughly the width of a five-digit label
+    // Spaced on where the label is actually drawn, not on where its peak is.
+    // Labels near an edge are clamped inwards to stay in the frame, so two
+    // separate peaks in the first few percent both landed on x=14 and printed
+    // on top of each other: "2,3502,350".
+    const at = (x) => Math.max(14, Math.min(W - 14, x));
     const labelled = [];
     for (const c of [...candidates].sort((a, b) => b.alt - a.alt)) {
-      if (labelled.every((l) => Math.abs(l.x - c.x) >= MIN_GAP)) labelled.push(c);
+      // Not the same number twice. Lapping one summit six times produced six
+      // identical labels, which is noise: the altitude is the information and
+      // it has already been given.
+      const ok = labelled.every(
+        (l) => Math.abs(at(l.x) - at(c.x)) >= MIN_GAP && Math.abs(l.alt - c.alt) > 1
+      );
+      if (ok) labelled.push(c);
     }
     const labelledSet = new Set(labelled.map((l) => l.i));
 
@@ -93,7 +104,7 @@ export default function ElevationProfile({
           />
           {isLabelled && (
             <text
-              x={Math.max(14, Math.min(W - 14, c.x)).toFixed(1)}
+              x={at(c.x).toFixed(1)}
               y={(y(c.alt) - 6).toFixed(1)}
               fontSize="9"
               fontWeight="600"

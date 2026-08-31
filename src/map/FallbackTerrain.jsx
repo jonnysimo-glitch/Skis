@@ -13,7 +13,10 @@
  */
 import { useEffect, useRef } from "react";
 import { NODES as MONTEROSA_NODES, projector as monterosaProjector } from "../resort.js";
-import { buildField, slabFor, GRID, VERT_EXAGGERATION } from "./field.js";
+import {
+  buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
+  SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
+} from "./field.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
@@ -40,6 +43,35 @@ const GLIDE_DECAY = 0.92;
  */
 const MIN_PITCH = 0;
 const MAX_PITCH = 75;
+
+/**
+ * The view you start on and the view the reset button returns to.
+ *
+ * One constant for both, because they were different: the map opened at bearing
+ * -28 and reset went to bearing 0, so the button took you somewhere worse than
+ * where you began and there was no way back to it.
+ *
+ * Pitch is measured from straight down, so a lower number is more overhead. 46
+ * looks down over the mountains rather than across them, which is what makes
+ * the cut-out read as an object on a table.
+ */
+const HOME = { bearing: 152, pitch: 46, zoom: 1 };
+
+/**
+ * Camera slack.
+ *
+ * Loose on purpose. A camera that stops the moment you push it feels broken
+ * even when it is behaving; these leave room to move and still put a wall
+ * somewhere. ZOOM_MIN below 1 is what lets the whole cut-out sit in frame with
+ * air around it.
+ */
+const ZOOM_MIN = 0.34;
+const ZOOM_MAX = 5.2;
+/** How far past the frame the subject may be pushed, as a share of the frame. */
+// 0.44 was too loose: a fling could put the whole model off screen, which is
+// the wall not holding. The flexibility that was actually missing is in the
+// zoom range above, not here.
+const OVERSCROLL = 0.28;
 /**
  * The block.
  *
@@ -62,17 +94,16 @@ const MAX_PITCH = 75;
  * piste lines drawn over the top of it. If a change here makes the model look
  * better, check what it is covering before believing it.
  */
-const SKIRT_LIT = [236, 243, 249];
-const SKIRT_SHADE = [214, 227, 238];
-const BASE_COLOUR = [199, 216, 230];
 // How far the slab may run past the side edges, and how much of the free
 // height it fills. Bleeding the corners is deliberate: a diorama that stops
 // short of the frame reads as a small object, not as terrain.
-const BLOCK_BLEED = 1.34;
-const BLOCK_FILL = 0.46;
+const BLOCK_BLEED = 1.62;
+const BLOCK_FILL = 0.72;
 
 const SKY_TOP = [104, 158, 196];
 const SKY_HORIZON = [216, 234, 244];
+
+const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
 
 const mix = (a, b, t) => [
   a[0] + (b[0] - a[0]) * t,
@@ -131,7 +162,7 @@ export default function FallbackTerrain({
   // panX/panY are a screen-space offset applied after the camera has framed
   // its target, so dragging moves the mountain rather than re-aiming at it.
   const view = useRef({
-    bearing: -28, pitch: 56, zoom: 1, targetZoom: 1, panX: 0, panY: 0,
+    ...HOME, targetZoom: HOME.zoom, panX: 0, panY: 0,
   });
   const dirty = useRef(true);
   const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block });
@@ -171,6 +202,13 @@ export default function FallbackTerrain({
       view.current.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, deg));
       dirty.current = true;
     };
+    // Orbiting is a two finger gesture, so a test driving one mouse cannot
+    // reach it. Setting bearing directly is the only way to check what the
+    // renderer does from the far side.
+    window.__skisSetBearing = (deg) => {
+      view.current.bearing = deg;
+      dirty.current = true;
+    };
     return () => clearInterval(tick);
   }, []);
 
@@ -179,22 +217,14 @@ export default function FallbackTerrain({
     controlRef.current = {
       orbit: (deg) => { view.current.bearing += deg; dirty.current = true; },
       resetNorth: () => {
-        view.current.bearing = 0;
-        view.current.pitch = 56;
-        view.current.panX = 0;
-        view.current.panY = 0;
-        dirty.current = true;
-      },
-      flat: () => {
-        view.current.pitch = view.current.pitch > 12 ? 3 : 56;
+        Object.assign(view.current, HOME, { targetZoom: HOME.zoom, panX: 0, panY: 0 });
         dirty.current = true;
       },
       zoom: (delta) => {
         const v = view.current;
-        v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * (delta > 0 ? 1.32 : 0.76)));
+        v.targetZoom = clampZoom(v.targetZoom * (delta > 0 ? 1.32 : 0.76));
         dirty.current = true;
       },
-      isFlat: () => view.current.pitch < 12,
     };
   }, [controlRef]);
 
@@ -226,19 +256,7 @@ export default function FallbackTerrain({
     // points we want in shot into "unit" space, then pick the focal length and
     // offsets that fit their bbox into the part of the canvas the sheet is not
     // covering.
-    const unit = (x, y, z, v) => {
-      const b = (v.bearing * Math.PI) / 180;
-      const p = (v.pitch * Math.PI) / 180;
-      const px = x - field.cx;
-      const py = (y - field.cy) * VERT_EXAGGERATION;
-      const pz = z - field.cz;
-      const rx = px * Math.cos(b) - pz * Math.sin(b);
-      const rz = px * Math.sin(b) + pz * Math.cos(b);
-      const sy = rz * Math.cos(p) - py * Math.sin(p);
-      const depth = rz * Math.sin(p) + py * Math.cos(p);
-      const w = field.span * 1.45 + depth;
-      return { u: rx / w, v: sy / w, depth };
-    };
+    const unit = (x, y, z, v) => toUnit(field, x, y, z, v);
 
     /** The whole mountain, corner to corner. */
     const whole = () => {
@@ -250,13 +268,34 @@ export default function FallbackTerrain({
       return out;
     };
 
+    /** Every point the route passes through. */
+    const routeTargets = (r) => {
+      const out = [];
+      for (const f of r.features) {
+        for (const [lon, lat] of f.geometry.coordinates) {
+          const { x, z } = field.proj.project(lat, lon);
+          out.push([x, field.sample(x, z), z]);
+        }
+      }
+      return out;
+    };
+
     /** World points the camera should keep in shot. */
     const targets = () => {
       const { route: r, camera: cam, block: asBlock } = propsRef.current;
-      // An object you look at whole. Framed tightly inside it, its sides sit
-      // off screen and project across the view instead of bounding it.
-      if (asBlock) return whole();
-      if (cam?.kind === "point" && cam.center) {
+      // Order matters, and all three cases are live.
+      //
+      // Navigating frames the current leg, and only navigating: it is the one
+      // screen that asks for a point and is not drawing the slab. Explore asks
+      // for a point too, at the resort centre, and framing tightly there puts
+      // the cut-out's own sides off screen where they project across the view
+      // instead of bounding it.
+      //
+      // A route is the subject wherever there is one. Letting the slab force
+      // the whole mountain into shot made choose a postage stamp: the sheet
+      // takes most of the height and all of Monterosa scaled into what is left
+      // is unreadable.
+      if (cam?.kind === "point" && cam.center && !asBlock) {
         // Navigating a leg: frame tightly around that leg.
         const [lon, lat] = cam.center;
         const { x, z } = field.proj.project(lat, lon);
@@ -268,16 +307,7 @@ export default function FallbackTerrain({
           [x + reach, field.sample(x + reach, z - reach), z - reach],
         ];
       }
-      if (r?.features?.length) {
-        const out = [];
-        for (const f of r.features) {
-          for (const [lon, lat] of f.geometry.coordinates) {
-            const { x, z } = field.proj.project(lat, lon);
-            out.push([x, field.sample(x, z), z]);
-          }
-        }
-        return out;
-      }
+      if (r?.features?.length) return routeTargets(r);
       return whole();
     };
 
@@ -305,7 +335,9 @@ export default function FallbackTerrain({
       // always width-bound and leaves a small model adrift in sky. Let the
       // corners bleed off the sides and fill the height instead, which is what
       // makes it read as a diorama you are looking into.
-      const f = (propsRef.current.block
+      const wholeCutout =
+        propsRef.current.block && !propsRef.current.route?.features?.length;
+      const f = (wholeCutout
         ? Math.min((availW / spanU) * BLOCK_BLEED, (availH * BLOCK_FILL) / spanV)
         : Math.min(availW / spanU, availH / spanV)) * v.zoom;
 
@@ -324,7 +356,6 @@ export default function FallbackTerrain({
       // "half the frame" and never binds. The excess is what you need to be
       // able to scroll through when zoomed in, plus a small allowance so the
       // view can be nudged off centre at rest.
-      const OVERSCROLL = 0.22;
       const limitX = Math.max(0, f * spanU - availW) / 2 + availW * OVERSCROLL;
       const limitY = Math.max(0, f * spanV - availH) / 2 + availH * OVERSCROLL;
       v.panX = Math.max(-limitX, Math.min(limitX, v.panX));
@@ -412,8 +443,8 @@ export default function FallbackTerrain({
             pts: [
               p1,
               p2,
-              project(xb, Math.max(hb - thickness, base), zb, v, cam),
-              project(xa, Math.max(ha - thickness, base), za, v, cam),
+              project(xb, base, zb, v, cam),
+              project(xa, base, za, v, cam),
             ],
             flat: out[0] !== 0 ? SKIRT_SHADE : SKIRT_LIT,
           });
@@ -494,8 +525,14 @@ export default function FallbackTerrain({
     };
 
     const drawGraph = (v, cam) => {
+      // Two passes. A single white dash at half opacity disappeared into the
+      // snowfields, which is most of the mountain, and the piste network is
+      // the whole point of the screen it is drawn on. A dark casing under it
+      // makes it read on snow and on forest both.
       for (const feature of propsRef.current.graph.features) {
-        stroke(toScreen(feature.geometry.coordinates, v, cam), "rgba(255,255,255,0.5)", 1.3, [3, 3]);
+        const pts = toScreen(feature.geometry.coordinates, v, cam);
+        stroke(pts, "rgba(11,26,36,0.30)", 3, [3, 3]);
+        stroke(pts, "rgba(255,255,255,0.92)", 1.4, [3, 3]);
       }
     };
 
@@ -614,6 +651,9 @@ export default function FallbackTerrain({
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, width, height);
 
+        // Terrain first, then everything on it. The pistes and the route are
+        // drawn over the surface rather than into it, so a run on the far side
+        // of a ridge stays visible — see section 15 in scripts/features.mjs.
         drawTerrain(v, cam);
         drawGraph(v, cam);
         drawRoute(v, cam);
@@ -656,7 +696,18 @@ export default function FallbackTerrain({
       gesture = { x: c.x, y: c.y, ...(pointers.size >= 2 ? spread() : {}) };
     };
 
+    /**
+     * Double tap to zoom, and only a tap counts.
+     *
+     * This used to fire on any second pointerdown within 300ms, whatever
+     * happened in between, so two quick drags in a row zoomed the map. Four in
+     * a row put it at the ceiling. A tap has to be short and stay put, so both
+     * are now tracked and a press that moved is not a tap.
+     */
+    const TAP_MS = 260;
+    const TAP_SLOP = 12;
     let lastTap = 0;
+    let press = null;
     const down = (e) => {
       canvas.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -669,12 +720,15 @@ export default function FallbackTerrain({
 
       if (pointers.size === 1) {
         const now = performance.now();
+        press = { t: now, x: e.clientX, y: e.clientY };
         if (now - lastTap < 300) {
           const v = view.current;
-          v.targetZoom = Math.min(3.4, v.targetZoom * 1.6);
+          v.targetZoom = clampZoom(v.targetZoom * 1.6);
           dirty.current = true;
+          lastTap = 0; // a zoom consumes the pair, so a third tap starts over
         }
-        lastTap = now;
+      } else {
+        press = null; // a second finger is a pinch, never a tap
       }
       canvas.style.cursor = "grabbing";
     };
@@ -695,7 +749,7 @@ export default function FallbackTerrain({
       } else if (pointers.size >= 2) {
         const { dist, angle } = spread();
         if (gesture.dist > 0) {
-          v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * (dist / gesture.dist)));
+          v.targetZoom = clampZoom(v.targetZoom * (dist / gesture.dist));
           v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
         }
         v.bearing += ((angle - gesture.angle) * 180) / Math.PI;
@@ -720,6 +774,12 @@ export default function FallbackTerrain({
         return;
       }
       canvas.style.cursor = "grab";
+      // Only now is it known whether that press was a tap or a drag.
+      if (press) {
+        const still = Math.hypot(e.clientX - press.x, e.clientY - press.y) < TAP_SLOP;
+        lastTap = still && performance.now() - press.t < TAP_MS ? performance.now() : 0;
+        press = null;
+      }
       // Let go mid-flick and the map should keep going and settle, the way it
       // does in every map app. Without this a drag stops dead under your
       // thumb, which is the single thing that makes a map feel cheap.
@@ -735,7 +795,7 @@ export default function FallbackTerrain({
       const v = view.current;
       // Trackpad pinch arrives as a wheel event with ctrlKey set.
       const factor = e.ctrlKey ? 1 - e.deltaY * 0.01 : e.deltaY > 0 ? 0.92 : 1.08;
-      v.targetZoom = Math.max(0.5, Math.min(3.4, v.targetZoom * factor));
+      v.targetZoom = clampZoom(v.targetZoom * factor);
       dirty.current = true;
     };
 

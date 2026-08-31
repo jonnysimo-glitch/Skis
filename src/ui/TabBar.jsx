@@ -19,7 +19,16 @@ export const TABS = [
 
 export default function TabBar({ tab, onChange, hidden }) {
   return (
-    <nav className={`tabbar${hidden ? " tabbar--hidden" : ""}`} aria-label="Sections">
+    <nav
+      className={`tabbar${hidden ? " tabbar--hidden" : ""}`}
+      aria-label="Sections"
+      // Sliding it off the bottom hides it from the eye and from the mouse,
+      // but not from the tab key: while navigating, three buttons sat just
+      // past the edge of the screen and tabbing reached them. Landing on Stats
+      // halfway down a run is not a thing anyone meant to do.
+      aria-hidden={hidden || undefined}
+      {...(hidden ? { inert: "" } : {})}
+    >
       {TABS.map(({ id, label, Icon }) => (
         <button
           key={id}

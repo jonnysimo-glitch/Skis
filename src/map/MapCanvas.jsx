@@ -193,14 +193,7 @@ export default function MapCanvas({
     controlRef.current = {
       orbit: (deg) => mapRef.current?.easeTo({ bearing: (mapRef.current.getBearing() + deg), duration: 550 }),
       resetNorth: () => mapRef.current?.easeTo({ bearing: 0, pitch: 60, duration: 650 }),
-      flat: () => {
-        const map = mapRef.current;
-        if (!map) return;
-        const flat = map.getPitch() > 12;
-        map.easeTo({ pitch: flat ? 0 : 62, duration: 650 });
-      },
       zoom: (delta) => mapRef.current?.easeTo({ zoom: mapRef.current.getZoom() + delta, duration: 350 }),
-      isFlat: () => (mapRef.current?.getPitch() ?? 0) < 12,
     };
   }, [controlRef]);
 

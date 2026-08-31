@@ -64,6 +64,18 @@ export function fbm(x, y) {
 export const SKIRT = 0.17;
 
 /**
+ * The slab's faces.
+ *
+ * Exported because the feature tests identify slab pixels by exact value, and
+ * a copy of these numbers in the test drifted the first time they changed.
+ * Filled flat, with no slope shading and no haze, so no terrain pixel can
+ * collide with them.
+ */
+export const SKIRT_LIT = [241, 246, 251];
+export const SKIRT_SHADE = [203, 220, 235];
+export const BASE_COLOUR = [188, 208, 226];
+
+/**
  * The slab's dimensions for a given field.
  *
  * `thickness` is what the rim hangs below the ground, and `base` is where the
@@ -219,4 +231,35 @@ export function buildField(nodes, makeProjector) {
     cy: (lo + hi) / 2,
     span: Math.max(maxX - minX, maxZ - minZ),
   };
+}
+
+/**
+ * Project a world point into unit screen space, from a camera above the ground.
+ *
+ * Pitch is measured from straight down: 0 looks vertically down on the resort,
+ * 75 is the flattest the camera goes and still sits 15 degrees above the
+ * horizon. There is no pitch at which the camera is underneath the terrain,
+ * which is the point — it was, once. `depth` grew with altitude, so a summit
+ * sorted as further away than the valley beside it and the painter's algorithm
+ * drew the valley over the peak, and `w` grew with it so near ground drew
+ * smaller than far ground. On screen it showed up as the slab's flat underside
+ * being visible, which can only happen from below.
+ *
+ * With the camera's elevation above the horizon e = 90 - pitch, so that
+ * sin e = cos p and cos e = sin p, looking along +rz from -rz:
+ *   depth    =  P . direction = rz sin p - py cos p
+ *   screen y = -(P . up)      = -rz cos p - py sin p
+ */
+export function toUnit(field, x, y, z, view) {
+  const b = (view.bearing * Math.PI) / 180;
+  const p = (view.pitch * Math.PI) / 180;
+  const px = x - field.cx;
+  const py = (y - field.cy) * VERT_EXAGGERATION;
+  const pz = z - field.cz;
+  const rx = px * Math.cos(b) - pz * Math.sin(b);
+  const rz = px * Math.sin(b) + pz * Math.cos(b);
+  const sy = -rz * Math.cos(p) - py * Math.sin(p);
+  const depth = rz * Math.sin(p) - py * Math.cos(p);
+  const w = field.span * 1.45 + depth;
+  return { u: rx / w, v: sy / w, depth };
 }
