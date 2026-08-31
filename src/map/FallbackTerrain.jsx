@@ -12,7 +12,7 @@
  * construction: there is nothing to fetch.
  */
 import { useEffect, useRef } from "react";
-import { NODES, projector } from "../resort.js";
+import { NODES as MONTEROSA_NODES, projector as monterosaProjector } from "../resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
@@ -85,9 +85,16 @@ function fbm(x, y) {
  * Inverse-distance interpolation through the node altitudes, roughened with
  * noise so it reads as terrain rather than a drape over thirteen poles.
  */
-function buildField() {
-  const proj = projector();
-  const pts = Object.values(NODES).map((n) => {
+/**
+ * The height field for one resort.
+ *
+ * Takes its mountain rather than importing one, the same change the solver
+ * needed. Without it the map is wired to Monterosa at module level and a second
+ * resort would draw the first one's terrain, slab and all.
+ */
+function buildField(nodes, makeProjector) {
+  const proj = makeProjector();
+  const pts = Object.values(nodes).map((n) => {
     const { x, z } = proj.project(n.lat, n.lon);
     return { x, z, alt: n.alt };
   });
@@ -191,6 +198,8 @@ export default function FallbackTerrain({
   controlRef,
   viewportBottom = 0,
   viewportTop = 0,
+  nodes = MONTEROSA_NODES,
+  makeProjector = monterosaProjector,
 }) {
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
@@ -202,7 +211,13 @@ export default function FallbackTerrain({
   const dirty = useRef(true);
   const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop });
 
-  if (!fieldRef.current) fieldRef.current = buildField();
+  // Rebuilt when the mountain changes, or a new resort would be drawn with the
+  // previous one's terrain and slab.
+  const builtFor = useRef(null);
+  if (!fieldRef.current || builtFor.current !== nodes) {
+    builtFor.current = nodes;
+    fieldRef.current = buildField(nodes, makeProjector);
+  }
 
   // A screen change re-frames the camera on something new, so any pan the user
   // had applied to the previous view is meaningless — keep it and the new
@@ -300,6 +315,16 @@ export default function FallbackTerrain({
       return { u: rx / w, v: sy / w, depth };
     };
 
+    /** The whole mountain, corner to corner. */
+    const whole = () => {
+      const out = [];
+      for (const x of [field.minX, field.maxX]) {
+        for (const z of [field.minZ, field.maxZ]) out.push([x, field.sample(x, z), z]);
+      }
+      out.push([field.cx, field.hi, field.cz]);
+      return out;
+    };
+
     /** World points the camera should keep in shot. */
     const targets = () => {
       const { route: r, camera: cam } = propsRef.current;
@@ -325,15 +350,7 @@ export default function FallbackTerrain({
         }
         return out;
       }
-      // Whole mountain.
-      const out = [];
-      for (const x of [field.minX, field.maxX]) {
-        for (const z of [field.minZ, field.maxZ]) {
-          out.push([x, field.sample(x, z), z]);
-        }
-      }
-      out.push([field.cx, field.hi, field.cz]);
-      return out;
+      return whole();
     };
 
     /** Solve focal length and offset so the targets fill the visible area. */

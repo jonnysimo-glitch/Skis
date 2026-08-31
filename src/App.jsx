@@ -504,7 +504,9 @@ export default function App() {
           pins={pins}
           camera={focus}
           controlRef={mapControl}
-          viewportBottom={navigating ? NAV_FOOT_H : exploring ? 0 : sheetHeight}
+          viewportBottom={
+            navigating ? NAV_FOOT_H : exploring ? PLAN_BUTTON_H + 28 : sheetHeight
+          }
           viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}

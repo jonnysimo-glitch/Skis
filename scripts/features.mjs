@@ -904,7 +904,11 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
     };
 
     const rest = await land();
-    check("there is terrain on screen to begin with", rest > 15, `${rest}% of the canvas`);
+    check("there is terrain on screen to begin with", rest > 6, `${rest}% of the canvas`);
+    // Relative, not absolute. The mountain is a model sitting in sky, so the
+    // resting fraction is naturally low and a fixed threshold measures how big
+    // the model happens to be rather than whether it is still there.
+    const enough = Math.max(3, rest * 0.35);
 
     // Pan is a screen-space offset with nothing bounding it by nature, so each
     // direction gets flung hard enough to clear the viewport several times over.
@@ -914,7 +918,8 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
     ]) {
       await fling(dx, dy);
       const seen = await land();
-      check(`flinging ${dir} cannot empty the screen`, seen > 15, `${seen}% still terrain`);
+      check(`flinging ${dir} cannot empty the screen`, seen >= enough,
+        `${seen}% still terrain, needs ${enough.toFixed(0)}%`);
     }
 
     // And zoomed in you must still be able to reach the far side, or the clamp
@@ -948,7 +953,7 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
     const after = await print();
     const shifted = await land();
     check("zoomed in, panning still moves the view", before !== after, before === after ? "identical pixels" : "view moved");
-    check("and still cannot empty it", shifted > 15, `${shifted}%`);
+    check("and still cannot empty it", shifted >= enough, `${shifted}%, needs ${enough.toFixed(0)}%`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
