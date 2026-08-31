@@ -16,6 +16,7 @@ import {
   maptilerTerrain,
   openTerrainStyle,
   TERRAIN_EXAGGERATION,
+  cameraLimits,
 } from "./config.js";
 import { addRouteLayers, setData, markProgress } from "./layers.js";
 
@@ -78,6 +79,11 @@ export default function MapCanvas({
       // Past ~75 degrees the camera is level with the slope and then under it.
       // Matches the ceiling the schematic view uses.
       maxPitch: 75,
+      // The camera stays on the resort. See cameraLimits.
+      ...cameraLimits(resort),
+      // Belt and braces on the repeated pins: with the bounds above the world's
+      // edge is unreachable, but a copy of the mountain is never wanted.
+      renderWorldCopies: false,
       attributionControl: { compact: true },
       // Terrain queries are expensive; this keeps panning smooth on a phone.
       maxTileCacheSize: 400,

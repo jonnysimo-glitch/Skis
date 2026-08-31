@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/solver.test.js && node scripts/osm/graph.test.mjs && node src/lib/graph.test.js && node src/map/field.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
+    "test": "node src/solver.test.js && node scripts/osm/graph.test.mjs && node src/lib/graph.test.js && node src/map/field.test.js && node src/map/camera.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
     "bench": "node scripts/bench-solver.js",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:sync": "npm run build && npx cap sync ios",

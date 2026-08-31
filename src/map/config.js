@@ -126,3 +126,43 @@ export const openTerrainStyle = () => ({
   ],
   terrain: { source: "terrain", exaggeration: TERRAIN_EXAGGERATION },
 });
+
+/**
+ * How far the camera may leave the resort.
+ *
+ * A wall, not a cage. You can pull back far enough to see the resort sitting in
+ * its valley, push in to piste level, and drift a little past the edges. What
+ * you cannot do is leave: unconstrained, the map pans and zooms to the whole
+ * globe, and past the world's edge MapLibre draws repeated copies of it, so the
+ * start pin appears three times receding toward the horizon. A ski map that can
+ * show you the Atlantic is not doing its job either way.
+ *
+ * The schematic view has had this since it was written. The real map did not,
+ * and nobody noticed because the real map never started: its worker 404ed, so
+ * every session fell back to the schematic.
+ */
+/** Slack outside the resort bbox, as a share of its own span. */
+export const CAMERA_SLACK = 0.3;
+/** Zoom levels below the resort's framing. Enough for context, not for Europe. */
+export const ZOOM_OUT_ALLOWANCE = 1.4;
+/** Piste level. Past this the DEM has nothing left to show and it goes to mush. */
+export const CAMERA_MAX_ZOOM = 17;
+/** Used when a resort has no bbox: roughly a resort's worth of degrees. */
+const DEFAULT_HALF_SPAN = [0.14, 0.07];
+
+export function cameraLimits(resort) {
+  const [halfX, halfY] = DEFAULT_HALF_SPAN;
+  const [lon, lat] = resort?.center ?? [0, 0];
+  const [w, s, e, n] = resort?.bbox ?? [lon - halfX, lat - halfY, lon + halfX, lat + halfY];
+  const padX = (e - w) * CAMERA_SLACK;
+  const padY = (n - s) * CAMERA_SLACK;
+  const base = resort?.zoom ?? 11.5;
+  return {
+    maxBounds: [
+      [w - padX, s - padY],
+      [e + padX, n + padY],
+    ],
+    minZoom: base - ZOOM_OUT_ALLOWANCE,
+    maxZoom: CAMERA_MAX_ZOOM,
+  };
+}

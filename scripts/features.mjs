@@ -1032,6 +1032,77 @@ if (feature("13. The block is under the mountain, not in front of it")) {
   }
 }
 
+// ==================== 14. THE REAL MAP CANNOT LEAVE THE RESORT ==
+// Section 12 walls in the schematic view. This is the same promise for the
+// MapLibre map that replaces it when the terrain loads, which had no wall at
+// all: it panned and zoomed to the whole globe, and past the world's edge
+// MapLibre draws repeated copies, so the start pin appeared three times
+// receding toward the horizon.
+//
+// It went unnoticed because the real map never started. Its worker 404ed, so
+// every session fell back to the schematic and this code path was dead.
+if (feature("14. The real map cannot leave the resort")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+
+  let present = true;
+  try {
+    await page.waitForFunction(() => !!window.__skisMap, { timeout: 15000 });
+  } catch {
+    present = false;
+  }
+
+  if (!present) {
+    check("MapLibre reached style.load, so there is a camera to test", false,
+      "__skisMap never appeared");
+    await page.context_.close();
+  } else {
+    const state = await page.evaluate(() => {
+      const m = window.__skisMap;
+      const b = m.getMaxBounds();
+      // jumpTo is the bluntest instrument available. A wall that holds against
+      // it holds against a fling.
+      m.jumpTo({ center: [2.35, 48.85], zoom: 3 }); // Paris
+      const away = m.getCenter();
+      const awayZoom = m.getZoom();
+      m.jumpTo({ zoom: 22 });
+      const deep = m.getZoom();
+      return {
+        worldCopies: m.getRenderWorldCopies?.() ?? null,
+        bounds: b && [[b.getWest(), b.getSouth()], [b.getEast(), b.getNorth()]],
+        minZoom: m.getMinZoom(), maxZoom: m.getMaxZoom(),
+        away: [away.lng, away.lat], awayZoom, deep,
+      };
+    });
+
+    check("the camera has a wall at all", !!state.bounds,
+      state.bounds ? "maxBounds set" : "maxBounds is null");
+    if (state.bounds) {
+      const [[w, s], [e, n]] = state.bounds;
+      const [lng, lat] = state.away;
+      check("jumping to Paris lands back on the resort",
+        lng >= w && lng <= e && lat >= s && lat <= n,
+        `${lng.toFixed(3)}, ${lat.toFixed(3)} in ${w.toFixed(2)}..${e.toFixed(2)}`);
+      check("and it is a resort sized wall, not a country sized one",
+        e - w < 1 && n - s < 1, `${(e - w).toFixed(2)} by ${(n - s).toFixed(2)} degrees`);
+    }
+    check("zooming out to the country is refused",
+      state.minZoom > 9 && state.awayZoom > 9,
+      `reached ${state.awayZoom.toFixed(1)}, floor ${state.minZoom.toFixed(1)}`);
+    check("zooming in past the terrain is refused",
+      state.maxZoom <= 18 && state.deep <= 18,
+      `reached ${state.deep}, ceiling ${state.maxZoom}`);
+    check("the world is not drawn more than once", state.worldCopies === false,
+      `renderWorldCopies ${state.worldCopies}`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
 } finally {
   await browser.close();
   server.close();
