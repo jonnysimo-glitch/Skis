@@ -726,15 +726,18 @@ export default function FallbackTerrain({
 
     const startGesture = () => {
       const c = centroid();
+      const sp = pointers.size >= 2 ? spread() : {};
       gesture = {
         x: c.x, y: c.y,
-        ...(pointers.size >= 2 ? spread() : {}),
+        ...sp,
         // Two fingers can mean three different things, so the first bit of
         // movement decides which and the rest of the gesture sticks to it.
+        // Where it all started, so the decision can be made on the whole
+        // movement rather than on one frame of it.
+        x0: c.x, y0: c.y, dist0: sp.dist ?? 0,
         mode: null,
         turned: 0,
         pinched: 1,
-        lifted: 0,
       };
     };
 
@@ -780,9 +783,11 @@ export default function FallbackTerrain({
       return Math.sign(next) * (lim + wasOver + (nowOver - wasOver) * OVERSHOOT);
     };
 
-    const PINCH_START = 0.04;   // 4% change in finger separation
+    const PINCH_START = 0.05;   // 5% change in finger separation
     const TWIST_START = 0.14;   // radians, about 8 degrees
-    const TILT_START = 22;      // pixels of parallel vertical travel
+    const TILT_START = 18;      // pixels the pair has to travel as one
+    /** How much more the pair must move together than apart to count as a tilt. */
+    const TILT_BIAS = 1.6;
 
     /**
      * Double tap to zoom, and only a tap counts.
@@ -849,30 +854,41 @@ export default function FallbackTerrain({
         // gesture is actually doing rather than on its first noisy frame.
         gesture.pinched *= scale;
         gesture.turned += turn;
-        gesture.lifted += c.y - gesture.y;
 
         if (!gesture.mode) {
-          if (Math.abs(gesture.pinched - 1) > PINCH_START) gesture.mode = "zoom";
-          else if (Math.abs(gesture.turned) > TWIST_START) gesture.mode = "rotate";
-          else if (Math.abs(gesture.lifted) > TILT_START) gesture.mode = "tilt";
+          // Tilt is decided by direction, not by distance.
+          //
+          // Fingers travelling together is a tilt; fingers travelling against
+          // each other is a pinch or a twist. Comparing those two directly is
+          // what makes this robust, because it does not depend on how far
+          // anything has gone. Checking a tilt threshold last, after zoom and
+          // rotate, meant a hand that spread as it slid — which is what hands
+          // do — locked to zoom before the tilt gate was ever reached, and the
+          // gesture was unreachable in practice.
+          const parallel = Math.hypot(c.x - gesture.x0, c.y - gesture.y0);
+          const opposed = Math.abs(dist - gesture.dist0);
+          if (parallel > TILT_START && parallel > opposed * TILT_BIAS) {
+            gesture.mode = "tilt";
+          } else {
+            const zoomP = Math.abs(gesture.pinched - 1) / PINCH_START;
+            const turnP = Math.abs(gesture.turned) / TWIST_START;
+            if (Math.max(zoomP, turnP) >= 1) gesture.mode = zoomP >= turnP ? "zoom" : "rotate";
+          }
         }
 
+        // One gesture, exclusively, for the rest of the touch. Zoom used to
+        // rotate alongside, and both used to drag the map with the midpoint,
+        // so a twist turned the mountain and slid it across the screen at the
+        // same time. The only pan left is the one inside zoomAbout, which is
+        // not a second gesture: it is what keeps the point between your
+        // fingers under your fingers.
         if (gesture.mode === "tilt") {
           v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - (c.y - gesture.y) * 0.4));
-        } else if (gesture.mode) {
-          // Zoom and rotate coexist, the way they do in every map app, but
-          // each waits for its own threshold so one cannot smear into the
-          // other. The midpoint between the fingers also drags the map, which
-          // is what makes a pinch feel anchored rather than applied to it.
-          if (Math.abs(gesture.pinched - 1) > PINCH_START) {
-            zoomAbout(v, scale, c.x, c.y);
-            v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
-          }
-          if (Math.abs(gesture.turned) > TWIST_START) {
-            v.bearing += (turn * 180) / Math.PI;
-          }
-          v.panX += c.x - gesture.x;
-          v.panY += c.y - gesture.y;
+        } else if (gesture.mode === "rotate") {
+          v.bearing += (turn * 180) / Math.PI;
+        } else if (gesture.mode === "zoom") {
+          zoomAbout(v, scale, c.x, c.y);
+          v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
         }
 
         gesture.dist = dist;

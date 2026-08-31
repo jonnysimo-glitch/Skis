@@ -58,7 +58,7 @@ import {
   routeBounds,
   nearestNode,
 } from "./lib/geo.js";
-import { Compass, Layers, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
+import { Compass, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
 
 const EDGES = buildEdges();
 const GRAPH_GEOJSON = graphToGeoJSON(EDGES);
@@ -192,9 +192,10 @@ export default function App() {
   // direction, and on a phone that reads as being lost rather than as being
   // somewhere. The resort is the subject; the rest of the Alps is not.
   //
-  // The world map stays one tap away rather than being deleted, because it is
-  // the better view once you know where you are, and because the brief asks
-  // for real terrain.
+  // The world map has no control on it for now. It is still wired, because it
+  // is the better view once you know where you are and the brief asks for real
+  // terrain, but a button to swap to it was not earning its place in a column
+  // of four. Bringing it back is one button.
   const onMountain = tab === "skiing";
   const [mapMode, setMapMode] = useState("cutout"); // 'cutout' | 'world'
   const [statusOpen, setStatusOpen] = useState(false);
@@ -203,6 +204,18 @@ export default function App() {
   const [navFoot, setNavFoot] = useState(NAV_FOOT_H);
   const wantWorld = mapMode === "world";
   const showSchematic = !wantWorld || mapBroken || !mapLive;
+  // With the button gone this is the only way into the world map, and it has
+  // to stay reachable: the code still ships, so it still has to stay walled in
+  // to the resort. Opt-in via ?maptest=1, like the other hooks.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!window.location.search.includes("maptest=1")) return undefined;
+    window.__skisSetMapMode = (next) => {
+      setMapBroken(false);
+      setMapMode(next);
+    };
+    return () => { delete window.__skisSetMapMode; };
+  }, []);
   // MapLibre spawns its own workers for tile parsing, which cannot be
   // constructed from a file:// page's opaque origin. It would fail four times
   // over and then hit the watchdog, so on file:// go straight to the schematic
@@ -595,18 +608,6 @@ export default function App() {
           onClick={() => mapControl.current?.resetNorth()}
         >
           <Compass />
-        </button>
-        <button
-          className={`iconbtn${wantWorld ? " iconbtn--on" : ""}`}
-          aria-label={wantWorld ? "Show the resort cut-out" : "Show the world map"}
-          aria-pressed={wantWorld}
-          onClick={() => {
-            setMapMode(wantWorld ? "cutout" : "world");
-            // A previous failure should not stop the user asking again.
-            if (!wantWorld) setMapBroken(false);
-          }}
-        >
-          <Layers />
         </button>
         <button className="iconbtn" aria-label="Zoom in" onClick={() => mapControl.current?.zoom(1)}>
           <Plus />

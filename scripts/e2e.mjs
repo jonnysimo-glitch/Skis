@@ -643,7 +643,7 @@ try {
     );
 
     const tools = await page.$$(".maptools .iconbtn");
-    check("the map has orbit and zoom controls", tools.length >= 4, `${tools.length} controls`);
+    check("the map has orbit and zoom controls", tools.length >= 3, `${tools.length} controls`);
     for (const t of tools) {
       await t.click();
       await page.waitForTimeout(120);

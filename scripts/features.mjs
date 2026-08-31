@@ -609,7 +609,7 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   check("there is no panel over it", (await page.$(".sheet, .resortpanel")) === null);
   check("and nothing to drag", (await page.$(".sheet__grab")) === null);
   check("the map has its controls here, where there is a map",
-    (await page.$$(".maptools .iconbtn")).length === 4);
+    (await page.$$(".maptools .iconbtn")).length === 3);
 
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body), body.replace(/\n/g, " ").slice(0, 60));
@@ -778,7 +778,7 @@ if (feature("10. Map chrome only where there is a map")) {
   await page.waitForTimeout(300);
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  check("the mountain does, and they are all there", (await chrome()) >= 4, `${await chrome()}`);
+  check("the mountain does, and they are all there", (await chrome()) >= 3, `${await chrome()}`);
 
   await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
@@ -1101,8 +1101,10 @@ if (feature("14. The real map cannot leave the resort")) {
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
 
-  // The cut-out is the default now, so the world map has to be asked for.
-  await page.click("[aria-label='Show the world map']");
+  // The cut-out is the map now and the button that swapped to the world one is
+  // gone, so this drives the same state through the maptest hook. The code is
+  // still shipped and still has to stay walled in.
+  await page.evaluate(() => window.__skisSetMapMode?.("world"));
 
   let present = true;
   try {
@@ -1353,6 +1355,50 @@ if (feature("16. One gesture at a time")) {
     check("and does not zoom", Math.abs(b.zoom - a.zoom) < 0.02, `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
     check("nor rotate", Math.abs(b.bearing - a.bearing) < 2,
       `bearing moved ${(b.bearing - a.bearing).toFixed(1)} degrees`);
+
+    // ---- and the same three with a hand rather than a machine --------------
+    // Reported from a real phone: a twist turned the mountain and slid it
+    // across the screen at once, and a two finger drag refused to change the
+    // elevation. Neither showed up above, because a hand does not hold its
+    // fingers exactly opposite, exactly level, or put them both down on the
+    // same tick. These do all three.
+    const hand = (build) => {
+      const frames = [];
+      for (let i = 0; i <= 16; i++) frames.push(build(i / 16, i));
+      return frames;
+    };
+    const jit = (i, k) => Math.sin(i * 12.9898 + k * 78.233) * 1.6;
+    const pair = (half, th, dx, dy, i) => [
+      cx + dx - half * Math.cos(th) + jit(i, 0), cy + dy - half * Math.sin(th) + jit(i, 1),
+      cx + dx + half * Math.cos(th) + jit(i, 2), cy + dy + half * Math.sin(th) + jit(i, 3),
+    ];
+    const rad = (deg) => (deg * Math.PI) / 180;
+
+    await reset();
+    a = await view();
+    // A twist, with the hand sliding and spreading a little as it turns.
+    await twoFinger(hand((t, i) => pair(90 * (1 + 0.02 * t), rad(26) * t, 0, 8 * t, i)));
+    b = await view();
+    const panMoved = await page.evaluate(() => {
+      const v = window.__skisView;
+      return Math.round(Math.hypot(v.panX, v.panY));
+    });
+    check("a real hand's twist rotates", Math.abs(b.bearing - a.bearing) > 8,
+      `${(b.bearing - a.bearing).toFixed(0)} degrees`);
+    check("and does not slide the mountain at the same time", panMoved < 6,
+      `${panMoved}px of pan`);
+    check("nor zoom it", Math.abs(b.zoom - a.zoom) < 0.02, `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
+
+    await reset();
+    a = await view();
+    // A two finger drag up, with the hand spreading 12% as it slides, which is
+    // what hands do and what used to make this register as a pinch.
+    await twoFinger(hand((t, i) => pair(80 * (1 + 0.12 * t), rad(6) * t, 0, -100 * t, i)));
+    b = await view();
+    check("a real hand's two finger drag changes the elevation",
+      Math.abs(b.pitch - a.pitch) > 8, `pitch moved ${(b.pitch - a.pitch).toFixed(0)} degrees`);
+    check("and does not zoom instead", Math.abs(b.zoom - a.zoom) < 0.02,
+      `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
