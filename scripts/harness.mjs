@@ -77,13 +77,23 @@ export const freezeClock = (hours, minutes) => `
 const NETWORK_NOISE =
   /ERR_CERT|ERR_CONNECTION|ERR_FAILED|ERR_NAME_NOT_RESOLVED|ERR_ABORTED|Failed to load resource/;
 
+/**
+ * A page to test against.
+ *
+ * `touch` gives the context a real touchscreen, which matters more than it
+ * looks: without it every gesture arrives as `pointerType: "mouse"` and the
+ * browser applies none of its touch behaviour, so `touch-action`, the gesture
+ * recogniser and `pointercancel` are all untested. Off by default because most
+ * checks here drive a mouse; on for anything about gestures.
+ */
 export async function newPage(
   browser,
-  { at = [9, 5], geolocation, permissions = [], offline = false, viewport } = {}
+  { at = [9, 5], geolocation, permissions = [], offline = false, viewport, touch = false } = {}
 ) {
   const context = await browser.newContext({
     viewport: viewport || { width: 430, height: 900 },
     ...(geolocation ? { geolocation } : {}),
+    ...(touch ? { hasTouch: true, isMobile: true } : {}),
     permissions,
   });
   await context.addInitScript(freezeClock(at[0], at[1]));
@@ -179,3 +189,30 @@ export const toMinutes = (hhmm) => {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
 };
+
+/**
+ * Multi-touch, dispatched through the browser's own input pipeline.
+ *
+ * Playwright's mouse is one pointer and its touchscreen only taps, so two
+ * finger gestures have to go through CDP. Synthetic PointerEvents from
+ * page.evaluate are not a substitute: they skip hit-testing, touch-action and
+ * the browser's gesture recogniser, so they pass whatever the app does.
+ *
+ * `frames` is a list of finger positions per step: [[[x, y], [x, y]], ...].
+ */
+export async function multiTouch(page, frames, { settle = 16 } = {}) {
+  const cdp = await page.context_.newCDPSession(page);
+  const send = (type, points) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: points.map((p, i) => ({ x: p[0], y: p[1], id: i + 1, radiusX: 12, radiusY: 12, force: 1 })),
+    });
+  await send("touchStart", frames[0]);
+  for (const f of frames) {
+    await send("touchMove", f);
+    await page.waitForTimeout(settle);
+  }
+  await send("touchEnd", []);
+  await page.waitForTimeout(400);
+  await cdp.detach().catch(() => {});
+}

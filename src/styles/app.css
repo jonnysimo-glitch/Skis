@@ -31,7 +31,16 @@ input, select { font: inherit; color: inherit; }
   background: var(--n-95);
 }
 
-.app__map { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app__map {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  /* The map owns every touch that lands on it. Without this the container
+     around the canvas can still hand a drag to the browser, and a long press
+     brings up the selection callout mid-gesture. */
+  touch-action: none;
+  user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
 
 /* Chrome floats over terrain. It stays quiet — the mountain does the work. */
 .topbar {

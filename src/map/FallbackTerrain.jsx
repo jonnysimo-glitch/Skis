@@ -915,6 +915,22 @@ export default function FallbackTerrain({
       }
     };
 
+    /**
+     * Safari's own pinch, which touch-action does not cover.
+     *
+     * WebKit fires these non-standard gesture events for a two finger pinch
+     * alongside the pointer events, and acts on them itself. `touch-action:
+     * none` stops the scroll and the double tap zoom but not this, so on an
+     * iPhone a pinch on the map could zoom Safari's page underneath the
+     * gesture the map was already handling. Chromium does not implement them,
+     * which is why no test here could have caught it.
+     *
+     * Scoped to the canvas on purpose: swallowing these document wide would
+     * take Safari's accessibility zoom away from the whole app.
+     */
+    const SAFARI_GESTURES = ["gesturestart", "gesturechange", "gestureend"];
+    const swallow = (e) => e.preventDefault();
+
     const wheel = (e) => {
       e.preventDefault();
       const v = view.current;
@@ -929,6 +945,7 @@ export default function FallbackTerrain({
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", up);
     canvas.addEventListener("wheel", wheel, { passive: false });
+    for (const t of SAFARI_GESTURES) canvas.addEventListener(t, swallow, { passive: false });
 
     return () => {
       cancelAnimationFrame(raf);
@@ -938,6 +955,7 @@ export default function FallbackTerrain({
       canvas.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointercancel", up);
       canvas.removeEventListener("wheel", wheel);
+      for (const t of SAFARI_GESTURES) canvas.removeEventListener(t, swallow);
     };
   }, []);
 

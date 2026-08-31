@@ -18,6 +18,7 @@ import {
   launch,
   toPlan,
   toForm,
+  multiTouch,
   solve,
   routeCount,
   toMinutes,
@@ -1259,7 +1260,11 @@ if (feature("15. Gestures, and slopes drawn over the terrain")) {
 // the whole view wobbled through the zoom. Each now waits for its own
 // threshold, and a tilt locks out the other two.
 if (feature("16. One gesture at a time")) {
-  const page = await newPage(browser, { at: [9, 30] });
+  // A real touchscreen, not a mouse. Without hasTouch every gesture arrives as
+  // pointerType "mouse" and the browser applies none of its touch behaviour,
+  // so touch-action and pointercancel go untested and the suite passes while
+  // the phone does not.
+  const page = await newPage(browser, { at: [9, 30], touch: true });
   await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });
   await page.click(".hero");
@@ -1283,32 +1288,11 @@ if (feature("16. One gesture at a time")) {
       return { zoom: v.targetZoom, bearing: v.bearing, pitch: v.pitch };
     };
     const reset = async () => {
-      await page.click("[aria-label='Face north and tilt']");
+      await page.tap("[aria-label='Face north and tilt']");
       await page.waitForTimeout(500);
     };
-    // Playwright drives one mouse, so two fingers have to be raw pointer
-    // events. pointerType touch, because that is what this is testing.
-    const twoFinger = async (frames) => {
-      await page.evaluate(async ([sel, fr]) => {
-        const c = document.querySelector(sel);
-        const send = (type, id, x, y, primary) =>
-          c.dispatchEvent(new PointerEvent(type, {
-            pointerId: id, clientX: x, clientY: y,
-            bubbles: true, isPrimary: primary, pointerType: "touch",
-          }));
-        send("pointerdown", 11, fr[0][0], fr[0][1], true);
-        send("pointerdown", 12, fr[0][2], fr[0][3], false);
-        for (const f of fr) {
-          send("pointermove", 11, f[0], f[1], true);
-          send("pointermove", 12, f[2], f[3], false);
-          await new Promise((r) => setTimeout(r, 16));
-        }
-        const l = fr[fr.length - 1];
-        send("pointerup", 11, l[0], l[1], true);
-        send("pointerup", 12, l[2], l[3], false);
-      }, [SEL, frames]);
-      await page.waitForTimeout(400);
-    };
+    const twoFinger = (frames) =>
+      multiTouch(page, frames.map((f) => [[f[0], f[1]], [f[2], f[3]]]));
 
     // Deliberately imperfect, because a perfect pinch is not a test: with the
     // fingers exactly opposite and exactly level, even the old code that
