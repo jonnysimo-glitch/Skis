@@ -959,6 +959,79 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
   }
 }
 
+// ============ 13. THE BLOCK IS UNDER THE MOUNTAIN, NOT IN FRONT OF IT ==
+// The terrain sits on a slab. Built the obvious way, as a box with walls
+// dropping to the floor, the wall facing the camera starts on the summit ridge
+// and hangs down the screen over the resort. In the blue-white the slab is
+// drawn in, that is invisible: it looks like snow, and the piste lines draw on
+// top of it, so the view reads as fine while half the mountain is behind a
+// wall. It got past a careful look twice. Hence pixels.
+//
+// The slab faces are filled flat, with no slope shading and no haze, so their
+// RGB values are exact and no terrain pixel can collide with them.
+if (feature("13. The block is under the mountain, not in front of it")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1400);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  if (!(await page.$(SEL))) {
+    check("the schematic terrain is the layer on screen", false, "MapLibre took over; nothing to measure");
+    await page.context_.close();
+  } else {
+    const shot = await page.$eval(SEL, (c) => {
+      // Kept in step with SKIRT_LIT, SKIRT_SHADE and BASE_COLOUR in
+      // src/map/FallbackTerrain.jsx.
+      const FLAT = [[236, 243, 249], [214, 227, 238], [199, 216, 230]];
+      const g = c.getContext("2d");
+      const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
+      let slab = 0, terrain = 0, top = 1e9, bottom = -1;
+      const rows = [];
+      for (let y = 0; y < height; y += 4) {
+        let rTerrain = 0, rSlab = 0;
+        for (let x = 0; x < width; x += 4) {
+          const i = (y * width + x) * 4;
+          const [r, gg, b] = [data[i], data[i + 1], data[i + 2]];
+          const isSky = b > r + 12 && b > gg + 6;
+          if (isSky) continue;
+          const isSlab = FLAT.some((f) => f[0] === r && f[1] === gg && f[2] === b);
+          if (isSlab) { slab++; rSlab++; } else { terrain++; rTerrain++; }
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+        rows.push({ y, rTerrain, rSlab });
+      }
+      // How the model divides above and below its own middle. A wall over the
+      // mountain shows up here: the upper half goes flat.
+      const mid = (top + bottom) / 2;
+      let upperTerrain = 0, upperSlab = 0;
+      for (const r of rows) {
+        if (r.y >= mid) continue;
+        upperTerrain += r.rTerrain;
+        upperSlab += r.rSlab;
+      }
+      return { slab, terrain, upperTerrain, upperSlab };
+    });
+
+    const model = shot.slab + shot.terrain;
+    const slabPct = (shot.slab / model) * 100;
+    const upper = shot.upperTerrain + shot.upperSlab;
+    const upperTerrainPct = (shot.upperTerrain / (upper || 1)) * 100;
+
+    check("there is a model on screen to measure", model > 500, `${model} sampled pixels`);
+    check("the slab is drawn at all", slabPct > 2, `${slabPct.toFixed(0)}% of the model`);
+    check("and it is a rim and a base, not a wall", slabPct < 34, `${slabPct.toFixed(0)}%, must stay under 34%`);
+    check("the top half of the model is mountain, not flat fill",
+      upperTerrainPct > 70, `${upperTerrainPct.toFixed(0)}% terrain, needs 70%`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
 } finally {
   await browser.close();
   server.close();
