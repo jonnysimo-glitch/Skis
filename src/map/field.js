@@ -8,6 +8,20 @@
  */
 export const GRID = 60;
 
+/**
+ * Real alpine terrain looks flat at 1.0 on a phone, per the brief. Lives here
+ * because the shading is computed here and the projection has to agree with it.
+ */
+export const VERT_EXAGGERATION = 2.4;
+
+function normalise(v) {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+
+/** Late afternoon, from the west, which is when the light on snow is best. */
+export const SUN = normalise([-0.5, 0.66, -0.56]);
+
 /** Deterministic value noise — the same mountain every time. */
 function hash2(x, y) {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -103,6 +117,16 @@ export function buildField(nodes, makeProjector) {
     return num / den;
   };
 
+  // Noise wavelengths are measured in grid cells, not in metres.
+  //
+  // They used to be absolute: 2800m, 1050m and 380m. Monterosa is 22km across
+  // over a 60 cell grid, so a cell is 368m and that last octave had a
+  // wavelength of one cell. Sampling noise at its own wavelength is aliasing,
+  // and it gave every cell an uncorrelated 40m kick — the speckle that made
+  // the surface look pixelated rather than smooth. Tying the scales to the
+  // cell keeps the terrain smooth at any resort size, which matters because a
+  // small resort over the same grid has cells a third as wide.
+  const cell = Math.max(maxX - minX, maxZ - minZ) / GRID;
   let lo = Infinity;
   let hi = -Infinity;
   for (let i = 0; i <= GRID; i++) {
@@ -114,9 +138,8 @@ export function buildField(nodes, makeProjector) {
       const ridge = (sc) => 1 - Math.abs(2 * fbm(x / sc, z / sc) - 1);
       const h =
         idw(x, z) +
-        430 * (ridge(2800) - 0.5) +
-        210 * (ridge(1050) - 0.5) +
-        80 * (fbm(x / 380, z / 380) - 0.5);
+        430 * (ridge(cell * 9) - 0.5) +
+        170 * (ridge(cell * 4) - 0.5);
       heights[at(i, j)] = h;
       lo = Math.min(lo, h);
       hi = Math.max(hi, h);
@@ -138,8 +161,58 @@ export function buildField(nodes, makeProjector) {
     );
   };
 
+  // ---- shading -----------------------------------------------------------
+  // Precomputed and smoothed, one value per quad.
+  //
+  // Slope shading depends only on the height field, so recomputing it every
+  // frame bought nothing and cost a normalise per quad. Doing it once also
+  // makes it affordable to blur, which is the point: the surface is filled as
+  // flat quads, so each cell is a single tone and any jump between neighbours
+  // reads as a facet. A finer grid would be the obvious cure and is not
+  // available — at GRID 100 the redraw drops to 45fps on a laptop, so a third
+  // of that on a phone. Smoothing the tones instead is free.
+  const qAt = (i, j) => i * GRID + j;
+  let shades = new Float32Array(GRID * GRID);
+  const clamp = (v) => Math.max(0, Math.min(GRID, v));
+  const H = (i, j) => heights[at(clamp(i), clamp(j))];
+  const dxW = (maxX - minX) / GRID;
+  const dzW = (maxZ - minZ) / GRID;
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      // Central differences across a three cell stencil, averaged over the
+      // quad's width, rather than the one sided difference between the quad's
+      // own two corners. That alone takes out much of the faceting.
+      const gx = (H(i + 2, j) + H(i + 2, j + 1) - H(i - 1, j) - H(i - 1, j + 1)) / (6 * dxW);
+      const gz = (H(i, j + 2) + H(i + 1, j + 2) - H(i, j - 1) - H(i + 1, j - 1)) / (6 * dzW);
+      const n = normalise([-gx * VERT_EXAGGERATION, 1, -gz * VERT_EXAGGERATION]);
+      shades[qAt(i, j)] = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
+    }
+  }
+  // One box blur pass. Two starts flattening the ridges themselves, and the
+  // mountain stops reading as a shape.
+  for (let pass = 0; pass < 1; pass++) {
+    const next = new Float32Array(GRID * GRID);
+    for (let i = 0; i < GRID; i++) {
+      for (let j = 0; j < GRID; j++) {
+        let sum = 0;
+        let count = 0;
+        for (let di = -1; di <= 1; di++) {
+          for (let dj = -1; dj <= 1; dj++) {
+            const a = i + di;
+            const b = j + dj;
+            if (a < 0 || a >= GRID || b < 0 || b >= GRID) continue;
+            sum += shades[qAt(a, b)];
+            count++;
+          }
+        }
+        next[qAt(i, j)] = sum / count;
+      }
+    }
+    shades = next;
+  }
+
   return {
-    proj, heights, at, sample,
+    proj, heights, at, sample, shades, qAt,
     minX, maxX, minZ, maxZ, lo, hi,
     cx: (minX + maxX) / 2,
     cz: (minZ + maxZ) / 2,

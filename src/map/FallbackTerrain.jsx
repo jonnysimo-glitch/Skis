@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef } from "react";
 import { NODES as MONTEROSA_NODES, projector as monterosaProjector } from "../resort.js";
-import { buildField, slabFor, GRID } from "./field.js";
+import { buildField, slabFor, GRID, VERT_EXAGGERATION } from "./field.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
@@ -40,8 +40,6 @@ const GLIDE_DECAY = 0.92;
  */
 const MIN_PITCH = 0;
 const MAX_PITCH = 75;
-const VERT_EXAGGERATION = 2.4;
-const SUN = normalise([-0.5, 0.66, -0.56]);
 /**
  * The block.
  *
@@ -76,27 +74,38 @@ const BLOCK_FILL = 0.46;
 const SKY_TOP = [104, 158, 196];
 const SKY_HORIZON = [216, 234, 244];
 
-function normalise(v) {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / l, v[1] / l, v[2] / l];
-}
-
 const mix = (a, b, t) => [
   a[0] + (b[0] - a[0]) * t,
   a[1] + (b[1] - a[1]) * t,
   a[2] + (b[2] - a[2]) * t,
 ];
 
-/** Snow above, rock and forest below, shaded by slope and hazed by distance. */
+/**
+ * Snow above, rock and forest below, shaded by slope and hazed by distance.
+ *
+ * A continuous ramp rather than five altitude bands. The bands drew a hard
+ * edge wherever the terrain crossed one, and because the surface is filled as
+ * flat quads that edge landed on cell boundaries and read as blockiness. The
+ * mountain has no such lines on it.
+ */
+const BANDS = [
+  [0.00, [58, 82, 72]],   // valley forest
+  [0.26, [96, 118, 108]], // treeline
+  [0.44, [150, 163, 164]], // rock and scree
+  [0.60, [196, 210, 216]], // old snow
+  [0.78, [232, 240, 245]], // firn
+  [1.00, [248, 251, 253]], // snowfield
+];
+
 function surfaceColour(alt, lo, hi, shade, haze) {
   const t = Math.max(0, Math.min(1, (alt - lo) / (hi - lo || 1)));
-  let c;
-  if (t < 0.22) c = [66, 88, 78];        // valley forest
-  else if (t < 0.4) c = [112, 132, 122]; // treeline
-  else if (t < 0.56) c = [168, 178, 180]; // rock and scree
-  else if (t < 0.72) c = [214, 226, 233]; // old snow
-  else c = [246, 250, 253];              // snowfield
-  const k = 0.62 + 0.56 * shade;
+  let k1 = BANDS.length - 1;
+  while (k1 > 1 && BANDS[k1 - 1][0] > t) k1--;
+  const [t0, c0] = BANDS[k1 - 1];
+  const [t1, c1] = BANDS[k1];
+  const f = (t - t0) / (t1 - t0 || 1);
+  let c = mix(c0, c1, f * f * (3 - 2 * f)); // smoothstep, so the joins vanish
+  const k = 0.52 + 0.80 * shade;
   c = [c[0] * k, c[1] * k, c[2] * k];
   // A touch of aerial perspective so far ridges sit back, but only a touch.
   // Washing the surface into the sky is what makes a solid model look like a
@@ -336,7 +345,7 @@ export default function FallbackTerrain({
 
     // ---- terrain ---------------------------------------------------------
     const drawTerrain = (v, cam) => {
-      const { heights, at, minX, maxX, minZ, maxZ, lo, hi } = field;
+      const { heights, at, shades, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
       const quads = [];
@@ -357,15 +366,18 @@ export default function FallbackTerrain({
           const c = project(x0 + dx, h11, z0 + dz, v, cam);
           const d = project(x0, h01, z0 + dz, v, cam);
 
-          const nx = (h00 - h10) / dx;
-          const nz = (h00 - h01) / dz;
-          const n = normalise([nx * VERT_EXAGGERATION, 1, nz * VERT_EXAGGERATION]);
-          const shade = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
           const depth = (a.depth + c.depth) / 2;
           dMin = Math.min(dMin, depth);
           dMax = Math.max(dMax, depth);
 
-          quads.push({ depth, pts: [a, b, c, d], alt: (h00 + h11) / 2, shade });
+          quads.push({
+            depth,
+            pts: [a, b, c, d],
+            // All four corners, not two: the diagonal average jumped between
+            // neighbours that share three of them.
+            alt: (h00 + h10 + h01 + h11) / 4,
+            shade: shades[qAt(i, j)],
+          });
         }
       }
 
