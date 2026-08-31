@@ -182,8 +182,15 @@ input, select { font: inherit; color: inherit; }
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 0 var(--gutter);
+  padding: 0 var(--gutter) var(--s-2);
   touch-action: pan-y;
+  /* Content that runs under the footer should dissolve, not be guillotined.
+     At peek the first route card was sliced horizontally through its title,
+     which reads as a rendering fault rather than as "there is more below".
+     The fade only bites when content actually reaches the bottom: short
+     bodies end in padding, and fading empty padding is invisible. */
+  -webkit-mask-image: var(--scrollfade);
+  mask-image: var(--scrollfade);
 }
 .sheet__foot {
   flex: none;
@@ -666,7 +673,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .solving {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: var(--s-5); padding: var(--s-8) var(--gutter) var(--s-10);
+  gap: var(--s-4); padding: var(--s-3) var(--gutter) var(--s-5);
 }
 .solving__t {
   font-size: var(--t-footnote); font-weight: 600;
@@ -822,12 +829,19 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--s-2) var(--gutter) var(--s-6);
+  -webkit-mask-image: var(--scrollfade);
+  mask-image: var(--scrollfade);
 }
 .page__foot {
   flex: none;
   padding: var(--s-3) var(--gutter);
   background: var(--surface);
   border-top: 1px solid var(--line);
+}
+/* Why the button below is off. Sits with the control it explains. */
+.note--block {
+  margin-bottom: var(--s-2);
+  text-align: center;
 }
 /* Home has its own bar, so its body starts right below it. Stats has none. */
 .page > .page__body:first-child { padding-top: calc(var(--safe-top) + var(--s-5)); }

@@ -13,6 +13,7 @@ import { Back } from "../ui/Icons.jsx";
 import { NODES } from "../resort.js";
 import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES } from "../lib/plan.js";
 import { Clock, Arrow, Locate, Info } from "../ui/Icons.jsx";
+import { hours } from "../ui/RouteBits.jsx";
 
 /**
  * What the locate button says. Every branch says something: a tap that quietly
@@ -61,6 +62,16 @@ export default function PlanScreen({
   // A transfer to where you already are is not a question. Say so rather than
   // greying the button and leaving the user to guess which end is wrong.
   const sameEnds = plan.mode === "direct" && plan.start === plan.finish;
+
+  // Why the button is off, in one line, or null when it is on. It renders in
+  // the footer beside the button: at the bottom of the scroll region it was
+  // below the fold on a phone, so all the user saw was a dead control.
+  const blocked =
+    span <= 0
+      ? "Finish time needs to be after the start."
+      : sameEnds
+        ? `You are already at ${NODES[plan.finish].name}. Pick somewhere else to head for.`
+        : null;
 
   // Both ends can be anywhere on the mountain. Being stranded at a col with
   // the car three valleys away is the case this app exists for, and it is not
@@ -208,8 +219,11 @@ export default function PlanScreen({
           {span <= 0
             ? "Finish time needs to be after the start."
             : plan.mode === "direct"
-              ? `${Math.floor(span / 60)}h ${String(span % 60).padStart(2, "0")}m to get there.`
-              : `That's ${Math.floor(span / 60)}h ${String(span % 60).padStart(2, "0")}m on the hill.`}
+              // "7h 00m to get there" reads as how long the journey takes,
+              // which is a number this screen does not know yet. It is the
+              // window you have to do it in.
+              ? `You have ${hours(span)} to get there.`
+              : `That's ${hours(span)} on the hill.`}
         </p>
 
         <div className="field">
@@ -254,20 +268,23 @@ export default function PlanScreen({
           </div>
         </div>
 
-        <div className="info">
-          <Info className="info__icon" width="17" height="17" />
-          <span>
-            {sameEnds
-              ? `You are already at ${NODES[plan.finish].name}. Pick somewhere else to head for.`
-              : "Last lifts are built in. Nothing will strand you."}
-          </span>
-        </div>
+        {!blocked && (
+          <div className="info">
+            <Info className="info__icon" width="17" height="17" />
+            <span>Last lifts are built in. Nothing will strand you.</span>
+          </div>
+        )}
       </div>
 
       <div className="page__foot">
+        {blocked && (
+          <p className="note note--block" role="status">
+            {blocked}
+          </p>
+        )}
         <button
           className="btn"
-          disabled={span <= 0 || sameEnds}
+          disabled={Boolean(blocked)}
           onClick={onSolve}
         >
           {plan.mode === "direct" ? "Take me there" : "Find routes"}{" "}

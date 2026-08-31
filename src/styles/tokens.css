@@ -139,4 +139,9 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Scrolling regions sit under a fixed footer. Content that runs into it
+     fades out over the last few pixels rather than being cut through the
+     glyphs. One token so the two scroll containers cannot drift apart. */
+  --scrollfade: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }
