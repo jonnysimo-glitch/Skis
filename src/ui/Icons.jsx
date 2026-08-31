@@ -98,8 +98,20 @@ export const HomeIcon = (p) => (
 export const Chart = (p) => (
   <svg {...base} {...p}><path d="M3.5 16.5h13" /><path d="M6 16.5V10M10 16.5V4.5M14 16.5v-4" /></svg>
 );
+/**
+ * A cog, not a sun.
+ *
+ * This was a small circle with eight rays floating off it, and at 20px the eye
+ * reads that as light coming off a star. Moving the teeth closer did not help:
+ * spikes on a circle read as a sun at any spacing. The teeth have to be part
+ * of the wheel's outline, so this is one contour that steps between a tip
+ * radius of 7.5 and a root radius of 5.1 eight times, with a hub inside it.
+ */
 export const Gear = (p) => (
-  <svg {...base} {...p}><circle cx="10" cy="10" r="2.6" /><path d="M10 2.6v1.8M10 15.6v1.8M17.4 10h-1.8M4.4 10H2.6M15.2 4.8l-1.3 1.3M6.1 13.9l-1.3 1.3M15.2 15.2l-1.3-1.3M6.1 6.1 4.8 4.8" /></svg>
+  <svg {...base} {...p}>
+    <path d="M8.31 2.69A7.5 7.5 0 0 1 11.69 2.69L11.66 5.18A5.1 5.1 0 0 1 12.24 5.42L13.97 3.64A7.5 7.5 0 0 1 16.36 6.03L14.58 7.76A5.1 5.1 0 0 1 14.82 8.34L17.31 8.31A7.5 7.5 0 0 1 17.31 11.69L14.82 11.66A5.1 5.1 0 0 1 14.58 12.24L16.36 13.97A7.5 7.5 0 0 1 13.97 16.36L12.24 14.58A5.1 5.1 0 0 1 11.66 14.82L11.69 17.31A7.5 7.5 0 0 1 8.31 17.31L8.34 14.82A5.1 5.1 0 0 1 7.76 14.58L6.03 16.36A7.5 7.5 0 0 1 3.64 13.97L5.42 12.24A5.1 5.1 0 0 1 5.18 11.66L2.69 11.69A7.5 7.5 0 0 1 2.69 8.31L5.18 8.34A5.1 5.1 0 0 1 5.42 7.76L3.64 6.03A7.5 7.5 0 0 1 6.03 3.64L7.76 5.42A5.1 5.1 0 0 1 8.34 5.18L8.31 2.69Z" />
+    <circle cx="10" cy="10" r="2.5" />
+  </svg>
 );
 export const Trash = (p) => (
   <svg {...base} {...p}><path d="M4 6h12" /><path d="M8 6V4.5h4V6" /><path d="M5.5 6l.7 10a1 1 0 0 0 1 .9h5.6a1 1 0 0 0 1-.9l.7-10" /></svg>

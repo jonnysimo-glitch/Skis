@@ -365,8 +365,20 @@ export default function FallbackTerrain({
       // view can be nudged off centre at rest.
       const limitX = Math.max(0, f * spanU - availW) / 2 + availW * OVERSCROLL;
       const limitY = Math.max(0, f * spanV - availH) / 2 + availH * OVERSCROLL;
-      v.panX = Math.max(-limitX, Math.min(limitX, v.panX));
-      v.panY = Math.max(-limitY, Math.min(limitY, v.panY));
+      // Only hard clamped when the finger is off the glass. While dragging the
+      // pan is allowed past the limit under resistance and springs back on
+      // release, because a dead stop under your thumb is what reads as broken.
+      // Google Earth has no wall at all; this is the smallest wall that still
+      // stops you throwing the mountain away.
+      // Anything still past the wall belongs to the spring in the frame loop.
+      // Clamping it here instead snapped it back in one frame, which is the
+      // dead stop this was meant to replace.
+      const settle = (x, lim) =>
+        Math.abs(x) > lim + 0.5 ? x : Math.max(-lim, Math.min(lim, x));
+      if (!v.dragging) {
+        v.panX = settle(v.panX, limitX);
+        v.panY = settle(v.panY, limitY);
+      }
       v.panLimit = { x: limitX, y: limitY };
 
       // Where the frame's centre sits before pan. zoomAbout needs it to work
@@ -633,21 +645,30 @@ export default function FallbackTerrain({
       }
 
       if (Math.hypot(glide.x, glide.y) > 0.15) {
-        // A flick that reaches the edge stops there. Left running it would keep
-        // pushing against the stop for the rest of the glide.
+        // A flick that reaches the edge is resisted rather than killed, so it
+        // eases into the wall and springs back instead of stopping dead.
         const lim = v.panLimit;
-        if (lim) {
-          if (Math.abs(v.panX + glide.x) > lim.x) glide.x = 0;
-          if (Math.abs(v.panY + glide.y) > lim.y) glide.y = 0;
-        }
-        v.panX += glide.x;
-        v.panY += glide.y;
+        v.panX = resist(v.panX, glide.x, lim?.x);
+        v.panY = resist(v.panY, glide.y, lim?.y);
         glide.x *= GLIDE_DECAY;
         glide.y *= GLIDE_DECAY;
         dirty.current = true;
       } else if (glide.x || glide.y) {
         glide.x = 0;
         glide.y = 0;
+      }
+
+      // Spring back to the wall once nothing is pushing against it.
+      const lim = v.panLimit;
+      if (lim && !v.dragging) {
+        for (const axis of ["panX", "panY"]) {
+          const cap = axis === "panX" ? lim.x : lim.y;
+          const over = Math.abs(v[axis]) - cap;
+          if (over > 0.3) {
+            v[axis] -= Math.sign(v[axis]) * Math.max(0.5, over * 0.22);
+            dirty.current = true;
+          }
+        }
       }
 
       // Redraw only when something moved. 3,600 filled quads a frame is not a
@@ -741,6 +762,24 @@ export default function FallbackTerrain({
     // thing. Without these every pinch also rotated and tilted a little,
     // because two fingers never move perfectly symmetrically, and the map
     // wobbled the whole way through the zoom.
+    /**
+     * Movement past the wall, with the give of a rubber band.
+     *
+     * Beyond the limit each pixel of finger travel buys a third of a pixel,
+     * and the spring in the frame loop pulls it back when you let go. The
+     * clamp this replaces stopped dead mid-drag, which feels like the app has
+     * stopped listening rather than like the map has an edge.
+     */
+    const OVERSHOOT = 0.34;
+    const resist = (cur, d, lim) => {
+      const next = cur + d;
+      if (lim == null || Math.abs(next) <= lim) return next;
+      const wasOver = Math.max(0, Math.abs(cur) - lim);
+      const nowOver = Math.abs(next) - lim;
+      // Only the part of the move that is past the wall is resisted.
+      return Math.sign(next) * (lim + wasOver + (nowOver - wasOver) * OVERSHOOT);
+    };
+
     const PINCH_START = 0.04;   // 4% change in finger separation
     const TWIST_START = 0.14;   // radians, about 8 degrees
     const TILT_START = 22;      // pixels of parallel vertical travel
@@ -764,6 +803,7 @@ export default function FallbackTerrain({
       try { canvas.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       startGesture();
+      view.current.dragging = true;
       // A new touch stops a glide, so the map is always grabbable.
       glide.x = 0;
       glide.y = 0;
@@ -793,8 +833,8 @@ export default function FallbackTerrain({
       if (pointers.size === 1) {
         const dx = c.x - gesture.x;
         const dy = c.y - gesture.y;
-        v.panX += dx;
-        v.panY += dy;
+        v.panX = resist(v.panX, dx, v.panLimit?.x);
+        v.panY = resist(v.panY, dy, v.panLimit?.y);
         velocity.x = velocity.x * 0.7 + dx * 0.3;
         velocity.y = velocity.y * 0.7 + dy * 0.3;
       } else if (pointers.size >= 2) {
@@ -850,8 +890,14 @@ export default function FallbackTerrain({
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
       if (pointers.size) {
         startGesture();
+        // Velocity is only tracked for one finger. Coming out of a pinch with
+        // a stale value from before it flicked the map on release.
+        velocity.x = 0;
+        velocity.y = 0;
         return;
       }
+      view.current.dragging = false;
+      dirty.current = true; // let the spring run even if nothing else changed
       canvas.style.cursor = "grab";
       // Only now is it known whether that press was a tap or a drag.
       if (press) {

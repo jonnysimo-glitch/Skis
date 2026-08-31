@@ -880,7 +880,9 @@ if (feature("11. It works without a mouse or a screen")) {
 // ================================= 12. THE MAP CANNOT BE THROWN AWAY ==
 if (feature("12. You cannot scroll the mountain off the screen")) {
   const page = await newPage(browser, { at: [9, 30] });
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  // maptest exposes the camera. Pixels prove the mountain is still on screen;
+  // only the numbers show whether the wall gave before it held.
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });
   await page.click(".hero");
   await page.click("text=Go skiing");
@@ -974,6 +976,35 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
     const shifted = await land();
     check("zoomed in, panning still moves the view", before !== after, before === after ? "identical pixels" : "view moved");
     check("and still cannot empty it", shifted >= enough, `${shifted}%, needs ${enough.toFixed(0)}%`);
+
+    // The wall gives before it holds. A hard clamp stops dead under your
+    // thumb, which reads as the app having stopped listening rather than as
+    // the map having an edge; every touch platform resists and springs back.
+    const pan = () => page.evaluate(() => {
+      const v = window.__skisView;
+      return { x: v.panX, lim: v.panLimit?.x ?? 0 };
+    });
+    await page.click("[aria-label='Face north and tilt']");
+    await page.waitForTimeout(700);
+    const cxx = box.x + box.w / 2;
+    const cyy = box.y + box.h / 2;
+    await page.mouse.move(cxx, cyy);
+    await page.mouse.down();
+    for (let i = 1; i <= 20; i++) await page.mouse.move(cxx + i * 30, cyy, { steps: 2 });
+    await page.waitForTimeout(200);
+    const held = await pan();
+    check("dragging past the wall still moves, under resistance",
+      held.x > held.lim + 8 && held.x < held.lim + 300,
+      `${Math.round(held.x - held.lim)}px past it, of 600px dragged`);
+    await page.mouse.up();
+    await page.waitForTimeout(140);
+    const mid = await pan();
+    check("and it eases back rather than snapping", mid.x > held.lim + 1,
+      `${Math.round(mid.x - held.lim)}px past it a frame after release`);
+    await page.waitForTimeout(1000);
+    const sprung = await pan();
+    check("settling exactly on the wall", Math.abs(sprung.x - sprung.lim) < 2,
+      `${Math.round(sprung.x)} against ${Math.round(sprung.lim)}`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
