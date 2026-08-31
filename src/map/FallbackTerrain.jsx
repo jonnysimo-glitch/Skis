@@ -13,13 +13,13 @@
  */
 import { useEffect, useRef } from "react";
 import { NODES as MONTEROSA_NODES, projector as monterosaProjector } from "../resort.js";
+import { buildField, slabFor, GRID } from "./field.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
 /** The casing, faded, for legs already skied. */
 const DIM_ACCENT = "rgba(42, 196, 238, 0.3)";
 
-const GRID = 60;
 
 /**
  * Pitch limits.
@@ -64,7 +64,6 @@ const SUN = normalise([-0.5, 0.66, -0.56]);
  * piste lines drawn over the top of it. If a change here makes the model look
  * better, check what it is covering before believing it.
  */
-const SKIRT = 0.17;
 const SKIRT_LIT = [236, 243, 249];
 const SKIRT_SHADE = [214, 227, 238];
 const BASE_COLOUR = [199, 216, 230];
@@ -80,124 +79,6 @@ const SKY_HORIZON = [216, 234, 244];
 function normalise(v) {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / l, v[1] / l, v[2] / l];
-}
-
-/** Deterministic value noise — the same mountain every time. */
-function hash2(x, y) {
-  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return n - Math.floor(n);
-}
-function noise2(x, y) {
-  const xi = Math.floor(x);
-  const yi = Math.floor(y);
-  const xf = x - xi;
-  const yf = y - yi;
-  const u = xf * xf * (3 - 2 * xf);
-  const v = yf * yf * (3 - 2 * yf);
-  return (
-    hash2(xi, yi) * (1 - u) * (1 - v) +
-    hash2(xi + 1, yi) * u * (1 - v) +
-    hash2(xi, yi + 1) * (1 - u) * v +
-    hash2(xi + 1, yi + 1) * u * v
-  );
-}
-function fbm(x, y) {
-  let sum = 0;
-  let amp = 0.5;
-  let freq = 1;
-  for (let o = 0; o < 4; o++) {
-    sum += noise2(x * freq, y * freq) * amp;
-    amp *= 0.5;
-    freq *= 2.1;
-  }
-  return sum;
-}
-
-/**
- * Inverse-distance interpolation through the node altitudes, roughened with
- * noise so it reads as terrain rather than a drape over thirteen poles.
- */
-/**
- * The height field for one resort.
- *
- * Takes its mountain rather than importing one, the same change the solver
- * needed. Without it the map is wired to Monterosa at module level and a second
- * resort would draw the first one's terrain, slab and all.
- */
-function buildField(nodes, makeProjector) {
-  const proj = makeProjector();
-  const pts = Object.values(nodes).map((n) => {
-    const { x, z } = proj.project(n.lat, n.lon);
-    return { x, z, alt: n.alt };
-  });
-
-  const xs = pts.map((p) => p.x);
-  const zs = pts.map((p) => p.z);
-  const padX = (Math.max(...xs) - Math.min(...xs)) * 0.18;
-  const padZ = (Math.max(...zs) - Math.min(...zs)) * 0.18;
-  const minX = Math.min(...xs) - padX;
-  const maxX = Math.max(...xs) + padX;
-  const minZ = Math.min(...zs) - padZ;
-  const maxZ = Math.max(...zs) + padZ;
-
-  const heights = new Float32Array((GRID + 1) * (GRID + 1));
-  const at = (i, j) => i * (GRID + 1) + j;
-
-  const idw = (x, z) => {
-    let num = 0;
-    let den = 0;
-    for (const p of pts) {
-      const d2 = (x - p.x) ** 2 + (z - p.z) ** 2 + 1;
-      const w = 1 / (d2 * Math.sqrt(d2)); // ~1/d^3, tight enough to keep peaks
-      num += p.alt * w;
-      den += w;
-    }
-    return num / den;
-  };
-
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (let i = 0; i <= GRID; i++) {
-    for (let j = 0; j <= GRID; j++) {
-      const x = minX + ((maxX - minX) * i) / GRID;
-      const z = minZ + ((maxZ - minZ) * j) / GRID;
-      // Ridged noise (1 - |2n-1|) gives crests rather than dunes, which is
-      // what makes an interpolated blob read as a mountain range.
-      const ridge = (sc) => 1 - Math.abs(2 * fbm(x / sc, z / sc) - 1);
-      const h =
-        idw(x, z) +
-        430 * (ridge(2800) - 0.5) +
-        210 * (ridge(1050) - 0.5) +
-        80 * (fbm(x / 380, z / 380) - 0.5);
-      heights[at(i, j)] = h;
-      lo = Math.min(lo, h);
-      hi = Math.max(hi, h);
-    }
-  }
-
-  const sample = (x, z) => {
-    const fi = ((x - minX) / (maxX - minX)) * GRID;
-    const fj = ((z - minZ) / (maxZ - minZ)) * GRID;
-    const i = Math.max(0, Math.min(GRID - 1, Math.floor(fi)));
-    const j = Math.max(0, Math.min(GRID - 1, Math.floor(fj)));
-    const u = Math.max(0, Math.min(1, fi - i));
-    const v = Math.max(0, Math.min(1, fj - j));
-    return (
-      heights[at(i, j)] * (1 - u) * (1 - v) +
-      heights[at(i + 1, j)] * u * (1 - v) +
-      heights[at(i, j + 1)] * (1 - u) * v +
-      heights[at(i + 1, j + 1)] * u * v
-    );
-  };
-
-  return {
-    proj, heights, at, sample,
-    minX, maxX, minZ, maxZ, lo, hi,
-    cx: (minX + maxX) / 2,
-    cz: (minZ + maxZ) / 2,
-    cy: (lo + hi) / 2,
-    span: Math.max(maxX - minX, maxZ - minZ),
-  };
 }
 
 const mix = (a, b, t) => [
@@ -492,8 +373,7 @@ export default function FallbackTerrain({
       // Pushed onto the same list so the painter's sort puts near faces in
       // front of the terrain and far ones behind, with no second pass.
       if (propsRef.current.block) {
-        const thickness = Math.max(hi - lo, 1) * SKIRT;
-        const base = lo - thickness;
+        const { thickness, base } = slabFor(field);
 
         /**
          * One strip of the rim.
