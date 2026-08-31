@@ -192,6 +192,37 @@ A phone is 2-4x slower, so a full-day solve is 200-300ms. Refinements re-solve
 on every tap, and refine is make-or-break — a quarter-second of dropped frames
 per tap is exactly the failure mode to avoid.
 
+### Does that survive a real resort?
+
+Every number above comes from Monterosa: 29 edges. Kronplatz is 32 lifts and
+about 120 pistes, which after splitting at junctions is several hundred, so the
+question of whether the cost grows with the mountain decides whether refine
+still works on the first real dataset. `npm run bench:scale` answers it against
+synthetic mountains from 31 to 868 edges:
+
+```
+scenario              lifts   runs  edges  budget     p50      p95  routes
+Monterosa-sized          9     22     31    300     15ms     24ms       1
+Kronplatz-sized         36     82    118    180     13ms     14ms       3
+a big linked area       84    190    274    180     13ms     18ms       3
+Dolomiti Superski      270    598    868    180     14ms     16ms       3
+```
+
+Flat. That matches the algorithm rather than being luck: the sampler runs a
+fixed number of walks of a fixed maximum length, so its cost is set by those
+constants and not by how much mountain there is. Only the adjacency build and
+the Dijkstra grow, and both are cheap.
+
+The absolute numbers mean little, because a synthetic mountain branches more
+simply than a real one and more of its walks survive to be measured. The shape
+is the point.
+
+One thing that benchmark taught the hard way: its first version reported 14ms
+and **zero routes** for every size, and 14ms of finding nothing is not a
+result. A budget the terrain cannot fill is rejected early, so it was timing
+the rejection. It now searches for a budget each mountain can actually fill
+before it starts the clock.
+
 ### Offline
 
 Committing to a route caches everything needed to ski it with no signal:
