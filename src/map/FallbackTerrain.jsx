@@ -282,20 +282,20 @@ export default function FallbackTerrain({
 
     /** World points the camera should keep in shot. */
     const targets = () => {
-      const { route: r, camera: cam, block: asBlock } = propsRef.current;
-      // Order matters, and all three cases are live.
+      const { route: r, camera: cam } = propsRef.current;
+      // What the camera is pointed at, which is a separate question from
+      // whether the slab is drawn. Order matters and all three cases are live.
       //
-      // Navigating frames the current leg, and only navigating: it is the one
-      // screen that asks for a point and is not drawing the slab. Explore asks
-      // for a point too, at the resort centre, and framing tightly there puts
-      // the cut-out's own sides off screen where they project across the view
-      // instead of bounding it.
+      // Navigating asks for a point and has a route, so it frames the leg.
+      // Explore asks for a point too, at the resort centre, but has no route:
+      // framing tightly there would put the cut-out's own sides off screen,
+      // where they project across the view instead of bounding it, so it falls
+      // through to the whole mountain.
       //
-      // A route is the subject wherever there is one. Letting the slab force
-      // the whole mountain into shot made choose a postage stamp: the sheet
-      // takes most of the height and all of Monterosa scaled into what is left
-      // is unreadable.
-      if (cam?.kind === "point" && cam.center && !asBlock) {
+      // A route is the subject wherever else there is one. Letting the slab
+      // force the whole mountain into shot made choose a postage stamp, since
+      // the sheet takes most of the height.
+      if (cam?.kind === "point" && cam.center && r?.features?.length) {
         // Navigating a leg: frame tightly around that leg.
         const [lon, lat] = cam.center;
         const { x, z } = field.proj.project(lat, lon);
@@ -322,10 +322,17 @@ export default function FallbackTerrain({
       // Chrome covers the bottom, and while navigating the top too. Frame the
       // subject in what is left, but keep the terrain drawing full-bleed
       // behind it: a letterboxed mountain looks broken.
+      // The chrome insets are taken out once, in visibleH. padTop used to add
+      // viewportTop on top of that, counting it twice: while navigating, where
+      // the instruction panel is 210px tall, the subject was squeezed into a
+      // 238px band instead of 448px and centred 80px too high. That is why the
+      // map was a small model floating in sky there and looked right on
+      // explore, which has no top inset at all.
       const padX = 26;
-      const padTop = 74 + propsRef.current.viewportTop;
+      const padTop = 74;
       const padBottom = 24;
-      const visibleH = Math.max(180, height - propsRef.current.viewportBottom - propsRef.current.viewportTop);
+      const top = propsRef.current.viewportTop;
+      const visibleH = Math.max(180, height - propsRef.current.viewportBottom - top);
       const availW = width - padX * 2;
       const availH = visibleH - padTop - padBottom;
 
@@ -362,10 +369,15 @@ export default function FallbackTerrain({
       v.panY = Math.max(-limitY, Math.min(limitY, v.panY));
       v.panLimit = { x: limitX, y: limitY };
 
+      // Where the frame's centre sits before pan. zoomAbout needs it to work
+      // out how far to shift the pan so the point under your fingers stays
+      // under your fingers.
+      v.frame = { ax: padX + availW / 2, ay: top + padTop + availH / 2 };
+
       return {
         f,
         ox: padX + availW / 2 - (f * (u0 + u1)) / 2 + v.panX,
-        oy: padTop + availH / 2 - (f * (v0 + v1)) / 2 + v.panY,
+        oy: top + padTop + availH / 2 - (f * (v0 + v1)) / 2 + v.panY,
       };
     };
 
@@ -693,8 +705,45 @@ export default function FallbackTerrain({
 
     const startGesture = () => {
       const c = centroid();
-      gesture = { x: c.x, y: c.y, ...(pointers.size >= 2 ? spread() : {}) };
+      gesture = {
+        x: c.x, y: c.y,
+        ...(pointers.size >= 2 ? spread() : {}),
+        // Two fingers can mean three different things, so the first bit of
+        // movement decides which and the rest of the gesture sticks to it.
+        mode: null,
+        turned: 0,
+        pinched: 1,
+        lifted: 0,
+      };
     };
+
+    /**
+     * Zoom about a point on the screen rather than about the middle of it.
+     *
+     * Pinching used to scale around the frame centre, so whatever you had
+     * between your fingers slid away from them. Screen position is
+     *   s = ax + f (u - M) + pan
+     * and f scales by k, so holding s fixed needs
+     *   pan' = pan + (1 - k)(s - ax - pan)
+     * which is all this is.
+     */
+    const zoomAbout = (v, k, sx, sy) => {
+      const before = v.targetZoom;
+      v.targetZoom = clampZoom(v.targetZoom * k);
+      const actual = v.targetZoom / before; // k, unless the clamp took a bite
+      const f = v.frame;
+      if (!f || actual === 1) return;
+      v.panX += (1 - actual) * (sx - f.ax - v.panX);
+      v.panY += (1 - actual) * (sy - f.ay - v.panY);
+    };
+
+    // How far a two finger gesture has to go before it commits to being one
+    // thing. Without these every pinch also rotated and tilted a little,
+    // because two fingers never move perfectly symmetrically, and the map
+    // wobbled the whole way through the zoom.
+    const PINCH_START = 0.04;   // 4% change in finger separation
+    const TWIST_START = 0.14;   // radians, about 8 degrees
+    const TILT_START = 22;      // pixels of parallel vertical travel
 
     /**
      * Double tap to zoom, and only a tap counts.
@@ -709,7 +758,10 @@ export default function FallbackTerrain({
     let lastTap = 0;
     let press = null;
     const down = (e) => {
-      canvas.setPointerCapture(e.pointerId);
+      // Capture is an optimisation, not a requirement, and it throws for a
+      // pointer the browser does not consider active. Unguarded, that throw
+      // aborted the rest of this handler and the gesture never started at all.
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       startGesture();
       // A new touch stops a glide, so the map is always grabbable.
@@ -722,8 +774,7 @@ export default function FallbackTerrain({
         const now = performance.now();
         press = { t: now, x: e.clientX, y: e.clientY };
         if (now - lastTap < 300) {
-          const v = view.current;
-          v.targetZoom = clampZoom(v.targetZoom * 1.6);
+          zoomAbout(view.current, 1.6, e.clientX, e.clientY);
           dirty.current = true;
           lastTap = 0; // a zoom consumes the pair, so a third tap starts over
         }
@@ -748,14 +799,42 @@ export default function FallbackTerrain({
         velocity.y = velocity.y * 0.7 + dy * 0.3;
       } else if (pointers.size >= 2) {
         const { dist, angle } = spread();
-        if (gesture.dist > 0) {
-          v.targetZoom = clampZoom(v.targetZoom * (dist / gesture.dist));
-          v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
+        let turn = angle - gesture.angle;
+        // atan2 wraps; without this a gesture crossing the cut spins the map.
+        if (turn > Math.PI) turn -= 2 * Math.PI;
+        if (turn < -Math.PI) turn += 2 * Math.PI;
+        const scale = gesture.dist > 0 ? dist / gesture.dist : 1;
+
+        // Accumulate before committing, so the mode is chosen on what the
+        // gesture is actually doing rather than on its first noisy frame.
+        gesture.pinched *= scale;
+        gesture.turned += turn;
+        gesture.lifted += c.y - gesture.y;
+
+        if (!gesture.mode) {
+          if (Math.abs(gesture.pinched - 1) > PINCH_START) gesture.mode = "zoom";
+          else if (Math.abs(gesture.turned) > TWIST_START) gesture.mode = "rotate";
+          else if (Math.abs(gesture.lifted) > TILT_START) gesture.mode = "tilt";
         }
-        v.bearing += ((angle - gesture.angle) * 180) / Math.PI;
-        // Both fingers travelling together tilts; the pinch and twist above
-        // have already taken their share of the movement.
-        v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - (c.y - gesture.y) * 0.4));
+
+        if (gesture.mode === "tilt") {
+          v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - (c.y - gesture.y) * 0.4));
+        } else if (gesture.mode) {
+          // Zoom and rotate coexist, the way they do in every map app, but
+          // each waits for its own threshold so one cannot smear into the
+          // other. The midpoint between the fingers also drags the map, which
+          // is what makes a pinch feel anchored rather than applied to it.
+          if (Math.abs(gesture.pinched - 1) > PINCH_START) {
+            zoomAbout(v, scale, c.x, c.y);
+            v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
+          }
+          if (Math.abs(gesture.turned) > TWIST_START) {
+            v.bearing += (turn * 180) / Math.PI;
+          }
+          v.panX += c.x - gesture.x;
+          v.panY += c.y - gesture.y;
+        }
+
         gesture.dist = dist;
         gesture.angle = angle;
       }
@@ -795,7 +874,7 @@ export default function FallbackTerrain({
       const v = view.current;
       // Trackpad pinch arrives as a wheel event with ctrlKey set.
       const factor = e.ctrlKey ? 1 - e.deltaY * 0.01 : e.deltaY > 0 ? 0.92 : 1.08;
-      v.targetZoom = clampZoom(v.targetZoom * factor);
+      zoomAbout(v, factor, e.clientX, e.clientY);
       dirty.current = true;
     };
 

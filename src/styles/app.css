@@ -510,8 +510,14 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   display: flex;
   gap: var(--s-2);
   margin-top: var(--s-3);
+  /* Spread rather than divided into equal columns. Equal columns gave every
+     stat the same width whatever it held, so "11,941 m" was clipped in the
+     same 76px as "12". Sizing to content and spreading the slack fits all
+     four with room over, and the columns do not need to line up between
+     cards: each card is its own object. */
+  justify-content: space-between;
 }
-.stat { flex: 1 1 0; min-width: 0; }
+.stat { flex: 0 1 auto; min-width: 0; }
 .stat__icon { display: none; }
 .stat__v {
   display: block;
@@ -618,21 +624,6 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .banner--warn p { font-size: var(--t-subhead); line-height: 1.4; }
 
-/* Sits beside the resort name. Same height as the pill so the row reads as one
-   object rather than two floating chips. */
-.openbtn {
-  flex: none;
-  height: var(--tap);
-  padding: 0 var(--s-3);
-  border-radius: var(--r-pill);
-  background: rgba(11, 26, 36, 0.72);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  color: #fff;
-  display: flex; align-items: center; gap: var(--s-2);
-  font-size: var(--t-footnote); font-weight: 650;
-}
-.openbtn:active { transform: scale(0.97); }
 
 .warn, .info {
   border-radius: var(--r-md);
@@ -929,26 +920,41 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 /* ------------------------------------------------------------- explore -- */
 /* Browse first, plan second. The resort is on screen before any form is. */
 
-/* Quiet, and only as wide as the name. Changing resort is something you do
-   once a trip; it does not deserve the width of the screen. */
-.resortpill {
+/* One bar: which resort, what is open on it, and how to change it.
+   
+   These were two floating pills, and the second said "Open", which read as a
+   verb rather than as a status and sat there looking like a stray control.
+   Everything about the resort now lives in one object: tap the name to see
+   what is running, tap Change to go somewhere else. */
+.resortbar {
   flex: 0 1 auto; min-width: 0;
   height: var(--tap);
-  padding: 0 var(--s-3);
   border-radius: var(--r-pill);
   background: rgba(11, 26, 36, 0.72);
   backdrop-filter: blur(12px) saturate(1.4);
   -webkit-backdrop-filter: blur(12px) saturate(1.4);
   color: #fff;
+  display: flex; align-items: stretch;
+  overflow: hidden;
+}
+.resortbar__main {
+  flex: 1 1 auto; min-width: 0;
+  padding: 0 var(--s-3);
   display: flex; align-items: center; gap: var(--s-2);
   font-size: var(--t-callout); font-weight: 600;
-  text-align: left;
+  color: inherit; text-align: left;
 }
-.resortpill__nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.resortpill__x {
-  color: rgba(255, 255, 255, 0.55); flex: none;
-  font-size: var(--t-caption); font-weight: 600;
+.resortbar__nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The info glyph is the affordance: it says the name is worth tapping. */
+.resortbar__i { flex: none; opacity: 0.6; }
+.resortbar__sep { flex: none; width: 1px; background: rgba(255, 255, 255, 0.18); }
+.resortbar__change {
+  flex: none;
+  padding: 0 var(--s-3);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: var(--t-caption); font-weight: 650;
 }
+.resortbar__main:active, .resortbar__change:active { background: rgba(255, 255, 255, 0.1); }
 
 /* The only saturated thing on the explore screen, because it is the only
    thing on it that does anything, and in the thumb zone rather than the top
@@ -1086,28 +1092,45 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .nav__actions { display: flex; align-items: center; gap: var(--s-2); }
 
 /* Running out of day is the one thing that must never be behind a tap. */
+/* Icon in the first column, then the message, then the action under it. As one
+   row the message was squeezed to five lines by a button that would not
+   shrink, and the whole banner ate the map. */
 .nav__over {
   background: var(--warn-bg);
   border: 1px solid var(--warn-line);
   border-radius: var(--r-md);
   padding: var(--s-3);
   margin-bottom: var(--s-2);
-  display: flex; align-items: center; gap: var(--s-2);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: var(--s-1) var(--s-2);
   font-size: var(--t-footnote); line-height: 1.35;
   color: var(--ink);
 }
-.nav__over > span { flex: 1; min-width: 0; }
-.nav__over svg { color: var(--warn); }
+.nav__over > svg { color: var(--warn); margin-top: 1px; }
+.nav__over > p { grid-column: 2; }
 .nav__replan {
-  flex: none;
+  /* Full width of the banner and centred. Sized to its own label it was a
+     small pill floating under the text, which read as a stray chip rather
+     than as the action the banner is asking you to take. */
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  justify-content: center;
+  margin-top: var(--s-1);
   min-height: var(--tap);
   padding: 0 var(--s-3);
   border-radius: var(--r-pill);
-  background: var(--warn);
-  color: #fff;
-  font-size: var(--t-footnote); font-weight: 700;
+  /* Was solid --warn, a mud brown pill in an app that is otherwise blue and
+     white. White with accent text keeps it in the palette and keeps it clearly
+     secondary to the primary action below it. */
+  background: #fff;
+  border: 1px solid var(--warn-line);
+  color: var(--accent);
+  font-size: var(--t-footnote); font-weight: 650;
   display: flex; align-items: center; gap: var(--s-1);
 }
+.nav__replan:active { transform: scale(0.97); }
 
 /* Read aloud, never drawn. For headings that a sighted user gets from the
    picture instead. */

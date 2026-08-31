@@ -198,6 +198,9 @@ export default function App() {
   const onMountain = tab === "skiing";
   const [mapMode, setMapMode] = useState("cutout"); // 'cutout' | 'world'
   const [statusOpen, setStatusOpen] = useState(false);
+  // Measured, not assumed: the navigate footer grows when the overrun banner
+  // appears. NAV_FOOT_H is only the starting guess for the first frame.
+  const [navFoot, setNavFoot] = useState(NAV_FOOT_H);
   const wantWorld = mapMode === "world";
   const showSchematic = !wantWorld || mapBroken || !mapLive;
   // MapLibre spawns its own workers for tile parsing, which cannot be
@@ -293,7 +296,7 @@ export default function App() {
   const tabBarShown = !(onMountain && (screen === "navigate" || screen === "solving"));
   const sheetFloor = tabBarShown ? TABBAR_H : 0;
   const chromeBottom = navigating
-    ? NAV_FOOT_H
+    ? navFoot
     : exploring
       ? sheetFloor + PLAN_BUTTON_H + 32
       : Math.max(16, sheetHeight + sheetFloor + 14);
@@ -525,9 +528,9 @@ export default function App() {
           camera={focus}
           controlRef={mapControl}
           viewportBottom={
-            navigating ? NAV_FOOT_H : exploring ? PLAN_BUTTON_H + 28 : sheetHeight
+            navigating ? navFoot : exploring ? PLAN_BUTTON_H + 28 : sheetHeight
           }
-          block={!navigating}
+          block
           viewportTop={navigating ? NAV_HEAD_H : 0}
         />
       )}
@@ -540,20 +543,21 @@ export default function App() {
 
       <div className="topbar">
         {onMountain && screen === "explore" && (
-          <>
-            <button className="resortpill" onClick={() => setTab("home")}>
-              <Mountain width="16" height="16" />
-              <span className="resortpill__nm">{resort.name}</span>
-              <span className="resortpill__x">Change</span>
+          <div className="resortbar">
+            <button
+              className="resortbar__main"
+              onClick={() => setStatusOpen(true)}
+              aria-label={`${resort.name}, see what is open`}
+            >
+              <Mountain width="16" height="16" style={{ flex: "none" }} />
+              <span className="resortbar__nm">{resort.name}</span>
+              <Info width="15" height="15" className="resortbar__i" />
             </button>
-            {/* Beside the resort name rather than in a card over the terrain.
-                What is open is a fact about the resort, and this screen is
-                deliberately the mountain and one button. */}
-            <button className="openbtn" onClick={() => setStatusOpen(true)}>
-              <Info width="15" height="15" />
-              Open
+            <span className="resortbar__sep" />
+            <button className="resortbar__change" onClick={() => setTab("home")}>
+              Change
             </button>
-          </>
+          </div>
         )}
         {!["explore", "plan", "solving", "summary", "navigate"].includes(screen) && (
           <button
@@ -751,6 +755,7 @@ export default function App() {
           onFinish={finishDay}
           onReplan={onReplan}
           onAbandon={() => setScreen("detail")}
+          onFootHeight={setNavFoot}
         />
       )}
 

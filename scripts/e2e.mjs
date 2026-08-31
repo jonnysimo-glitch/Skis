@@ -834,7 +834,10 @@ try {
 
       const replan = await page.$(".nav__replan");
       check("and the fix offered is to re-solve from where you are", replan !== null);
-      check("which says where that is", /Re-planning from \w/.test(body), body.match(/Re-planning from [^.]*/)?.[0] ?? "unnamed");
+      // The place moved onto the button, where it labels the action instead of
+      // trailing a third sentence the banner did not have room for.
+      const replanLabel = await page.$eval(".nav__replan", (b) => b.innerText.trim());
+      check("which says where that is", /Re-plan from \w/.test(replanLabel), replanLabel || "unnamed");
       if (replan) {
         const from = body.match(/Re-planning from ([^ ]+)/)?.[1] ?? "here";
         await replan.click();

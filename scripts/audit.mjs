@@ -123,7 +123,7 @@ const PROBE = `(() => {
   };
   for (const el of all) {
     if (el.children.length || !el.textContent.trim()) continue;
-    if (el.closest(".hero, .nav__head, .nav__status, .tabbar, canvas, .mapnote, .modal__scrim, .resortpill, .planbtn, .navcontrols, .nav__foot")) continue;
+    if (el.closest(".hero, .nav__head, .nav__status, .tabbar, canvas, .mapnote, .modal__scrim, .resortbar, .planbtn, .navcontrols, .nav__foot")) continue;
     const s = getComputedStyle(el);
     const size = parseFloat(s.fontSize);
     const weight = +s.fontWeight || 400;

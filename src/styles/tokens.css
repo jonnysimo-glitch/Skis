@@ -71,10 +71,18 @@
      the bundled fallback everywhere else. Display is Archivo: a sturdy sporty
      grotesque that keeps numbers looking like instrument readings rather than
      like a web dashboard. */
+  /* The system font, everywhere.
+   *
+   * This shipped with Archivo first in --display, so every heading was drawn
+   * in a geometric sans that iOS never uses, and the app read as a web page
+   * pretending to be an app. San Francisco is what an iPhone user's eye
+   * expects, it carries Apple's own optical sizing between Text and Display
+   * cuts, and it costs nothing to download.
+   */
   --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
-        "Inter Variable", "Inter", "Segoe UI", sans-serif;
-  --display: "Archivo Variable", "Archivo", -apple-system, BlinkMacSystemFont,
-             "SF Pro Display", system-ui, sans-serif;
+        "Segoe UI", Roboto, sans-serif;
+  --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
+             "Segoe UI", Roboto, sans-serif;
 
   /* iOS type scale. Body is 17 — anything smaller reads as a web page. */
   --t-title-xl: 34px;

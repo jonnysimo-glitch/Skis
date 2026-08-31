@@ -619,7 +619,7 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   // The map really does get the whole screen.
   const covered = await page.evaluate(() => {
     const tab = document.querySelector(".tabbar").getBoundingClientRect().top;
-    const pill = document.querySelector(".resortpill").getBoundingClientRect().bottom;
+    const pill = document.querySelector(".resortbar").getBoundingClientRect().bottom;
     const mid = document.elementFromPoint(window.innerWidth / 2, (pill + tab) / 2);
     return { hits: mid?.tagName.toLowerCase(), gap: Math.round(tab - pill) };
   });
@@ -649,8 +649,8 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   });
   check("the map controls stack above it, not behind it", overlap > 0, `${overlap}px clear`);
 
-  check("the resort name is not truncated", await page.$eval(".resortpill__nm", (n) => n.scrollWidth <= n.clientWidth + 1),
-    await page.$eval(".resortpill__nm", (n) => `${n.scrollWidth} in ${n.clientWidth}`));
+  check("the resort name is not truncated", await page.$eval(".resortbar__nm", (n) => n.scrollWidth <= n.clientWidth + 1),
+    await page.$eval(".resortbar__nm", (n) => `${n.scrollWidth} in ${n.clientWidth}`));
   check("changing resort is offered once, not twice",
     (await page.$$('text=/Ski somewhere else/')).length === 0);
 
@@ -1216,6 +1216,128 @@ if (feature("15. Gestures, and slopes drawn over the terrain")) {
       `bearing ${bearing?.toFixed(0)}`);
     check("and the route is still fully drawn from the far side",
       back > front * 0.45, `${back} pixels against ${front} before`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
+// ============== 16. ONE GESTURE AT A TIME ==
+// Two fingers can mean zoom, rotate or tilt, and all three used to be applied
+// on every frame of every two finger gesture. Fingers never move perfectly
+// symmetrically, so a plain pinch also rotated and tilted a few degrees and
+// the whole view wobbled through the zoom. Each now waits for its own
+// threshold, and a tilt locks out the other two.
+if (feature("16. One gesture at a time")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1300);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  if (!(await page.$(SEL))) {
+    check("the cut-out is on screen", false, "no schematic canvas");
+    await page.context_.close();
+  } else {
+    const box = await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    const view = async () => {
+      const v = await page.evaluate(() => ({ ...window.__skisView }));
+      return { zoom: v.targetZoom, bearing: v.bearing, pitch: v.pitch };
+    };
+    const reset = async () => {
+      await page.click("[aria-label='Face north and tilt']");
+      await page.waitForTimeout(500);
+    };
+    // Playwright drives one mouse, so two fingers have to be raw pointer
+    // events. pointerType touch, because that is what this is testing.
+    const twoFinger = async (frames) => {
+      await page.evaluate(async ([sel, fr]) => {
+        const c = document.querySelector(sel);
+        const send = (type, id, x, y, primary) =>
+          c.dispatchEvent(new PointerEvent(type, {
+            pointerId: id, clientX: x, clientY: y,
+            bubbles: true, isPrimary: primary, pointerType: "touch",
+          }));
+        send("pointerdown", 11, fr[0][0], fr[0][1], true);
+        send("pointerdown", 12, fr[0][2], fr[0][3], false);
+        for (const f of fr) {
+          send("pointermove", 11, f[0], f[1], true);
+          send("pointermove", 12, f[2], f[3], false);
+          await new Promise((r) => setTimeout(r, 16));
+        }
+        const l = fr[fr.length - 1];
+        send("pointerup", 11, l[0], l[1], true);
+        send("pointerup", 12, l[2], l[3], false);
+      }, [SEL, frames]);
+      await page.waitForTimeout(400);
+    };
+
+    // Deliberately imperfect, because a perfect pinch is not a test: with the
+    // fingers exactly opposite and exactly level, even the old code that
+    // applied all three at once had nothing to rotate or tilt by. Real hands
+    // twist a few degrees and drift down the screen while they spread, and
+    // both stay under their thresholds here.
+    const NOISE_TWIST = (6 * Math.PI) / 180; // total, under the 8 degree gate
+    const NOISE_DRIFT = 16;                  // pixels, under the 22 pixel gate
+    await reset();
+    let a = await view();
+    const pinch = [];
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12;
+      const d = 60 + i * 12;
+      const th = NOISE_TWIST * t;
+      const dy = NOISE_DRIFT * t;
+      pinch.push([
+        cx - d * Math.cos(th), cy + dy - d * Math.sin(th),
+        cx + d * Math.cos(th), cy + dy + d * Math.sin(th),
+      ]);
+    }
+    await twoFinger(pinch);
+    let b = await view();
+    check("a pinch zooms", b.zoom > a.zoom * 1.2, `${a.zoom.toFixed(2)} to ${b.zoom.toFixed(2)}`);
+    check("and does not rotate the map on the way", Math.abs(b.bearing - a.bearing) < 2,
+      `bearing moved ${(b.bearing - a.bearing).toFixed(1)} degrees`);
+    check("nor tilt it", Math.abs(b.pitch - a.pitch) < 2,
+      `pitch moved ${(b.pitch - a.pitch).toFixed(1)} degrees`);
+
+    await reset();
+    a = await view();
+    const twist = [];
+    for (let i = 0; i <= 14; i++) {
+      const th = (i * 4 * Math.PI) / 180;
+      const R = 90;
+      twist.push([cx - R * Math.cos(th), cy - R * Math.sin(th), cx + R * Math.cos(th), cy + R * Math.sin(th)]);
+    }
+    await twoFinger(twist);
+    b = await view();
+    check("a twist rotates", Math.abs(b.bearing - a.bearing) > 5,
+      `${a.bearing.toFixed(0)} to ${b.bearing.toFixed(0)}`);
+    check("and does not zoom on the way", Math.abs(b.zoom - a.zoom) < 0.05,
+      `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
+
+    await reset();
+    a = await view();
+    // Same again: hands spread slightly as they slide, by less than the pinch
+    // threshold, so a tilt used to zoom a little too.
+    const tilt = [];
+    for (let i = 0; i <= 14; i++) {
+      const half = 80 * (1 + 0.03 * (i / 14));
+      tilt.push([cx - half, cy - i * 6, cx + half, cy - i * 6]);
+    }
+    await twoFinger(tilt);
+    b = await view();
+    check("two fingers travelling together tilts", Math.abs(b.pitch - a.pitch) > 5,
+      `${a.pitch.toFixed(0)} to ${b.pitch.toFixed(0)}`);
+    check("and does not zoom", Math.abs(b.zoom - a.zoom) < 0.02, `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
+    check("nor rotate", Math.abs(b.bearing - a.bearing) < 2,
+      `bearing moved ${(b.bearing - a.bearing).toFixed(1)} degrees`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }

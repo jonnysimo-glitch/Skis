@@ -49,12 +49,27 @@ export default function NavigateScreen({
   onFinish,
   onReplan,
   onAbandon,
+  onFootHeight,
 }) {
   // Are we actually on the hill? If the wall clock is nowhere near the window
   // that was planned — looking at tomorrow's route from the sofa, or replaying
   // a finished day — then live timing is meaningless and pretending otherwise
   // produces nonsense like "29 minutes ahead, back at 06:49". In that case the
   // screen runs off the plan's own clock and says so.
+  const foot = useRef(null);
+  // The footer is not a fixed height: the overrun banner adds about ninety
+  // pixels to it. Anything positioned above it has to know, or the zoom
+  // buttons end up behind the banner, which is where they were.
+  useEffect(() => {
+    const node = foot.current;
+    if (!node || !onFootHeight) return undefined;
+    const report = () => onFootHeight(Math.round(node.getBoundingClientRect().height));
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [onFootHeight]);
+
   const startedAt = useRef(nowMinutes());
   const live = startedAt.current >= plan.t0 - 60 && startedAt.current <= plan.t1 + 60;
   const [wall, setWall] = useState(nowMinutes());
@@ -199,17 +214,18 @@ export default function NavigateScreen({
 
       {/* The map is what sits here. Left alone so it can be dragged. */}
 
-      <footer className="nav__foot">
+      <footer className="nav__foot" ref={foot}>
         {overrun > 0 && (
           <div className="nav__over">
             <Warning width="17" height="17" style={{ flex: "none" }} />
-            <span>
-              <b>{overrun} min over.</b> Finishing as planned puts you back at{" "}
-              {minutesToClock(projectedFinish)}, past your {minutesToClock(plan.t1)}.
-              Re-planning from {NODES[leg.from].name} uses the time you have.
-            </span>
+            {/* Short enough to read on a chairlift. The button says where it
+                re-plans from, so the text does not have to. */}
+            <p>
+              <b>{overrun} min over.</b> Back at {minutesToClock(projectedFinish)},
+              past your {minutesToClock(plan.t1)}.
+            </p>
             <button className="nav__replan" onClick={() => onReplan(leg.from)}>
-              <Restart width="16" height="16" /> Re-plan
+              <Restart width="16" height="16" /> Re-plan from {NODES[leg.from].name}
             </button>
           </div>
         )}
