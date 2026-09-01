@@ -432,7 +432,7 @@ try {
       })
     );
 
-    await page.click("text=/Save offline and start|^Start$/");
+    await page.click("text=/Save and start|Save offline and start|^Start$/");
     await page.waitForSelector(".nav", { timeout: 10000 });
 
     const stored = await page.evaluate(() => {
@@ -549,7 +549,7 @@ try {
     await solve(page);
     await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn");
-    await page.click("text=/Save offline and start|^Start$/");
+    await page.click("text=/Save and start|Save offline and start|^Start$/");
     await page.waitForSelector(".nav", { timeout: 10000 });
 
     await page.context_.setOffline(true);
@@ -821,7 +821,7 @@ try {
       await solve(page);
       await openRoute(page);
       await page.waitForSelector(".sheet__foot .btn");
-      await page.click("text=/Save offline and start|^Start$/");
+      await page.click("text=/Save and start|Save offline and start|^Start$/");
       await page.waitForSelector(".nav", { timeout: 10000 });
       return page;
     }
@@ -833,12 +833,14 @@ try {
       check("timings are live, not read off the plan", !/Times are from your plan/.test(body));
       check("being unable to finish in time is stated", /min over/i.test(body), body.match(/\d+ min over/)?.[0] ?? "no overrun warning");
 
-      const replan = await page.$(".nav__replan");
+      const replan = await page.$(".btn--nav-warn");
       check("and the fix offered is to re-solve from where you are", replan !== null);
-      // The place moved onto the button, where it labels the action instead of
-      // trailing a third sentence the banner did not have room for.
-      const replanLabel = await page.$eval(".nav__replan", (b) => b.innerText.trim());
-      check("which says where that is", /Re-plan from \w/.test(replanLabel), replanLabel || "unnamed");
+      // It shares the action row with the primary now, so the face of the
+      // button is one word and the origin lives in its accessible name. A
+      // screen reader still gets "Re-plan from Gabiet"; the thumb gets a
+      // button that leaves room for "Reached Colle Bettaforca" beside it.
+      const replanLabel = await page.$eval(".btn--nav-warn", (b) => b.getAttribute("aria-label"));
+      check("which says where that is", /Re-plan from \w/.test(replanLabel ?? ""), replanLabel || "unnamed");
       if (replan) {
         const from = body.match(/Re-planning from ([^ ]+)/)?.[1] ?? "here";
         await replan.click();

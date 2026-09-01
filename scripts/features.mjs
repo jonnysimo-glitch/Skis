@@ -365,7 +365,7 @@ if (feature("5. Navigation follows the GPS")) {
   check("a day to navigate", (await routeCount(page)) > 0);
   await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
   check("navigation starts", (await where(page)) === "navigate");
 
@@ -540,7 +540,7 @@ if (feature("7. Finishing a day writes it down, once")) {
   await solve(page);
   await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
 
   for (let i = 0; i < 120; i++) {
@@ -699,7 +699,7 @@ if (feature("9. Navigating is pinned, not dragged")) {
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
   check("the route detail is still a sheet", (await page.$(".sheet")) !== null);
 
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
 
   check("navigating is not a sheet", (await page.$(".sheet")) === null);
@@ -848,7 +848,7 @@ if (feature("11. It works without a mouse or a screen")) {
   await openRoute(page);
   await page.waitForSelector(".legs", { timeout: 15000 });
   await record("detail");
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
   await record("navigate");
 
@@ -1610,7 +1610,7 @@ if (feature("17. The arrow points where you are going")) {
   await solve(page);
   await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 10000 });
   await page.waitForTimeout(1800);
 
@@ -1741,7 +1741,7 @@ if (feature("19. Navigate keeps its map controls")) {
   check("a sheet dragged over the map does hide the controls", covered.shown === false,
     JSON.stringify(covered));
 
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 10000 });
   await page.waitForTimeout(1500);
 
@@ -1774,7 +1774,7 @@ if (feature("18. The rest of the day, without leaving navigation")) {
   await solve(page);
   await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 10000 });
   await page.waitForTimeout(1200);
 
@@ -2071,14 +2071,16 @@ if (feature("22. Browse the options before committing to one")) {
   await page.waitForTimeout(1400);
   const opened = await page.evaluate(() => ({
     title: document.querySelector(".sheet__head .title")?.textContent,
-    start: document.querySelector(".sheet__foot .btn")?.textContent.trim(),
+    // The primary, not merely the first: the footer's first button is now
+    // "Back", which shares the row with it.
+    start: document.querySelector(".sheet__foot .btn:not(.btn--quiet):not(.btn--ghost)")?.textContent.trim(),
   }));
   check("a card's button opens that card's day", opened.title === second.cards[1].title,
     `${opened.title} against ${second.cards[1].title}`);
-  check("which is the one you commit from", /Save offline and start|^Start$/.test(opened.start), opened.start);
+  check("which is the one you commit from", /Save and start|Save offline and start|^Start$/.test(opened.start), opened.start);
 
   // Coming back must not silently reset to the first option.
-  await page.click("text=Back to options");
+  await page.click(".sheet__foot .btn--quiet");
   await page.waitForTimeout(1200);
   const returned = await state();
   check("going back keeps the day you were looking at",
@@ -2348,6 +2350,77 @@ if (feature("24. The mountain is graded before you plan anything")) {
   check("which is still there rather than switched off",
     withRoute.tintBlue + withRoute.tintRed > 20,
     `${withRoute.tintBlue + withRoute.tintRed} px of network`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ===================== 25. RUNNING LATE COSTS ONE ROW, NOT THREE ==
+// The overrun state used to stack three full-width rows over the map: the
+// "rest of the day" handle, a banner with a full-width re-plan inside it, and
+// the primary. On a screen whose job is showing you the mountain that is most
+// of the mountain gone.
+if (feature("25. Running late costs one row, not three")) {
+  const page = await newPage(browser, { at: [14, 30] });
+  await toPlan(page, url);
+  await page.fill("#p-t0", "09:00");
+  await page.fill("#p-t1", "16:00");
+  await solve(page);
+  await openRoute(page, 0);
+  await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 10000 });
+  await page.waitForTimeout(1400);
+
+  const shape = () => page.evaluate(() => {
+    const foot = document.querySelector(".nav__foot").getBoundingClientRect();
+    const btns = [...document.querySelectorAll(".nav__actions .btn")];
+    return {
+      over: !!document.querySelector(".nav__over"),
+      footH: Math.round(foot.height),
+      map: Math.round(foot.y),
+      rows: btns.length,
+      sameRow: btns.length === 2
+        && Math.abs(btns[0].getBoundingClientRect().y - btns[1].getBoundingClientRect().y) < 4,
+      tall: Math.max(...btns.map((b) => Math.round(b.getBoundingClientRect().height))),
+      labels: btns.map((b) => b.innerText.replace(/\s+/g, " ").trim()),
+      dismiss: !!document.querySelector(".nav__overx"),
+    };
+  });
+
+  const late = await shape();
+  check("the plan does overrun, so there is something to show", late.over === true);
+  check("re-plan sits beside the primary, not above it", late.sameRow === true,
+    late.labels.join(" | "));
+  check("and the primary is still the one that says where you are going",
+    /^Reached /.test(late.labels[1] ?? ""), late.labels[1]);
+
+  // A junction name is up to sixteen characters, and the row must not grow
+  // to swallow it.
+  for (let i = 0; i < 14; i++) {
+    const btns = await page.$$(".nav__actions .btn");
+    const b = btns[btns.length - 1];
+    if (!b || !(await page.$(".nav__foot"))) break;
+    if (/Passo dei Salati|Colle Bettaforca/.test((await b.textContent()).trim())) break;
+    await b.click();
+    await page.waitForTimeout(150);
+  }
+  if (await page.$(".nav__foot")) {
+    const long = await shape();
+    check("the longest junction name does not stretch the row",
+      long.tall <= late.tall + 2, `${long.tall}px against ${late.tall}px — ${long.labels[1]}`);
+    check("and both buttons are still a proper tap target", long.tall >= 44, `${long.tall}px`);
+
+    // Seen it, put it away. The re-plan has to stay: it is the way out.
+    check("the overrun note can be dismissed", long.dismiss === true);
+    await page.click(".nav__overx");
+    await page.waitForTimeout(500);
+    const gone = await shape();
+    check("dismissing it gives the map the row back", gone.map > long.map + 40,
+      `${long.map}px of map became ${gone.map}px`);
+    check("the note is gone", gone.over === false);
+    check("but re-plan is not", gone.rows === 2 && /Re-plan/.test(gone.labels[0] ?? ""),
+      gone.labels.join(" | "));
+  }
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }

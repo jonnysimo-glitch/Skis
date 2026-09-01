@@ -92,13 +92,18 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
       </SheetBody>
 
       <SheetFoot>
-        <button className="btn" onClick={save}>
-          <Download width="18" height="18" />
-          Save offline and start
-        </button>
-        <button className="btn btn--quiet" onClick={onBack}>
-          <Back width="16" height="16" /> Back to options
-        </button>
+        <div className="actionrow">
+          <button className="btn btn--quiet" onClick={onBack}>
+            <Back width="16" height="16" /> Back
+          </button>
+          {/* Not "Save offline and start": sharing the row with Back it wrapped
+              to two lines, and the note directly below already promises the
+              offline part in more words than the button could. */}
+          <button className="btn" onClick={save}>
+            <Download width="18" height="18" />
+            Save and start
+          </button>
+        </div>
         <p className="note" style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", justifyContent: "center" }}>
           <Wifi width="14" height="14" style={{ flex: "none" }} />
           Saved to your phone. Works with no signal.

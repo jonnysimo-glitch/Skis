@@ -213,7 +213,7 @@ for (const [label, at] of [["night before", [21, 30]], ["first lift", [8, 20]], 
     await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
     await audit(page, `detail (${label})`);
 
-    await page.click("text=/Save offline and start|^Start$/");
+    await page.click("text=/Save and start|Save offline and start|^Start$/");
     await page.waitForSelector(".nav", { timeout: 15000 });
     await audit(page, `navigate (${label})`);
   }
@@ -285,7 +285,7 @@ for (const ability of ["Blue", "Anything"]) {
   await page.waitForSelector(".routecard", { timeout: 20000 });
   await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
-  await page.click("text=/Save offline and start|^Start$/");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 15000 });
   for (let i = 0; i < 80; i++) {
     const b = await page.$('.nav__foot .btn:has-text("Reached")');

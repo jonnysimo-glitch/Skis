@@ -37,6 +37,13 @@ function gpsExplanation(state) {
   }
 }
 
+/**
+ * How much further behind you have to fall before the overrun says so again
+ * after being dismissed. Ten minutes is about a lift queue: enough that it is
+ * news rather than the same news.
+ */
+const OVERRUN_RENAG = 10;
+
 const nowMinutes = () => {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
@@ -64,6 +71,15 @@ export default function NavigateScreen({
   // leg you are on and the one after it, and on a chairlift the question is
   // usually about the whole run home rather than the next hundred metres.
   const [expanded, setExpanded] = useState(false);
+  // The overrun line, once you have read it. Not the whole banner's job: the
+  // re-plan button sits in the action row and stays there, so putting the
+  // message away keeps the escape hatch.
+  //
+  // Holds the overrun you agreed to rather than a plain boolean. Accepting
+  // that you are twenty minutes late is not accepting that you are ninety, and
+  // silently never mentioning it again would be the app deciding on your
+  // behalf that a last lift no longer matters.
+  const [overSeen, setOverSeen] = useState(null);
 
   // The map chrome lives outside this component, and with the route over the
   // map there is no map for it to control.
@@ -280,21 +296,41 @@ export default function NavigateScreen({
               ? "The whole route"
               : `The rest of the day · ${route.segments.length - step - 1} to go`}
         </button>
-        {overrun > 0 && (
+        {overrun > 0 && (overSeen === null || overrun >= overSeen + OVERRUN_RENAG) && (
           <div className="nav__over">
             <Warning width="17" height="17" style={{ flex: "none" }} />
-            {/* Short enough to read on a chairlift. The button says where it
-                re-plans from, so the text does not have to. */}
+            {/* Short enough to read on a chairlift. Where it re-plans from is
+                where you are, which the instruction above already says. */}
             <p>
               <b>{overrun} min over.</b> Back at {minutesToClock(projectedFinish)},
               past your {minutesToClock(plan.t1)}.
             </p>
-            <button className="nav__replan" onClick={() => onReplan(leg.from)}>
-              <Restart width="16" height="16" /> Re-plan from {NODES[leg.from].name}
+            <button
+              className="nav__overx"
+              onClick={() => setOverSeen(overrun)}
+              aria-label="Hide the overrun note"
+            >
+              <Close width="14" height="14" />
             </button>
           </div>
         )}
-        <div className="nav__actions">
+        {/* Re-plan shares the row with the primary rather than sitting on its
+            own above it. Stacked, the overrun state cost three full-width rows
+            of a screen whose job is showing you the mountain. */}
+        <div className={`nav__actions${overrun > 0 ? " nav__actions--two" : ""}`}>
+          {/* "Re-plan" on the face, because it shares the row and the primary
+              needs the width for a junction name. Where it re-plans from is
+              where you are, and it stays in the accessible name so a screen
+              reader is not left with a bare verb. */}
+          {overrun > 0 && (
+            <button
+              className="btn btn--nav btn--nav-warn"
+              onClick={() => onReplan(leg.from)}
+              aria-label={`Re-plan from ${NODES[leg.from].name}`}
+            >
+              <Restart width="18" height="18" /> Re-plan
+            </button>
+          )}
           {last ? (
             <button className="btn btn--nav" onClick={onFinish}>
               <Check width="20" height="20" /> Finish

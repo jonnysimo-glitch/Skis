@@ -1223,7 +1223,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   padding: var(--s-3);
   margin-bottom: var(--s-2);
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   align-items: start;
   gap: var(--s-1) var(--s-2);
   font-size: var(--t-footnote); line-height: 1.35;
@@ -1231,27 +1231,50 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .nav__over > svg { color: var(--warn); margin-top: 1px; }
 .nav__over > p { grid-column: 2; }
-.nav__replan {
-  /* Full width of the banner and centred. Sized to its own label it was a
-     small pill floating under the text, which read as a stray chip rather
-     than as the action the banner is asking you to take. */
-  grid-column: 1 / -1;
-  justify-self: stretch;
-  justify-content: center;
-  margin-top: var(--s-1);
-  min-height: var(--tap);
-  padding: 0 var(--s-3);
-  border-radius: var(--r-pill);
-  /* Was solid --warn, a mud brown pill in an app that is otherwise blue and
-     white. White with accent text keeps it in the palette and keeps it clearly
-     secondary to the primary action below it. */
-  background: #fff;
-  border: 1px solid var(--warn-line);
-  color: var(--accent);
-  font-size: var(--t-footnote); font-weight: 650;
-  display: flex; align-items: center; gap: var(--s-1);
+.nav__overx {
+  grid-column: 3;
+  /* A 44pt target around a 14px glyph; the negative margins keep the banner
+     the size its text implies while the thumb gets the whole square. */
+  min-width: var(--tap); min-height: var(--tap);
+  margin: calc(var(--tap) / -2 + 9px) calc(var(--s-2) * -1) calc(var(--tap) / -2 + 9px) 0;
+  display: grid; place-items: center;
+  color: var(--warn);
+  border-radius: 50%;
 }
-.nav__replan:active { transform: scale(0.97); }
+.nav__overx:active { background: rgba(154, 91, 18, 0.12); }
+
+/* Two buttons on one row when running late.
+   The re-plan is sized to its own label and the primary takes what is left,
+   rather than splitting fifty-fifty: "Reached Colle Bettaforca" is a real
+   junction name and it has to stay readable. */
+/* A secondary beside the primary rather than on a row of its own.
+   Every row a footer takes is a row the map does not get, and going back is
+   not an action that needs the full width of a phone. Sized to its own label,
+   so the primary keeps the space its longer one needs. */
+.actionrow { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2); }
+.actionrow .btn { width: auto; min-width: 0; }
+.actionrow .btn--quiet { padding: 0 var(--s-4); }
+
+.nav__actions--two { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2); }
+.nav__actions--two .btn { flex: none; width: auto; min-width: 0; }
+/* Sharing the row costs the primary about a third of its width, and the label
+   carries a place name: "Reached Passo dei Salati" does not fit on one line at
+   full size. Slightly smaller type and tighter padding gets most junctions onto
+   one line, and the longest wrap to two without the row jumping about. */
+.nav__actions--two .btn--nav {
+  font-size: var(--t-callout);
+  line-height: 1.2;
+  padding: var(--s-2) var(--s-3);
+  min-height: 54px;
+}
+.btn--nav-warn {
+  background: #fff;
+  color: var(--accent);
+  border: 1px solid var(--warn-line);
+  padding: 0 var(--s-3);
+  white-space: nowrap;
+}
+.btn--nav-warn:active { background: var(--warn-bg); }
 
 /* Read aloud, never drawn. For headings that a sighted user gets from the
    picture instead. */

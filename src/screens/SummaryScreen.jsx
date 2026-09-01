@@ -61,12 +61,14 @@ export default function SummaryScreen({ route, opts, plan, onAgain, onDone }) {
       </SheetBody>
 
       <SheetFoot>
-        <button className="btn" onClick={onAgain}>
-          <Restart width="17" height="17" /> Plan another day
-        </button>
-        <button className="btn btn--quiet" onClick={onDone}>
-          Back to the route
-        </button>
+        <div className="actionrow">
+          <button className="btn btn--quiet" onClick={onDone}>
+            Back
+          </button>
+          <button className="btn" onClick={onAgain}>
+            <Restart width="17" height="17" /> Plan another day
+          </button>
+        </div>
       </SheetFoot>
     </>
   );
