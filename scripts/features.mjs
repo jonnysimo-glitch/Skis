@@ -1414,14 +1414,25 @@ if (feature("16. One gesture at a time")) {
     // rotation engages at all. That deadzone is the point of it.
     await twoFinger(hand((t, i) => pair(90 * (1 + 0.02 * t), rad(40) * t, 0, 8 * t, i)));
     b = await view();
-    const panMoved = await page.evaluate(() => {
-      const v = window.__skisView;
-      return Math.round(Math.hypot(v.panX, v.panY));
-    });
     check("a real hand's twist rotates the way the hand turned",
       b.bearing - a.bearing < -8, `${(b.bearing - a.bearing).toFixed(0)} degrees`);
-    check("and does not slide the mountain at the same time", panMoved < 6,
-      `${panMoved}px of pan`);
+    // This used to read panX/panY and require them to stay near zero. That was
+    // a fair proxy for "the twist did not also slide the map" right up until
+    // rotation started pivoting on the fingers, which is IMPLEMENTED as a pan
+    // correction — 45px of it here, all of it doing its job. The property the
+    // check was always about is that the subject does not translate under the
+    // gesture, so it measures that directly now: the mountain is where it was,
+    // turned.
+    const centreDrift = await page.evaluate(() => {
+      const ns = Object.values(window.__skisNodes);
+      const lat = ns.reduce((t, n) => t + n.lat, 0) / ns.length;
+      const lon = ns.reduce((t, n) => t + n.lon, 0) / ns.length;
+      const p = window.__skisProject(lon, lat);
+      return { x: p.x, y: p.y };
+    });
+    check("and does not slide the mountain out from under the turn",
+      Math.abs(centreDrift.x - cx) < 130 && Math.abs(centreDrift.y - cy) < 190,
+      `middle of the resort is ${Math.round(centreDrift.x - cx)},${Math.round(centreDrift.y - cy)} from the fingers`);
     check("nor zoom it", Math.abs(b.zoom - a.zoom) < 0.02, `zoom moved ${(b.zoom - a.zoom).toFixed(3)}`);
 
     await reset();
@@ -1500,6 +1511,81 @@ if (feature("16. One gesture at a time")) {
   for (let i = 0; i <= 16; i++) plainTwist.push(grip(110, (i * Math.PI) / 36, i * 0.4));
   const r4 = await run(plainTwist);
   check("and a twist alone still does not zoom", r4.zoom < 0.05, `${r4.zoom.toFixed(3)}`);
+
+  // ---- rotation pivots on the fingers, and eases off close in ----------
+  //
+  // "When you are super close it feels like it rotates too much." Two causes.
+  // Bearing pivoted on the middle of the resort while pinch already pivoted on
+  // the fingers, so zoomed in and panned the pivot was off the side of the
+  // screen; and the camera re-fits the subject to the viewport every frame, so
+  // turning also rescales and recentres it, which zoom multiplies.
+  //
+  // The anchor is found by searching the app's OWN forward projection for the
+  // lat/lon that lands under the fingers. Independent of the projection maths
+  // the fix uses, so this cannot pass because both share a mistake.
+  const anchorAt = (sx, sy) => page.evaluate(({ sx, sy }) => {
+    const ns = Object.values(window.__skisNodes);
+    let lo = [Math.min(...ns.map((n) => n.lat)), Math.min(...ns.map((n) => n.lon))];
+    let hi = [Math.max(...ns.map((n) => n.lat)), Math.max(...ns.map((n) => n.lon))];
+    let best = null;
+    for (let pass = 0; pass < 5; pass++) {
+      for (let i = 0; i <= 20; i++) {
+        for (let j = 0; j <= 20; j++) {
+          const lat = lo[0] + ((hi[0] - lo[0]) * i) / 20;
+          const lon = lo[1] + ((hi[1] - lo[1]) * j) / 20;
+          const p = window.__skisProject(lon, lat);
+          if (!p) continue;
+          const d = Math.hypot(p.x - sx, p.y - sy);
+          if (!best || d < best.d) best = { lat, lon, d };
+        }
+      }
+      const rLat = (hi[0] - lo[0]) / 10, rLon = (hi[1] - lo[1]) / 10;
+      lo = [best.lat - rLat, best.lon - rLon];
+      hi = [best.lat + rLat, best.lon + rLon];
+    }
+    return best;
+  }, { sx, sy });
+
+  const turnAt = async (zoomIns) => {
+    await reset();
+    for (let i = 0; i < zoomIns; i++) {
+      await page.tap("[aria-label='Zoom in']");
+      await page.waitForTimeout(150);
+    }
+    await page.waitForTimeout(500);
+    const a = await anchorAt(cx, cy);
+    const from = await view();
+    const p0 = await page.evaluate((q) => window.__skisProject(q.lon, q.lat), a);
+    const frames = [];
+    for (let i = 0; i <= 16; i++) frames.push(grip(100, (i * Math.PI) / 45, i * 0.3));
+    await twoFinger(frames);
+    await page.waitForTimeout(450);
+    const to = await view();
+    const p1 = await page.evaluate((q) => window.__skisProject(q.lon, q.lat), a);
+    return {
+      anchorFrom: a.d,
+      drift: Math.hypot(p1.x - p0.x, p1.y - p0.y),
+      turned: Math.abs(to.bearing - from.bearing),
+      zoom: from.zoom,
+    };
+  };
+
+  const near = await turnAt(0);
+  const far = await turnAt(8);
+  check("the search really did find the point under the fingers",
+    near.anchorFrom < 6 && far.anchorFrom < 6,
+    `${near.anchorFrom.toFixed(0)}px and ${far.anchorFrom.toFixed(0)}px away`);
+  // Without the pivot fix this was 126px and 1080px for the same two twists.
+  check("what is under your fingers roughly stays under them",
+    near.drift < 80, `${near.drift.toFixed(0)}px at zoom ${near.zoom.toFixed(1)}`);
+  check("and it does not run away when you are close in",
+    far.drift < 620, `${far.drift.toFixed(0)}px at zoom ${far.zoom.toFixed(1)}`);
+  check("the same twist turns less the closer you are",
+    far.turned < near.turned * 0.85,
+    `${near.turned.toFixed(0)} degrees out, ${far.turned.toFixed(0)} degrees in`);
+  check("but never so little that turning round takes four goes",
+    far.turned > near.turned * 0.45,
+    `${(far.turned / near.turned).toFixed(2)} of the far rate`);
 
   check("the needle turns with the map", Math.min(turned, 360 - turned) > 20,
       `${turned} degrees round from up`);

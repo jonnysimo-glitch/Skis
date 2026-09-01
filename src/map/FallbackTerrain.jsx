@@ -53,6 +53,20 @@ const TERRAIN_BLUR = 2.6;
  * the screen, and the mountain looks like frosted glass rather than snow. It
  * eases off with the zoom instead, so far is smooth and near is crisp.
  */
+/**
+ * How much of a finger twist becomes bearing, by zoom.
+ *
+ * One to one is right when the whole mountain is in frame, and too much when
+ * you are close: the camera re-fits the subject to the viewport on every
+ * frame, so as the bearing turns, the focal length and the centring shift too,
+ * and at high zoom that refit is multiplied into a big apparent swing. Turning
+ * about the point under the fingers takes out more than half of it (measured:
+ * 1080px of drift down to 503px at zoom 9), and this absorbs the rest.
+ *
+ * Never below half, or turning right round becomes four separate gestures.
+ */
+const rotateRate = (zoom) => Math.max(0.5, Math.min(1, 1 / (1 + 0.08 * (zoom - 1))));
+
 const blurFor = (zoom) => TERRAIN_BLUR * Math.max(0.3, Math.min(1, 2.2 / Math.max(zoom, 1)));
 
 /**
@@ -278,6 +292,9 @@ export default function FallbackTerrain({
       const s2 = projectRef.current(x, f.sample(x, z), z, view.current, lastCam.current);
       return { x: s2.x, y: s2.y };
     };
+    // The mountain's own nodes, so a test can pick whatever is under a finger
+    // and follow it through a gesture.
+    window.__skisNodes = propsRef.current.nodes ?? nodes;
     return () => clearInterval(tick);
   }, []);
 
@@ -1054,6 +1071,48 @@ export default function FallbackTerrain({
       return { dist: Math.hypot(b.x - a.x, b.y - a.y), angle: Math.atan2(b.y - a.y, b.x - a.x) };
     };
 
+    /**
+     * The terrain point under a screen position, found with the app's own
+     * forward projection rather than an inverse of it.
+     *
+     * The closed-form inverse this replaces solved for the GROUND plane, and
+     * the thing under your fingers is not on the ground plane — it is on the
+     * mountain, at whatever altitude that is, times the vertical exaggeration.
+     * At a distance that error is nothing; zoomed in and pitched over it put
+     * the anchor hundreds of metres from where the finger actually was.
+     *
+     * Coarse sweep of the height field then two refinements. It runs once when
+     * a two finger gesture begins, not per frame, so a few thousand
+     * projections cost nothing anyone can feel.
+     */
+    const groundUnder = (v, sx, sy) => {
+      const f = fieldRef.current;
+      const cam = lastCam.current;
+      const proj = projectRef.current;
+      if (!f || !cam || !proj) return null;
+      let lo = { x: f.minX, z: f.minZ };
+      let hi = { x: f.maxX, z: f.maxZ };
+      let best = null;
+      for (let pass = 0; pass < 3; pass++) {
+        const N = pass === 0 ? 28 : 12;
+        for (let i = 0; i <= N; i++) {
+          for (let j = 0; j <= N; j++) {
+            const x = lo.x + ((hi.x - lo.x) * i) / N;
+            const z = lo.z + ((hi.z - lo.z) * j) / N;
+            const y = f.sample(x, z);
+            const p = proj(x, y, z, v, cam);
+            const d = Math.hypot(p.x - sx, p.y - sy);
+            if (!best || d < best.d) best = { x, y, z, d };
+          }
+        }
+        const rx = (hi.x - lo.x) / 10;
+        const rz = (hi.z - lo.z) / 10;
+        lo = { x: best.x - rx, z: best.z - rz };
+        hi = { x: best.x + rx, z: best.z + rz };
+      }
+      return best;
+    };
+
     const startGesture = () => {
       const c = centroid();
       const sp = pointers.size >= 2 ? spread() : {};
@@ -1083,6 +1142,9 @@ export default function FallbackTerrain({
         tilting: false,
         zooming: false,
         rotating: false,
+        // What the fingers are resting on. Found once here rather than every
+        // frame, so rotation can pivot on it.
+        anchor: pointers.size >= 2 ? groundUnder(view.current, c.x, c.y) : null,
       };
     };
 
@@ -1104,6 +1166,38 @@ export default function FallbackTerrain({
       if (!f || actual === 1) return;
       v.panX += (1 - actual) * (sx - f.ax - v.panX);
       v.panY += (1 - actual) * (sy - f.ay - v.panY);
+    };
+
+    /**
+     * Turn the map about a point on the screen, not about the camera's target.
+     *
+     * This is why rotating felt violent once you were zoomed in. Pinching
+     * already pivots on your fingers, but bearing did not: it pivoted on the
+     * middle of the resort. Zoomed out those are nearly the same point and a
+     * thirty degree twist reads as thirty degrees. Zoomed in and panned across
+     * the valley, the pivot is somewhere off the side of the screen and the
+     * same twist swings whatever you were looking at right out of frame.
+     * MapLibre rotates about `pinchAround` for exactly this reason.
+     *
+     * Done by projecting the anchor before and after and putting the
+     * difference into the pan, which is added in screen space at the very end.
+     * Both projections use the same camera, so the pan already in it cancels
+     * and only the turn is left.
+     */
+    const rotateAbout = (v, dDeg) => {
+      const anchor = gesture?.anchor;
+      const cam = lastCam.current;
+      const proj = projectRef.current;
+      if (!anchor || !cam || !proj || !dDeg) {
+        v.bearing += dDeg;
+        return;
+      }
+      const before = proj(anchor.x, anchor.y, anchor.z, v, cam);
+      v.bearing += dDeg;
+      const after = proj(anchor.x, anchor.y, anchor.z, v, cam);
+      if (!Number.isFinite(after.x) || !Number.isFinite(after.y)) return;
+      v.panX += before.x - after.x;
+      v.panY += before.y - after.y;
     };
 
     // How far a two finger gesture has to go before it commits to being one
@@ -1290,7 +1384,7 @@ export default function FallbackTerrain({
             // other rotated the mountain against the fingers. Pinned by "a
             // clockwise twist turns the mountain clockwise" in features, and by
             // the bearing check in field.test.js that this depends on.
-            v.bearing -= (turn * 180) / Math.PI;
+            rotateAbout(v, (-(turn * 180) / Math.PI) * rotateRate(v.zoom));
           }
           if (gesture.zooming) {
             zoomAbout(v, dist / (gesture.dist || dist), c.x, c.y);
