@@ -202,6 +202,7 @@ export default function App() {
   // Measured, not assumed: the navigate footer grows when the overrun banner
   // appears. NAV_FOOT_H is only the starting guess for the first frame.
   const [navFoot, setNavFoot] = useState(NAV_FOOT_H);
+  const [navExpanded, setNavExpanded] = useState(false);
   const wantWorld = mapMode === "world";
   const showSchematic = !wantWorld || mapBroken || !mapLive;
   // With the button gone this is the only way into the world map, and it has
@@ -361,7 +362,13 @@ export default function App() {
       ? sheetFloor + PLAN_BUTTON_H + 32
       : Math.max(16, sheetHeight + sheetFloor + 14);
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
-  const chromeHidden = sheetHeight > viewportH * 0.74;
+  // Navigate has no sheet: its panel is pinned so nothing moves inside a
+  // glove. Reading sheetHeight there meant the chrome inherited whatever the
+  // detail sheet had last been dragged to, so anyone who pulled the route
+  // detail up to read the numbers started the descent with no compass, no
+  // recentre and no zoom — for the whole run. What does hide them on this
+  // screen is the route list, which covers the map they control.
+  const chromeHidden = navigating ? navExpanded : sheetHeight > viewportH * 0.74;
 
   // ---- actions ------------------------------------------------------------
 
@@ -813,6 +820,7 @@ export default function App() {
           onReplan={onReplan}
           onAbandon={() => setScreen("detail")}
           onFootHeight={setNavFoot}
+          onExpand={setNavExpanded}
         />
       )}
 

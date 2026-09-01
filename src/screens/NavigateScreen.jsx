@@ -52,6 +52,7 @@ export default function NavigateScreen({
   onReplan,
   onAbandon,
   onFootHeight,
+  onExpand,
 }) {
   // Are we actually on the hill? If the wall clock is nowhere near the window
   // that was planned — looking at tomorrow's route from the sofa, or replaying
@@ -63,6 +64,13 @@ export default function NavigateScreen({
   // leg you are on and the one after it, and on a chairlift the question is
   // usually about the whole run home rather than the next hundred metres.
   const [expanded, setExpanded] = useState(false);
+
+  // The map chrome lives outside this component, and with the route over the
+  // map there is no map for it to control.
+  useEffect(() => {
+    onExpand?.(expanded);
+    return () => onExpand?.(false);
+  }, [expanded, onExpand]);
   const foot = useRef(null);
   // The footer is not a fixed height: the overrun banner adds about ninety
   // pixels to it. Anything positioned above it has to know, or the zoom

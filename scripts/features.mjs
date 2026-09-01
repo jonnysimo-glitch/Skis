@@ -1537,6 +1537,70 @@ if (feature("17. The arrow points where you are going")) {
   }
 }
 
+// ===================== 19. NAVIGATE KEEPS ITS MAP CONTROLS ==
+// The compass, the recentre and the zoom buttons hide when a sheet is dragged
+// up over the map. Navigate has no sheet — its panel is pinned — so it used to
+// inherit whatever the detail sheet had last been dragged to. Pull the route
+// detail up to read the numbers, tap start, and the whole descent had no map
+// controls at all.
+if (feature("19. Navigate keeps its map controls")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, url);
+  await solve(page);
+  await page.click(".routecard");
+  await page.waitForSelector(".sheet__foot .btn");
+  await page.waitForTimeout(700);
+
+  const read = () => page.evaluate(() => {
+    const t = document.querySelector(".maptools");
+    if (!t) return { present: false };
+    const r = t.getBoundingClientRect();
+    return {
+      present: true,
+      shown: getComputedStyle(t).opacity === "1",
+      buttons: [...t.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")),
+      onScreen: r.y >= 0 && r.bottom <= window.innerHeight + 1,
+    };
+  });
+
+  // Read the numbers, which means dragging the sheet up over the map.
+  const b = await page.$eval(".sheet", (n) => {
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width };
+  });
+  await page.mouse.move(b.x + b.w / 2, b.y + 12);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(b.x + b.w / 2, b.y + 12 - (420 * i) / 12);
+  await page.mouse.up();
+  await page.waitForTimeout(800);
+
+  const covered = await read();
+  check("a sheet dragged over the map does hide the controls", covered.shown === false,
+    JSON.stringify(covered));
+
+  await page.click("text=/Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 10000 });
+  await page.waitForTimeout(1500);
+
+  const nav = await read();
+  check("but starting from there still gives you them", nav.shown === true, JSON.stringify(nav));
+  check("all four of them", nav.buttons?.length === 4, (nav.buttons || []).join(", "));
+  check("the compass among them", (nav.buttons || []).includes("Face north"));
+  check("and they are on screen, not under the footer", nav.onScreen === true);
+
+  // They must clear the panel they stack above, whatever it is carrying.
+  const clear = await page.evaluate(() => {
+    const t = document.querySelector(".maptools").getBoundingClientRect();
+    const f = document.querySelector(".nav__foot").getBoundingClientRect();
+    const h = document.querySelector(".nav__metrics").getBoundingClientRect();
+    return { overFoot: Math.round(f.y - t.bottom), underHead: Math.round(t.y - h.bottom) };
+  });
+  check("clear of the footer", clear.overFoot >= 0, `${clear.overFoot}px above it`);
+  check("and clear of the instruction", clear.underHead >= 0, `${clear.underHead}px below it`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ===================== 18. THE REST OF THE DAY, WITHOUT LEAVING NAVIGATION ==
 // Navigate is pinned on purpose: nothing on it can be dragged out of the way by
 // a glove. That is also why the whole route needs a button rather than a drag —
@@ -1638,9 +1702,21 @@ if (feature("18. The rest of the day, without leaving navigation")) {
   check("the map does not show through the panel's footer", seam === null,
     seam === null ? "solid" : `terrain visible at ${seam}`);
 
+  // The chrome belongs to the map, so it goes away with it.
+  const gone = await page.evaluate(() => {
+    const t = document.querySelector(".maptools");
+    return t === null || getComputedStyle(t).opacity === "0";
+  });
+  check("the map controls go with the map", gone === true);
+
   await page.click(".nav__more");
   await page.waitForTimeout(500);
   check("and it puts the map back", (await page.$(".nav__all")) === null);
+  const backAgain = await page.evaluate(() => {
+    const t = document.querySelector(".maptools");
+    return t !== null && getComputedStyle(t).opacity === "1";
+  });
+  check("and the controls with it", backAgain === true);
   check("with the instruction never having gone away",
     (await page.$(".nav__head .nav__do")) !== null);
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));

@@ -718,6 +718,9 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   margin-top: var(--s-2);
 }
 .profile__scale span:nth-child(2) { font-weight: 600; color: var(--ink-2); }
+/* One figure, so it centres rather than hugging a corner. */
+.profile__scale--one { justify-content: center; }
+.profile__scale--one span { font-weight: 600; color: var(--ink-2); }
 
 .mixbar {
   display: flex;

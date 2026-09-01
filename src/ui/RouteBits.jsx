@@ -2,7 +2,7 @@
  * Pieces shared between the choose, detail, navigate and summary screens.
  */
 import { minutesToClock } from "../solver.js";
-import { Clock, Ruler, Descend, Runs, Lift, Peak } from "./Icons.jsx";
+import { Clock, Ruler, Descend, Runs, Lift } from "./Icons.jsx";
 
 export const hours = (minutes) => {
   const h = Math.floor(minutes / 60);
@@ -44,7 +44,7 @@ export const routeStats = (route) => [
 export const detailStats = (route) => [
   { icon: Descend, k: "descent", v: route.vertical.toLocaleString(), unit: " m" },
   { icon: Ruler, k: "distance", v: route.km, unit: " km" },
-  { icon: Peak, k: "high point", v: route.highestAlt.toLocaleString(), unit: " m" },
+  { icon: Runs, k: "runs", v: route.distinctRuns },
   { icon: Lift, k: "lifts", v: route.lifts },
 ];
 

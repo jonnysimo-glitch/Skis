@@ -127,8 +127,12 @@ export default function ChooseScreen({
               <span className="routecard__foot">
                 <span className="routecard__from">
                   <Pin width="14" height="14" style={{ color: "var(--ink-4)" }} />
-                  {route.areas} {route.areas === 1 ? "area" : "areas"} · tops out at{" "}
-                  {route.highestAlt.toLocaleString()} m
+                  {/* No high point here. Nearly every route at a resort tops
+                      out at the same lift-served summit, so the number was
+                      identical down the list and told you nothing about which
+                      day to pick. It is a property of the mountain, and it is
+                      on the resort's own panel. */}
+                  {route.areas} {route.areas === 1 ? "area" : "areas"}
                 </span>
                 <span className="routecard__back">
                   <Clock width="14" height="14" style={{ verticalAlign: -2, marginRight: 4, color: "var(--ink-4)" }} />

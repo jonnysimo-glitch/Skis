@@ -102,18 +102,11 @@ export default function ElevationProfile({
             r={isLabelled ? 2.6 : 1.7}
             fill={isLabelled ? "#0b1a24" : "#a8bcc8"}
           />
-          {isLabelled && (
-            <text
-              x={at(c.x).toFixed(1)}
-              y={(y(c.alt) - 6).toFixed(1)}
-              fontSize="9"
-              fontWeight="600"
-              fill="#7d95a5"
-              textAnchor="middle"
-            >
-              {c.alt.toLocaleString()}
-            </text>
-          )}
+          {/* No altitude printed on the peak. Which summit is 2,727 and which
+              is 2,971 does not decide anything about a day, and a dozen of
+              them sat on top of the line you are trying to read. The dot still
+              marks where the day turns round, which is shape rather than
+              altitude. */}
         </g>
       );
     }
@@ -167,12 +160,8 @@ export default function ElevationProfile({
         )}
       </svg>
       {showScale && (
-        <div className="profile__scale">
-          <span>{lo.toLocaleString()} m</span>
-          <span>
-            {route.vertical.toLocaleString()} m descended
-          </span>
-          <span>{hi.toLocaleString()} m</span>
+        <div className="profile__scale profile__scale--one">
+          <span>{route.vertical.toLocaleString()} m descended</span>
         </div>
       )}
     </div>
