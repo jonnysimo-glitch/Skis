@@ -55,8 +55,16 @@ const MONTEROSA = asGraph({ NODES, SHORT_NAMES, buildEdges });
 const SAMPLES = 3500;
 /** Max steps in one walk. Must be high enough to fill a full-day budget. */
 const WALK_LIMIT = 70;
-/** Rough minutes for one lap: ski a run, ride a lift back up. */
-const TYPICAL_LAP_MINUTES = 18;
+/**
+ * Rough minutes for one lap: ski a run, ride a lift back up.
+ *
+ * Describes the data rather than the algorithm, so it moves when the data
+ * does. It was 18 against run times of about 27 km/h; at a recreational pace a
+ * lap is an eleven minute run and a sixteen minute lift. Left at 18 it would
+ * think half again as many laps fit in the day, and hand out a repeat cap
+ * loose enough to pad one.
+ */
+const TYPICAL_LAP_MINUTES = 27;
 /** A route must fill at least this fraction of the budget to be offered. */
 const MIN_BUDGET_FILL = 0.72;
 

@@ -157,9 +157,11 @@ if (feature("1. Straight there: getting to one place, now")) {
 
 // =============================== 2. A TRANSFER IGNORES A DAY'S REFINEMENTS ==
 if (feature("2. A transfer is not a refined day")) {
-  // The discriminating case. Salati to Champoluc is 54 minutes on red and does
-  // not exist at all on blue. So a leftover "Easier" from a day plan does not
-  // merely shade the answer, it turns a real transfer into "no way there".
+  // The discriminating case. Salati to Champoluc crosses the whole mountain on
+  // red and does not exist at all on blue. So a leftover "Easier" from a day
+  // plan does not merely shade the answer, it turns a real transfer into "no
+  // way there". The window has to fit the crossing while 60% of it does not,
+  // which is what a stale "Shorter" would leave.
   const page = await newPage(browser, { at: [11, 0] });
   await toPlan(page, url);
   await page.fill("#p-t0", "11:00");
@@ -183,7 +185,7 @@ if (feature("2. A transfer is not a refined day")) {
   await page.selectOption("#p-start", "salati");
   await page.selectOption("#p-finish", "champoluc");
   await page.fill("#p-t0", "11:00");
-  await page.fill("#p-t1", "12:20");
+  await page.fill("#p-t1", "12:45");
   await page.click("text=Take me there");
   await page.waitForSelector(".legs, .empty", { timeout: 20000 });
 
@@ -195,7 +197,7 @@ if (feature("2. A transfer is not a refined day")) {
   const body = await text(page);
   check("it goes where you asked", /To Champoluc/.test(body));
   check(
-    "an 80 minute window is not quietly cut to 48 by a stale Shorter",
+    "the window is not quietly cut to 60% of itself by a stale Shorter",
     !/further than that/.test(body)
   );
   const legs = await page.$$eval(".leg", (n) => n.map((l) => l.textContent.trim()));
@@ -308,30 +310,46 @@ if (feature("4. Refine never sends you back to the form")) {
   check("still on the options after all of that", (await where(page)) === "choose");
   check("never once back at the form", (await page.$("#p-t1")) === null);
 
+  check("no page errors so far", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+
   // The chip that rules everything out is the make-or-break case: it must not
   // throw the user onto a screen whose only exit is the form.
-  for (const chip of ["Shorter", "More vertical", "No drags", "Longer", "Easier"]) {
-    const el = await page.$(`.sheet .chip:text-is("${chip}")`);
+  //
+  // On its own page with a window a refinement can actually empty. Stacking
+  // chips on a whole day used to do it; at a recreational pace the solver just
+  // finds a shorter day, and the check quietly became "three routes are still
+  // three routes".
+  const tight = await newPage(browser, { at: [11, 0] });
+  await toPlan(tight, url);
+  await tight.fill("#p-t0", "11:00");
+  await tight.fill("#p-t1", "12:30");
+  await solve(tight);
+  check("the tight window offers something to begin with", (await routeCount(tight)) > 0,
+    `${await routeCount(tight)} routes`);
+  for (const chip of ["Shorter", "Lunch"]) {
+    const el = await tight.$(`.sheet .chip:text-is("${chip}")`);
     if (el && !(await el.isDisabled()) && (await el.getAttribute("aria-pressed")) !== "true") {
       await el.click();
-      await page.waitForTimeout(800);
+      await tight.waitForTimeout(900);
     }
   }
-  const emptied = (await routeCount(page)) === 0;
-  check("stacking every refinement can rule the day out", emptied, `${await routeCount(page)} routes`);
+  await tight.waitForTimeout(500);
+  const emptied = (await routeCount(tight)) === 0;
+  check("stacking refinements can rule the day out", emptied, `${await routeCount(tight)} routes`);
   if (emptied) {
-    check("and it says so rather than showing an empty list", /rules everything out/i.test(await text(page)));
-    check("it is not the dead-end empty screen", (await where(page)) === "choose", await where(page));
-    check("the chips are still there to undo it", (await page.$$(".sheet .chip")).length > 0);
-    check("the offending chip is still tappable", !(await page.$eval('.sheet .chip:text-is("Easier")', (b) => b.disabled)));
-    check("the budget is stated as time, not raw minutes", !/\b\d{3,} minutes\b/.test(await text(page)));
-    await page.click('.sheet .chip:text-is("Easier")');
-    await page.waitForTimeout(1200);
-    check("undoing it brings the options straight back", (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
-    check("without ever passing through the form", (await page.$("#p-t1")) === null);
+    check("and it says so rather than showing an empty list", /rules everything out/i.test(await text(tight)));
+    check("it is not the dead-end empty screen", (await where(tight)) === "choose", await where(tight));
+    check("the chips are still there to undo it", (await tight.$$(".sheet .chip")).length > 0);
+    check("the offending chip is still tappable", !(await tight.$eval('.sheet .chip:text-is("Lunch")', (b) => b.disabled)));
+    check("the budget is stated as time, not raw minutes", !/\b\d{3,} minutes\b/.test(await text(tight)));
+    await tight.click('.sheet .chip:text-is("Lunch")');
+    await tight.waitForTimeout(1200);
+    check("undoing it brings the options straight back", (await routeCount(tight)) > 0, `${await routeCount(tight)} routes`);
+    check("without ever passing through the form", (await tight.$("#p-t1")) === null);
   }
-  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
-  await page.context_.close();
+  check("no page errors on the tight window", tight.errors.length === 0, tight.errors.join(" | "));
+  await tight.context_.close();
 }
 
 // ============================================ 5. FOLLOWING YOU ON THE HILL ==
@@ -1945,14 +1963,14 @@ if (feature("22. Browse the options before committing to one")) {
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 
-  // Refine until nothing is left. An eighty minute window that solves, then
-  // Shorter and Lunch on top of it, genuinely empties the list — the earlier
+  // Refine until nothing is left. A ninety minute window that solves, then
+  // Shorter and Lunch on top of it, genuinely empties the list — an earlier
   // version of this check used a window the solver could always fill, so it
   // asserted nothing.
   const empty = await newPage(browser, { at: [9, 30] });
   await toPlan(empty, url);
   await empty.fill("#p-t0", "11:00");
-  await empty.fill("#p-t1", "12:20");
+  await empty.fill("#p-t1", "12:30");
   await solve(empty);
   await empty.waitForTimeout(900);
   const startedWith = await empty.$$eval(".routecard", (n) => n.length);

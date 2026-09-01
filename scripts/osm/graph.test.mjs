@@ -10,6 +10,7 @@
  * is 1000 m and it climbs 500 m per hundredth of a degree north.
  */
 import { build, metres, wayLength, runMinutes, liftMinutes, DIFFICULTY } from "./graph.mjs";
+import { BOARDING_MINUTES, LIFT_SPEED_MS } from "../../src/lib/pace.js";
 import { prune, check } from "./validate.mjs";
 import { decode } from "./elevation.mjs";
 
@@ -91,9 +92,35 @@ is("advanced rounds up to black, never down to red", DIFFICULTY.advanced === "bl
 is("expert is black", DIFFICULTY.expert === "black");
 
 console.log("\nTIMES");
-is("a mapped aerialway:duration is used verbatim", liftMinutes({ tags: { aerialway: "gondola", "aerialway:duration": "7" } }, 1400) === 7);
-is('"5:30" is five and a half minutes', liftMinutes({ tags: { aerialway: "gondola", "aerialway:duration": "5:30" } }, 1400) === 6);
-is("an absent duration is estimated from length", liftMinutes({ tags: { aerialway: "chair_lift" } }, 1560) === 10, `${liftMinutes({ tags: { aerialway: "chair_lift" } }, 1560)} min`);
+// The mapped duration is the cable time between stations. Walking into the
+// cabin and out of it at the top is not in it, and thirty lifts a day is half
+// an hour of a plan that was not accounted for anywhere.
+is("a mapped aerialway:duration is trusted for the cable time",
+  liftMinutes({ tags: { aerialway: "gondola", "aerialway:duration": "7" } }, 1400) === 7 + BOARDING_MINUTES);
+is('"5:30" is five and a half minutes on the cable',
+  liftMinutes({ tags: { aerialway: "gondola", "aerialway:duration": "5:30" } }, 1400) === 6 + BOARDING_MINUTES);
+is("an absent duration is estimated from length",
+  liftMinutes({ tags: { aerialway: "chair_lift" } }, 1560) === 12,
+  `${liftMinutes({ tags: { aerialway: "chair_lift" } }, 1560)} min`);
+is("and boarding is on top of it either way",
+  liftMinutes({ tags: { aerialway: "chair_lift" } }, 1560) >
+  Math.round(1560 / LIFT_SPEED_MS.chair / 60));
+
+// Harder is slower. A confident skier goes down a black fast; most people on
+// one traverse it, stop more, and get to the bottom later than they would have
+// on a blue of the same length. Planning for the confident case strands
+// everyone else at the last lift.
+is("a black is not planned faster than a blue of the same shape",
+  runMinutes(3000, 600, "black") > runMinutes(3000, 600, "blue"),
+  `${runMinutes(3000, 600, "black")} against ${runMinutes(3000, 600, "blue")} min`);
+is("and a red sits between them",
+  runMinutes(3000, 600, "red") > runMinutes(3000, 600, "blue") &&
+  runMinutes(3000, 600, "red") < runMinutes(3000, 600, "black"));
+// The whole point of this change: 27 km/h on every run was race pace and it
+// produced twelve thousand metre days.
+is("a long blue is a recreational pace, not a race pace",
+  (() => { const kmh = 4.4 / (runMinutes(4400, 620, "blue") / 60); return kmh > 14 && kmh < 21; })(),
+  `${(4.4 / (runMinutes(4400, 620, "blue") / 60)).toFixed(1)} km/h`);
 is("a nonsense duration is ignored", liftMinutes({ tags: { aerialway: "gondola", "aerialway:duration": "999" } }, 1100) > 0);
 is("a steeper run of the same length is not slower", runMinutes(2000, 600, "red") <= runMinutes(2000, 100, "red"));
 is("no run takes zero minutes", runMinutes(45, 5, "blue") >= 1);

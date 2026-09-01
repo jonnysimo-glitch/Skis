@@ -6,6 +6,17 @@
  * data. Replace with the OpenStreetMap Overpass extraction (see CLAUDE.md,
  * "Replacing this file") before anything ships to a real skier.
  *
+ * Run minutes are NOT hand-typed: they are generated from src/lib/pace.js,
+ * which the Overpass pipeline uses too, so the planner and the pipeline agree
+ * about how fast a skier goes. They were typed once, at a flat 27 km/h on
+ * every run whatever the grade, and that produced twelve thousand metre days
+ * inside six hours. Change the pace there, not here.
+ *
+ * Lift rides and queues are still estimates. Ride time cannot be derived from
+ * the node coordinates above, because they are approximate and the straight
+ * line between two of them is not the cable: doing that made Ciarcerio a
+ * thirty-five minute chair. Queues are not in OSM at all and need the resort.
+ *
  * Node coordinates are [lat, lon]. They exist so the 3D layer can place the
  * graph on real terrain; the solver itself never reads them.
  */
@@ -28,39 +39,39 @@ export const NODES = {
 
 /** [from, to, name, type, rideMinutes, lastUpMinuteOfDay, typicalQueueMinutes] */
 export const LIFTS = [
-  ["staffal",    "gabiet",     "Gabiet",           "gondola",   8, 960, 6],
-  ["gabiet",     "salati",     "Passo dei Salati", "gondola",   7, 945, 5],
-  ["salati",     "indren",     "Indren",           "cable car", 6, 915, 9],
-  ["staffal",    "jolanda",    "Punta Jolanda",    "drag",      6, 975, 2],
-  ["staffal",    "santanna",   "Sant'Anna",        "chair",     6, 975, 4],
-  ["santanna",   "bettaforca", "Bettaforca",       "chair",     7, 950, 4],
-  ["frachey",    "santanna",   "Ciarcerio",        "chair",     8, 960, 3],
-  ["champoluc",  "crest",      "Crest",            "gondola",   7, 980, 6],
-  ["crest",      "mandria",    "Mandria",          "chair",     6, 970, 3],
-  ["mandria",    "bettaforca", "Colle",            "chair",     8, 950, 4],
-  ["alagna",     "pianalunga", "Pianalunga",       "gondola",   9, 960, 5],
-  ["pianalunga", "salati",     "Bocchetta",        "gondola",   7, 945, 4],
+  ["staffal",    "gabiet",     "Gabiet",           "gondola",  10, 960,  8],
+  ["gabiet",     "salati",     "Passo dei Salati", "gondola",   9, 945,  7],
+  ["salati",     "indren",     "Indren",           "cable car", 8, 915, 13],
+  ["staffal",    "jolanda",    "Punta Jolanda",    "drag",      8, 975,  3],
+  ["staffal",    "santanna",   "Sant'Anna",        "chair",     8, 975,  6],
+  ["santanna",   "bettaforca", "Bettaforca",       "chair",     9, 950,  6],
+  ["frachey",    "santanna",   "Ciarcerio",        "chair",    10, 960,  4],
+  ["champoluc",  "crest",      "Crest",            "gondola",   9, 980,  8],
+  ["crest",      "mandria",    "Mandria",          "chair",     8, 970,  4],
+  ["mandria",    "bettaforca", "Colle",            "chair",    10, 950,  6],
+  ["alagna",     "pianalunga", "Pianalunga",       "gondola",  12, 960,  7],
+  ["pianalunga", "salati",     "Bocchetta",        "gondola",   9, 945,  6],
 ];
 
 /** [from, to, name, difficulty, km, minutes] */
 export const RUNS = [
-  ["indren",     "salati",     "Indren",     "black", 2.9,  7],
-  ["salati",     "gabiet",     "Salati",     "red",   3.4,  7],
-  ["salati",     "gabiet",     "Lys",        "blue",  4.4, 10],
-  ["salati",     "pianalunga", "Olen",       "red",   3.9,  8],
-  ["gabiet",     "staffal",    "Gabiet",     "red",   2.8,  6],
-  ["gabiet",     "staffal",    "Moos",       "blue",  3.6,  8],
-  ["jolanda",    "staffal",    "Jolanda",    "blue",  2.1,  5],
-  ["pianalunga", "alagna",     "Bosco",      "black", 4.6, 10],
-  ["pianalunga", "alagna",     "Valle",      "red",   5.2, 11],
-  ["bettaforca", "staffal",    "Bettaforca", "red",   4.1,  9],
-  ["bettaforca", "santanna",   "Sitten",     "blue",  2.2,  5],
-  ["santanna",   "staffal",    "Leichtu",    "blue",  2.6,  6],
-  ["bettaforca", "mandria",    "Colle",      "red",   3.8,  8],
-  ["mandria",    "crest",      "Mandria",    "blue",  2.4,  5],
-  ["mandria",    "frachey",    "Ostafa",     "red",   3.2,  7],
-  ["crest",      "champoluc",  "Crest",      "blue",  3.1,  7],
-  ["crest",      "champoluc",  "Del Bosco",  "black", 2.3,  6],
+  ["indren",     "salati",     "Indren",     "black", 2.9, 11],
+  ["salati",     "gabiet",     "Salati",     "red",   3.4, 12],
+  ["salati",     "gabiet",     "Lys",        "blue",  4.4, 14],
+  ["salati",     "pianalunga", "Olen",       "red",   3.9, 13],
+  ["gabiet",     "staffal",    "Gabiet",     "red",   2.8, 10],
+  ["gabiet",     "staffal",    "Moos",       "blue",  3.6, 11],
+  ["jolanda",    "staffal",    "Jolanda",    "blue",  2.1,  7],
+  ["pianalunga", "alagna",     "Bosco",      "black", 4.6, 18],
+  ["pianalunga", "alagna",     "Valle",      "red",   5.2, 18],
+  ["bettaforca", "staffal",    "Bettaforca", "red",   4.1, 14],
+  ["bettaforca", "santanna",   "Sitten",     "blue",  2.2,  7],
+  ["santanna",   "staffal",    "Leichtu",    "blue",  2.6,  8],
+  ["bettaforca", "mandria",    "Colle",      "red",   3.8, 13],
+  ["mandria",    "crest",      "Mandria",    "blue",  2.4,  8],
+  ["mandria",    "frachey",    "Ostafa",     "red",   3.2, 11],
+  ["crest",      "champoluc",  "Crest",      "blue",  3.1, 10],
+  ["crest",      "champoluc",  "Del Bosco",  "black", 2.3,  9],
 ];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };

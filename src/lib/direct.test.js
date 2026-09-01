@@ -118,10 +118,11 @@ check("difficulty counts add up to the runs taken",
 /**
  * A transfer must not inherit a day's refinements.
  *
- * Salati to Champoluc is 54 minutes on red and does not exist on blue, so an
- * "Easier" chip left on from an earlier day plan would not shade the answer,
- * it would report a real transfer as impossible. Same for "Shorter", which
- * cuts the budget to 60% of the time the user actually stated.
+ * Salati to Champoluc takes well over an hour on red and does not exist on
+ * blue at all, so an "Easier" chip left on from an earlier day plan would not
+ * shade the answer, it would report a real transfer as impossible. Same for
+ * "Shorter", which cuts the budget to 60% of the time the user actually
+ * stated.
  */
 console.log("\nA TRANSFER IGNORES A DAY'S REFINEMENTS");
 {
@@ -129,7 +130,7 @@ console.log("\nA TRANSFER IGNORES A DAY'S REFINEMENTS");
     start: "salati",
     finish: "champoluc",
     t0: 11 * 60,
-    t1: 12 * 60 + 20,
+    t1: 12 * 60 + 45,
     noDrags: false,
     lunch: true,
     mode: "direct",
@@ -140,14 +141,26 @@ console.log("\nA TRANSFER IGNORES A DAY'S REFINEMENTS");
     refine: new Set(["easier", "shorter", "lunch", "vertical"]),
   });
   check("ability is the one the user set, not the eased one", refined.ability === "red", refined.ability);
-  check("the budget is the window as stated", refined.budget === 80, `${refined.budget}`);
+  check("the budget is the window as stated", refined.budget === 105, `${refined.budget}`);
   check("lunch is not subtracted from a transfer", refined.lunch === false);
   check("no emphasis is applied", refined.emphasis === null);
   check("exactly one answer is asked for", refined.count === 1, `${refined.count}`);
+  // Against the unrefined answer rather than a number typed in here. The
+  // number was 54, then the pace model was corrected and it became 82, and a
+  // test that pins the data cannot tell a real regression from a tuning
+  // change. What must hold is that the chips changed nothing.
+  const plain = directRoute(
+    toSolverOpts({ plan, ability: "red", refine: new Set() })
+  );
   check(
-    "and the transfer it produces is the real one",
-    directRoute(refined)?.minutes === 54,
-    `${directRoute(refined)?.minutes}`
+    "and the transfer it produces is the one you get with no chips at all",
+    directRoute(refined)?.minutes === plain?.minutes,
+    `${directRoute(refined)?.minutes} against ${plain?.minutes}`
+  );
+  check(
+    "which is a real crossing of the mountain, not a shortcut",
+    plain != null && plain.minutes > 45 && plain.minutes <= 105,
+    `${plain?.minutes} min`
   );
 
   // The same refinements still apply to a day, which is what they are for.

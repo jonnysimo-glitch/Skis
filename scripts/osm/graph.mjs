@@ -21,6 +21,8 @@
  * data is not good enough, and you want to know that rather than ship it.
  */
 
+import { runMinutes, liftMinutes as cableMinutes, BOARDING_MINUTES } from "../../src/lib/pace.js";
+
 /** How close a mountain restaurant has to be to count as lunch at that node. */
 const RIFUGIO_METRES = 120;
 
@@ -138,42 +140,31 @@ const isPiste = (el) => el.type === "way" && el.tags?.["piste:type"] === "downhi
  * Ride time in minutes.
  *
  * `aerialway:duration` is the mapped value and is used whenever it is there.
- * Where it is not, speed by lift type is a far better estimate than a constant:
- * a cable car covers ground several times faster than a drag.
+ * Where it is not, cable speed by lift type is a far better estimate than a
+ * constant: a cable car covers ground several times faster than a drag.
+ *
+ * Either way boarding is added on top. The mapped duration is the cable time
+ * between stations and does not include walking into the cabin at the bottom
+ * or out of it at the top, and a day is thirty of those.
  */
-const LIFT_SPEED_MS = {
-  "cable car": 8.0, gondola: 5.5, funicular: 7.0,
-  chair: 2.6, drag: 2.2, carpet: 0.6,
-};
-
 export function liftMinutes(el, lengthM) {
   const tagged = el.tags?.["aerialway:duration"];
   if (tagged) {
     // Mapped as minutes, sometimes "5:30" for five and a half.
     const parts = String(tagged).split(":").map(Number);
     const mins = parts.length === 2 ? parts[0] + parts[1] / 60 : Number(tagged);
-    if (Number.isFinite(mins) && mins > 0 && mins < 60) return Math.round(mins);
+    if (Number.isFinite(mins) && mins > 0 && mins < 60) {
+      return Math.round(mins) + BOARDING_MINUTES;
+    }
   }
-  const kind = LIFT_KIND[el.tags.aerialway];
-  const speed = LIFT_SPEED_MS[kind] ?? 3;
-  return Math.max(1, Math.round(lengthM / speed / 60));
+  return cableMinutes(lengthM, LIFT_KIND[el.tags.aerialway]);
 }
 
-/**
- * How long a run takes.
- *
- * Not distance over a constant speed: a gentle blue and a steep black of the
- * same length take similar times for different reasons, because the skier who
- * is comfortable on the black skis it fast and everyone else traverses it. The
- * gradient term is deliberately weak for that reason, and the floor stops a
- * fifty-metre link segment being reported as instantaneous.
- */
-export function runMinutes(lengthM, dropM, difficulty) {
-  const base = { blue: 190, red: 230, black: 250 }[difficulty] ?? 210; // metres/min
-  const gradient = dropM > 0 ? Math.min(dropM / lengthM, 0.6) : 0;
-  const speed = base * (1 + gradient * 0.8);
-  return Math.max(1, Math.round(lengthM / speed));
-}
+// How long a run takes lives in src/lib/pace.js, which the app's own resort
+// data is generated from too. There used to be a model here and a different
+// one in the hand-typed data, disagreeing by a factor of two, so the planner
+// and the pipeline described different mountains.
+export { runMinutes };
 
 /**
  * Build the graph.
