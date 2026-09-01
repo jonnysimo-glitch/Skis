@@ -44,14 +44,16 @@ export default function SummaryScreen({ route, opts, plan, onAgain, onDone }) {
         <div className="info">
           <Mountain className="info__icon" width="17" height="17" />
           <span>
-            {route.areas} {route.areas === 1 ? "area" : "areas"} of the mountain, high point{" "}
-            <b>{route.highestAlt.toLocaleString()} m</b>, {hours(route.minutes)} moving.
+            {/* No high point: it is the same summit on nearly every day here,
+                so it says nothing about the one you just skied. */}
+            {route.areas} {route.areas === 1 ? "area" : "areas"} of the mountain,{" "}
+            <b>{hours(route.minutes)}</b> on the hill.
           </span>
         </div>
 
         <div className="sectionrule">
           <p className="note">
-            Longest unbroken descent was {route.longestDescent} m.
+            Longest unbroken descent was {route.longestDescent.toLocaleString()} m.
             {route.dragLifts > 0 &&
               ` ${route.dragLifts} drag lift${route.dragLifts === 1 ? "" : "s"} on this one.`}
           </p>

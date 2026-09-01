@@ -2009,10 +2009,16 @@ if (feature("23. The people you ski with")) {
 
   // Not a disclaimer. Someone who believes their group can find them on a
   // mountain, and is wrong, is in more trouble than someone who knows.
+  // On the substance, not the sentence: this line has been reworded twice and
+  // an exact-phrase match broke both times without anything being wrong.
   const warned = await page.evaluate(() =>
-    [...document.querySelectorAll(".banner--warn p")].some((n) =>
-      /nothing is sent anywhere|cannot see you/i.test(n.textContent)));
-  check("and it says up front that nobody can see you yet", warned === true);
+    [...document.querySelectorAll(".banner--warn p")].some((n) => {
+      const t = n.textContent.toLowerCase();
+      return /not connected|nothing is sent|no(body|t) .*see you/.test(t)
+        && /this phone|sent anywhere|connected/.test(t);
+    }));
+  check("and it says up front that nobody can see you yet", warned === true,
+    await page.evaluate(() => document.querySelector(".banner--warn p")?.textContent.trim()));
   check("nobody on the list to begin with", (await page.$$(".friend")).length === 0);
 
   const add = async (name, phone) => {

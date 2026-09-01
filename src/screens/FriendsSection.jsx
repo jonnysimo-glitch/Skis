@@ -26,8 +26,8 @@ export default function FriendsSection({ profile, friends, onAdd, onToggle, onRe
       <div className="banner banner--warn" style={{ marginBottom: "var(--s-3)" }}>
         <Info width="18" height="18" style={{ flex: "none" }} />
         <p>
-          Your list is saved on this phone. Nothing is sent anywhere yet, so
-          the people you switch on cannot see you and you cannot see them.
+          Saved on this phone. Sharing is not connected yet, so nobody you
+          switch on can see you.
         </p>
       </div>
 

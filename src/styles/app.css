@@ -1272,7 +1272,13 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   gap: var(--s-3);
   margin-bottom: var(--s-3);
 }
-.rowhead .eyebrow { margin: 0; }
+/* The heading keeps its line. Left to shrink, "Skiing with" wrapped onto two
+   lines and sat squashed against the button beside it. */
+.rowhead .eyebrow { margin: 0; flex: none; white-space: nowrap; }
+/* Buttons in this app are full width by default, which inside a flex row with
+   flex:none meant the base width stayed 100% of the row and the button ran
+   eighty-five pixels off the right edge. */
+.rowhead .btn { flex: none; width: auto; }
 
 .rows--friends { display: grid; gap: var(--s-1); }
 .friend {

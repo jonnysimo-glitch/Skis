@@ -55,7 +55,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
           <Clock className="info__icon" width="17" height="17" />
           <span>
             Down at <b>{finishName}</b> by <b>{minutesToClock(back)}</b>, on{" "}
-            {hours(route.minutes)} of moving time.
+            {hours(route.minutes)} on the hill.
           </span>
         </div>
 
@@ -84,7 +84,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
 
         <div className="sectionrule">
           <div className="eyebrow" style={{ marginBottom: 4 }}>
-            {route.segments.length} legs · {hours(route.minutes)} moving
+            {route.segments.length} legs · {hours(route.minutes)} on the hill
           </div>
         </div>
 

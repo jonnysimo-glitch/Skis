@@ -95,8 +95,8 @@ export default function AddFriend({ onSave, onClose }) {
               onChange={(e) => { setPhone(e.target.value); setError(null); }}
             />
             <p className="note" style={{ marginTop: 8 }}>
-              With the country code. It is what tells two people apart, so the
-              same number typed two ways has to mean one person.
+              With the country code, so the same number typed two ways is the
+              same person.
             </p>
           </div>
 
