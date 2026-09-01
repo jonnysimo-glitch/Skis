@@ -26,6 +26,8 @@ const MapCanvas = lazy(() =>
 import HomeScreen from "./screens/HomeScreen.jsx";
 import StatsScreen from "./screens/StatsScreen.jsx";
 import SettingsSheet from "./screens/SettingsSheet.jsx";
+import AddFriend from "./screens/AddFriend.jsx";
+import { getProfile, listFriends, addFriend, removeFriend, setSharing } from "./lib/friends.js";
 import ResortStatus from "./screens/ResortStatus.jsx";
 import TabBar from "./ui/TabBar.jsx";
 import PlanScreen from "./screens/PlanScreen.jsx";
@@ -202,6 +204,15 @@ export default function App() {
   // Measured, not assumed: the navigate footer grows when the overrun banner
   // appears. NAV_FOOT_H is only the starting guess for the first frame.
   const [navFoot, setNavFoot] = useState(NAV_FOOT_H);
+  // Friends live in storage; this counter only asks React to render again, so
+  // the list is re-read. Mirroring it into state would give two truths, and
+  // the one the switch wrote to would not be the one the list rendered from.
+  // It must not be a `key` on the screen either: remounting Home on every
+  // toggle throws away focus and scroll position, which broke returning focus
+  // to whatever opened the settings panel.
+  const [friendsAt, setFriendsAt] = useState(0);
+  const [addingFriend, setAddingFriend] = useState(false);
+  const [friendError, setFriendError] = useState(null);
   const [navExpanded, setNavExpanded] = useState(false);
   const wantWorld = mapMode === "world";
   const showSchematic = !wantWorld || mapBroken || !mapLive;
@@ -719,6 +730,23 @@ export default function App() {
           onSelect={chooseResort}
           onGoSkiing={() => setTab("skiing")}
           onSettings={() => setSettingsOpen(true)}
+          friends={{
+            profile: getProfile(),
+            friends: listFriends(),
+            error: friendError,
+            onAdd: () => setAddingFriend(true),
+            onSetUp: () => setSettingsOpen(true),
+            onToggle: (f) => {
+              const r = setSharing(f.phone, !f.sharing);
+              setFriendError(r.ok ? null : r);
+              setFriendsAt((n) => n + 1);
+            },
+            onRemove: (f) => {
+              removeFriend(f.phone);
+              setFriendError(null);
+              setFriendsAt((n) => n + 1);
+            },
+          }}
         />
       )}
 
@@ -841,6 +869,21 @@ export default function App() {
           ability={ability}
           setAbility={setAbility}
           onClose={() => setSettingsOpen(false)}
+          onProfileChange={() => setFriendsAt((n) => n + 1)}
+        />
+      )}
+
+      {addingFriend && (
+        <AddFriend
+          onSave={(fields) => {
+            const r = addFriend(fields);
+            if (r.ok) {
+              setFriendError(null);
+              setFriendsAt((n) => n + 1);
+            }
+            return r;
+          }}
+          onClose={() => setAddingFriend(false)}
         />
       )}
 

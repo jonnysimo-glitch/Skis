@@ -14,6 +14,26 @@ export const PISTE_COLOUR = {
 };
 export const LIFT_COLOUR = "#7d95a5";
 
+/**
+ * The same three grades, washed out, for the network that is always on the
+ * map whether or not a day has been planned.
+ *
+ * Not decoration: a skier looking at an unlabelled mountain wants to know
+ * which side of it is blue before they choose anything. The hue is the piste
+ * convention and stays that way; only the weight changes, so the planned route
+ * drawn over the top is unmistakably the route and everything else is context.
+ *
+ * Black had to move away from grey rather than simply lighten, or it would
+ * have arrived at the lift colour. Lifts are also dashed and thinner, so there
+ * are two signals rather than one.
+ */
+export const PISTE_TINT = {
+  blue: "#6ea6e4",
+  red: "#db7f87",
+  black: "#5f6c77",
+};
+export const LIFT_TINT = "#b9c6d0";
+
 const lngLat = (key) => [NODES[key].lon, NODES[key].lat];
 
 /**

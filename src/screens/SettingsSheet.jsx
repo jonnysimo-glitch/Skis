@@ -3,9 +3,10 @@
  * solver does is ability, and that is already an overridable chip on the plan
  * screen. This is where it lives permanently.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Close } from "../ui/Icons.jsx";
 import { hasMapKey } from "../map/config.js";
+import { getProfile, saveProfile, clearProfile, MAX_NAME } from "../lib/friends.js";
 
 const ABILITIES = [
   { v: "blue", label: "Blue", swatch: "var(--piste-blue)" },
@@ -13,7 +14,43 @@ const ABILITIES = [
   { v: "black", label: "Anything", swatch: "var(--piste-black)" },
 ];
 
-export default function SettingsSheet({ ability, setAbility, onClose }) {
+export default function SettingsSheet({ ability, setAbility, onClose, onProfileChange }) {
+  // The profile is a name and a number. No picture: it is not how anyone finds
+  // their friend on a mountain, and it is one more thing to be careless with.
+  const saved = getProfile();
+  const [name, setName] = useState(saved?.name ?? "");
+  const [phone, setPhone] = useState(saved?.typed ?? saved?.phone ?? "");
+  const [error, setError] = useState(null);
+  const [saved_, setSaved] = useState(false);
+
+  // Closing the panel removes the focused input, which fires blur, which runs
+  // commit while the component is being torn down. The state it set there was
+  // enough to lose the focus this panel puts back on whatever opened it. A
+  // layout effect's cleanup runs before the DOM is removed, so by the time
+  // that blur arrives this is already false.
+  const alive = useRef(true);
+  useLayoutEffect(() => () => { alive.current = false; }, []);
+
+  const commit = () => {
+    if (!alive.current) return;
+    if (!name.trim() && !phone.trim()) {
+      // Only when there was one. Blurring two empty fields on the way out of
+      // the panel should not count as an edit, let alone one that re-renders
+      // the screen underneath.
+      if (saved) {
+        clearProfile();
+        onProfileChange?.();
+      }
+      setError(null);
+      setSaved(false);
+      return;
+    }
+    const r = saveProfile({ name, phone });
+    setError(r.ok ? null : r);
+    setSaved(r.ok);
+    if (r.ok) onProfileChange?.();
+  };
+
   const panel = useRef(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -72,6 +109,44 @@ export default function SettingsSheet({ ability, setAbility, onClose }) {
 
         <div className="modal__body">
           <div className="field">
+            <label className="flabel" htmlFor="s-name">Your name</label>
+            <input
+              id="s-name"
+              className={`control${error?.error === "name" ? " control--bad" : ""}`}
+              value={name}
+              autoComplete="name"
+              maxLength={MAX_NAME}
+              placeholder="What your friends call you"
+              onChange={(e) => { setName(e.target.value); setError(null); setSaved(false); }}
+              onBlur={commit}
+            />
+          </div>
+
+          <div className="field">
+            <label className="flabel" htmlFor="s-phone">Your phone number</label>
+            <input
+              id="s-phone"
+              className={`control${error && error.error !== "name" ? " control--bad" : ""}`}
+              value={phone}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              maxLength={24}
+              placeholder="+39 333 123 4567"
+              onChange={(e) => { setPhone(e.target.value); setError(null); setSaved(false); }}
+              onBlur={commit}
+            />
+            {error ? (
+              <p className="note note--bad" role="alert">{error.message}</p>
+            ) : (
+              <p className="note" style={{ marginTop: 8 }}>
+                {saved_ ? "Saved." : "How friends add you, with the country code. It stays on this phone."}
+              </p>
+            )}
+          </div>
+
+          <div className="sectionrule">
+          <div className="field">
             <label className="flabel">Comfortable on</label>
             <div className="chips" role="group" aria-label="Ability">
               {ABILITIES.map((a) => (
@@ -89,6 +164,7 @@ export default function SettingsSheet({ ability, setAbility, onClose }) {
             <p className="note" style={{ marginTop: "var(--s-2)" }}>
               The hardest grade you want to be sent down.
             </p>
+          </div>
           </div>
 
           <div className="sectionrule">

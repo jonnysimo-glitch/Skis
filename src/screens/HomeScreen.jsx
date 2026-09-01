@@ -10,8 +10,9 @@ import { listDays, totals, dayLabel } from "../lib/history.js";
 import { Arrow, Check, Gear, Mountain } from "../ui/Icons.jsx";
 import Ridge from "../ui/Ridge.jsx";
 import { hours } from "../ui/RouteBits.jsx";
+import FriendsSection from "./FriendsSection.jsx";
 
-export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings }) {
+export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings, friends }) {
   const live = RESORTS.filter((r) => r.available);
   const soon = RESORTS.filter((r) => !r.available);
   const days = listDays();
@@ -70,7 +71,7 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings 
                 <span className="stat__k">{t.days === 1 ? "day" : "days"}</span>
               </div>
               <div className="stat">
-                <span className="stat__v">{(t.vertical / 1000).toFixed(1)}<span className="stat__u">k m</span></span>
+                <span className="stat__v">{t.vertical.toLocaleString()}<span className="stat__u"> m</span></span>
                 <span className="stat__k">descended</span>
               </div>
               <div className="stat">
@@ -92,6 +93,8 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings 
             </ul>
           </div>
         )}
+
+        <FriendsSection {...friends} />
 
         <div className="sectionrule">
           <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>Next up</div>

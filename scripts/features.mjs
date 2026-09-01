@@ -1995,6 +1995,213 @@ if (feature("22. Browse the options before committing to one")) {
   await empty.context_.close();
 }
 
+// ===================== 23. THE PEOPLE YOU SKI WITH ==
+// Added by phone number, because that is the thing two people already have for
+// each other. The number is the identity, so the form is fussy about it: get
+// it wrong and you share your position with a stranger.
+if (feature("23. The people you ski with")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+
+  const section = await page.$(".rowhead:has-text('Skiing with')");
+  check("there is a place for them on the home screen", section !== null);
+
+  // Not a disclaimer. Someone who believes their group can find them on a
+  // mountain, and is wrong, is in more trouble than someone who knows.
+  const warned = await page.evaluate(() =>
+    [...document.querySelectorAll(".banner--warn p")].some((n) =>
+      /nothing is sent anywhere|cannot see you/i.test(n.textContent)));
+  check("and it says up front that nobody can see you yet", warned === true);
+  check("nobody on the list to begin with", (await page.$$(".friend")).length === 0);
+
+  const add = async (name, phone) => {
+    await page.click("text=Add someone");
+    await page.waitForSelector(".modal", { timeout: 5000 });
+    await page.fill("#f-name", name);
+    await page.fill("#f-phone", phone);
+    await page.click(".modal .btn[type=submit]");
+    await page.waitForTimeout(500);
+  };
+
+  await page.click("text=Add someone");
+  await page.waitForSelector(".modal");
+  const fields = await page.$$eval(".modal input", (n) => n.map((i) => i.id));
+  check("it asks for a name and a number and nothing else",
+    fields.length === 2 && fields.includes("f-name") && fields.includes("f-phone"),
+    fields.join(", "));
+  check("and never for a picture",
+    (await page.$(".modal input[type=file]")) === null);
+
+  // The case that matters. "3331112222" is one person to an Italian reader and
+  // a different person to a British one.
+  await page.fill("#f-name", "Ana");
+  await page.fill("#f-phone", "3331112222");
+  await page.click(".modal .btn[type=submit]");
+  await page.waitForTimeout(400);
+  const refused = await page.$eval(".note--bad", (n) => n.textContent.trim()).catch(() => "");
+  check("a number with no country code is refused", /country code/i.test(refused), refused);
+  check("and nobody was added", (await page.$$(".friend")).length === 0);
+  await page.fill("#f-phone", "+39 333 111 2222");
+  await page.click(".modal .btn[type=submit]");
+  await page.waitForTimeout(600);
+  check("with the country code it goes through", (await page.$(".modal")) === null);
+  check("and they are on the list", (await page.$$(".friend")).length === 1);
+  check("with their number shown, because two people share a first name",
+    /333/.test(await page.$eval(".friend__no", (n) => n.textContent)));
+
+  // The same person typed another way must not become a second record: the
+  // switch you flipped would be on the one nobody reads.
+  await page.click("text=Add someone");
+  await page.waitForSelector(".modal");
+  await page.fill("#f-name", "Ana again");
+  await page.fill("#f-phone", "0039 333 111 2222");
+  await page.click(".modal .btn[type=submit]");
+  await page.waitForTimeout(400);
+  const dup = await page.$eval(".note--bad", (n) => n.textContent.trim()).catch(() => "");
+  check("the same number spelled differently is one person", /already on the list/i.test(dup), dup);
+  await page.click(".modal [aria-label='Close']");
+  await page.waitForTimeout(400);
+  check("still one of them", (await page.$$(".friend")).length === 1);
+
+  // Sharing is off until you turn it on, and cannot be turned on anonymously.
+  check("nobody is shared with just by being added",
+    (await page.$eval(".friend .chip", (b) => b.getAttribute("aria-pressed"))) === "false");
+  check("and it cannot be turned on before you say who you are",
+    (await page.$eval(".friend .chip", (b) => b.disabled)) === true);
+  check("with a line saying what to do about it", (await page.$(".promptrow")) !== null);
+
+  await page.click("[aria-label='Settings']");
+  await page.waitForSelector("#s-name", { timeout: 5000 });
+  check("the profile is in settings", (await page.$("#s-phone")) !== null);
+  check("and it has no picture either", (await page.$(".modal input[type=file]")) === null);
+  await page.fill("#s-name", "Simo");
+  await page.fill("#s-phone", "+39 333 123 4567");
+  await page.click("#s-name");
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(600);
+
+  check("once you have, sharing can be turned on",
+    (await page.$eval(".friend .chip", (b) => b.disabled)) === false);
+  check("and the prompt to set it up is gone", (await page.$(".promptrow")) === null);
+
+  await add("Bo", "+39 333 111 3333");
+  check("a second person can be added", (await page.$$(".friend")).length === 2);
+  const chips = await page.$$(".friend .chip");
+  await chips[0].click();
+  await page.waitForTimeout(500);
+  const state = await page.$$eval(".friend .chip", (n) =>
+    n.map((b) => b.getAttribute("aria-pressed")));
+  check("sharing with one does not share with the other", state.join(",") === "true,false", state.join(","));
+
+  // Your own number is not a friend.
+  await page.click("text=Add someone");
+  await page.waitForSelector(".modal");
+  await page.fill("#f-name", "Me");
+  await page.fill("#f-phone", "+393331234567");
+  await page.click(".modal .btn[type=submit]");
+  await page.waitForTimeout(400);
+  check("you cannot add yourself",
+    /your own number/i.test(await page.$eval(".note--bad", (n) => n.textContent).catch(() => "")));
+  await page.click(".modal [aria-label='Close']");
+  await page.waitForTimeout(300);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.waitForTimeout(700);
+  const kept = await page.$$eval(".friend .chip", (n) => n.map((b) => b.getAttribute("aria-pressed")));
+  check("all of it survives a reload", kept.join(",") === "true,false", kept.join(","));
+  check("including who you are",
+    (await page.$$(".promptrow")).length === 0);
+
+  const x = await page.$$(".friend__x");
+  await x[1].click();
+  await page.waitForTimeout(500);
+  const left = await page.$$eval(".friend__nm", (n) => n.map((e) => e.textContent));
+  check("and someone can be taken off the list", left.join(",") === "Ana", left.join(","));
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ===================== 24. THE MOUNTAIN IS GRADED BEFORE YOU PLAN ANYTHING ==
+// The network used to be drawn in white dashes, so an unplanned mountain told
+// you where the pistes were but not which of them you could ski. Knowing which
+// side of the hill is blue is the first thing anyone wants off a ski map, and
+// it should not require choosing a day first.
+if (feature("24. The mountain is graded before you plan anything")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(2000);
+
+  // Count pixels near each grade's hue — but only ones that belong to a LINE.
+  //
+  // The first version of this counted the sky: the washed-out blue of a blue
+  // run is, unsurprisingly, close to the colour of a sky, and it reported
+  // fifty thousand blue pixels on a mountain with about four hundred. The sky
+  // is a vertical gradient, so it barely changes from one pixel to the next
+  // across the screen, while a drawn line differs sharply from what is beside
+  // it. Requiring that horizontal step is what separates the two.
+  const tally = () => page.evaluate(() => {
+    const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const targets = {
+      tintBlue: hex("#6ea6e4"), tintRed: hex("#db7f87"),
+      fullBlue: hex("#1d6fcc"), fullRed: hex("#c22b37"),
+    };
+    const c = document.querySelector("canvas[aria-label*='Terrain view']");
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    const at = (x, y) => { const i = (y * width + x) << 2; return [data[i], data[i + 1], data[i + 2]]; };
+    const out = { tintBlue: 0, tintRed: 0, fullBlue: 0, fullRed: 0 };
+    for (let y = 0; y < height; y++) {
+      for (let x = 4; x < width - 4; x++) {
+        const px = at(x, y);
+        const near = Math.max(...px.map((v, i) => Math.abs(v - at(x - 4, y)[i])));
+        if (near < 22) continue; // flat: sky, snowfield, slab
+        for (const k in targets) {
+          const t = targets[k];
+          if (Math.abs(px[0] - t[0]) < 24 && Math.abs(px[1] - t[1]) < 24 &&
+              Math.abs(px[2] - t[2]) < 24) { out[k]++; break; }
+        }
+      }
+    }
+    return out;
+  });
+
+  const rest = await tally();
+  check("blue runs are drawn blue with nothing planned", rest.tintBlue > 40, `${rest.tintBlue} px`);
+  check("and red runs red", rest.tintRed > 40, `${rest.tintRed} px`);
+  check("so the network is graded, not one colour",
+    rest.tintBlue > 40 && rest.tintRed > 40,
+    `blue ${rest.tintBlue}, red ${rest.tintRed}`);
+  check("and it is the washed-out weight, not the route's",
+    rest.tintBlue + rest.tintRed > rest.fullBlue + rest.fullRed,
+    `tint ${rest.tintBlue + rest.tintRed}, full ${rest.fullBlue + rest.fullRed}`);
+
+  // With a day on the map the route has to be unmistakably the route, and the
+  // rest of the mountain still has to be there.
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await page.click("text=Find routes");
+  await page.waitForSelector(".routecard", { timeout: 20000 });
+  await page.waitForTimeout(2000);
+  const withRoute = await tally();
+  check("a planned route is drawn at full strength",
+    withRoute.fullBlue + withRoute.fullRed > 100,
+    `${withRoute.fullBlue + withRoute.fullRed} px`);
+  check("and it outweighs the network behind it",
+    withRoute.fullBlue + withRoute.fullRed > withRoute.tintBlue + withRoute.tintRed,
+    `route ${withRoute.fullBlue + withRoute.fullRed}, network ${withRoute.tintBlue + withRoute.tintRed}`);
+  check("which is still there rather than switched off",
+    withRoute.tintBlue + withRoute.tintRed > 20,
+    `${withRoute.tintBlue + withRoute.tintRed} px of network`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 } finally {
   await browser.close();
   server.close();

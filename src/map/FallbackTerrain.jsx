@@ -17,7 +17,7 @@ import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
   SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
 } from "./field.js";
-import { PISTE_COLOUR } from "../lib/geo.js";
+import { PISTE_COLOUR, PISTE_TINT, LIFT_TINT } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
 /** The casing, faded, for legs already skied. */
@@ -649,14 +649,32 @@ export default function FallbackTerrain({
     };
 
     const drawGraph = (v, cam) => {
-      // Two passes. A single white dash at half opacity disappeared into the
-      // snowfields, which is most of the mountain, and the piste network is
-      // the whole point of the screen it is drawn on. A dark casing under it
-      // makes it read on snow and on forest both.
+      // The whole network, in the grade colours, on every screen that has a
+      // map. Before this it was white dashes for everything, so an unplanned
+      // mountain told you where the pistes were but not which of them you
+      // could ski — and that is the first thing anyone wants off a ski map.
+      //
+      // Washed out on purpose. When a route is drawn over the top it has to be
+      // unmistakably the route, so the network steps back further again rather
+      // than competing with it. Two passes either way: a single pale line
+      // disappears into the snowfields, which are most of the mountain, so a
+      // white casing carries it over snow and rock both.
+      const hasRoute = Boolean(propsRef.current.route?.features?.length);
+      // Faded enough to sit behind the route, solid enough to still be read.
+      // At 0.45 the network had effectively vanished on the navigate screen,
+      // which is the one place a skier most wants to see what else is around.
+      const alpha = hasRoute ? 0.62 : 1;
+      const casing = hasRoute ? 0.6 : 0.9;
       for (const feature of propsRef.current.graph.features) {
         const pts = toScreen(feature.geometry.coordinates, v, cam);
-        stroke(pts, "rgba(11,26,36,0.30)", 3, [3, 3]);
-        stroke(pts, "rgba(255,255,255,0.92)", 1.4, [3, 3]);
+        const lift = feature.properties.kind === "lift";
+        const colour = lift ? LIFT_TINT : PISTE_TINT[feature.properties.difficulty] ?? LIFT_TINT;
+        const dash = lift ? [3, 4] : null;
+        ctx.globalAlpha = casing;
+        stroke(pts, "rgba(255,255,255,0.95)", lift ? 2.6 : 3.4, dash);
+        ctx.globalAlpha = alpha;
+        stroke(pts, colour, lift ? 1.2 : 1.9, dash);
+        ctx.globalAlpha = 1;
       }
     };
 

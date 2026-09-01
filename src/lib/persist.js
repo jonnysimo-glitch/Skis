@@ -9,7 +9,11 @@
 const KEY = "skis.v1";
 
 const DEFAULTS = {
+  // Ability, and — once they fill it in — the name and number friends know
+  // them by. See lib/friends.js; it merges rather than replaces, because
+  // ability lives here too and was here first.
   profile: { ability: "red" },
+  friends: [],
   resortId: null,
   lastPlan: null,
   committed: null, // { resortId, route, opts, savedAt }

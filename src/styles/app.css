@@ -1263,3 +1263,74 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------- friends -- */
+
+/* A section heading with an action on the same line. */
+.rowhead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+.rowhead .eyebrow { margin: 0; }
+
+.rows--friends { display: grid; gap: var(--s-1); }
+.friend {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.friend:last-child { border-bottom: 0; }
+.friend__who { flex: 1; min-width: 0; display: grid; }
+.friend__nm {
+  font-weight: 600; font-size: var(--t-callout);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The number is the identity, so it is always shown: two people in a group
+   with the same first name is the normal case, not the edge case. */
+.friend__no {
+  font-size: var(--t-footnote); color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.friend__x {
+  flex: none;
+  width: var(--tap); height: var(--tap);
+  margin-right: calc(var(--s-2) * -1);
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: var(--ink-4);
+}
+.friend__x:active { background: var(--surface-2); color: var(--ink-2); }
+
+.chip--sm {
+  padding: var(--s-1) var(--s-3);
+  font-size: var(--t-footnote);
+  min-height: 34px;
+}
+
+/* An instruction that is also the way to follow it. */
+.promptrow {
+  width: 100%;
+  display: flex; align-items: flex-start; gap: var(--s-3);
+  text-align: left;
+  padding: var(--s-3);
+  margin-bottom: var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+.promptrow:active { background: var(--surface-3); }
+.promptrow span { display: grid; gap: 2px; }
+.promptrow b { font-size: var(--t-callout); }
+.promptrow span span { font-size: var(--t-footnote); color: var(--ink-3); font-weight: 400; }
+
+.blank--tight { padding: var(--s-5) 0; }
+
+/* A field that was rejected, and why. Colour is not the only signal: the
+   message says what is wrong in words, and role="alert" reads it out. */
+.note--bad { color: var(--warn); margin-top: 8px; }
+.control--bad {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px rgba(154, 91, 18, 0.14);
+}
