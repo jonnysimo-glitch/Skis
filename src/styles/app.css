@@ -163,6 +163,19 @@ input, select { font: inherit; color: inherit; }
   display: grid; place-items: center;
   cursor: grab;
 }
+/* The same two states the drag reaches, without needing an accurate swipe.
+   Absolute so it does not push the handle off centre; the handle stays the
+   affordance for the in-between stops. */
+.sheet__expand {
+  position: absolute;
+  top: 0; right: 4px;
+  width: var(--tap); height: var(--tap);
+  display: grid; place-items: center;
+  color: var(--ink-3);
+  border-radius: 50%;
+  z-index: 1;
+}
+.sheet__expand:active { background: var(--surface-2); color: var(--ink); }
 /* Set for the duration of a drag; see the pointerdown handler in Sheet.jsx. */
 .sheet--dragging, .sheet--dragging * {
   user-select: none;

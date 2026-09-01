@@ -1723,6 +1723,128 @@ if (feature("18. The rest of the day, without leaving navigation")) {
   await page.context_.close();
 }
 
+// ===================== 20. THE MOUNTAIN IS LABELLED ==
+// A route that says "Champoluc" means nothing against an unlabelled ridge, and
+// knowing which side of the mountain you are looking at is the whole mid-day
+// case. Canvas text leaves no DOM, so the placement is read from the hook the
+// renderer publishes under ?maptest=1.
+if (feature("20. The mountain is labelled")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(2000);
+
+  const labels = async () => (await page.evaluate(() => window.__skisLabels)) ?? [];
+  const first = await labels();
+  check("places are named without being asked", first.length >= 5, `${first.length} names`);
+  const names = first.map((l) => l.name);
+  check("the valley bases among them", ["Alagna", "Champoluc", "Staffal", "Frachey"]
+    .filter((n) => names.includes(n)).length >= 3, names.join(", "));
+
+  // Overlapping names show fewer names than showing some of them.
+  const clash = first.find((a, i) =>
+    first.slice(i + 1).some((b) => a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t));
+  check("and none of them overlaps another", !clash, clash ? clash.name : "clear");
+
+  // The chrome is DOM over this canvas: whatever it covers, it covers.
+  const chrome = await page.evaluate(() =>
+    [".maptools", ".resortbar", ".planbtn", ".sheet"]
+      .map((sel) => document.querySelector(sel))
+      .filter((n) => n && getComputedStyle(n).opacity !== "0")
+      .map((n) => { const r = n.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; }));
+  const buried = first.find((a) =>
+    chrome.some((c) => a.l < c.r && a.r > c.l && a.t < c.b && a.b > c.t));
+  check("none is laid out under the app's own chrome", !buried,
+    buried ? `${buried.name} at ${Math.round(buried.l)},${Math.round(buried.t)}` : "clear");
+
+  const offEdge = first.find((a) => a.l < -1 || a.r > 431);
+  check("and none runs off the side of the screen", !offEdge,
+    offEdge ? `${offEdge.name} at ${Math.round(offEdge.l)}..${Math.round(offEdge.r)}` : "clear");
+
+  // Zoom in and the names that lost the room come back.
+  await page.evaluate(() => window.__skisView && null);
+  for (let i = 0; i < 3; i++) {
+    await page.click("[aria-label='Zoom in']");
+    await page.waitForTimeout(320);
+  }
+  await page.waitForTimeout(700);
+  const closer = await labels();
+  check("zooming in does not lose them", closer.length >= 3, `${closer.length} names`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+
+  // Once a route is on screen the pins own their names; two copies of
+  // "Staffal" in different styles reads as a printing fault.
+  const routed = await newPage(browser, { at: [9, 30] });
+  await toPlan(routed, `${url}?maptest=1`);
+  await solve(routed);
+  await routed.waitForTimeout(2000);
+  const withRoute = (await routed.evaluate(() => window.__skisLabels)) ?? [];
+  check("a place that is already a pin is not named twice",
+    new Set(withRoute.map((l) => l.name)).size === withRoute.length,
+    withRoute.map((l) => l.name).join(", "));
+  check("no page errors on the routed map", routed.errors.length === 0, routed.errors.join(" | "));
+  await routed.context_.close();
+}
+
+// ===================== 21. THE PANEL OPENS WITHOUT A DRAG ==
+// Dragging the sheet is the nice way to do this and used to be the only way,
+// which is a problem in a glove: it needs a deliberate, accurate swipe.
+if (feature("21. The panel opens without a drag")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, url);
+  await solve(page);
+  await page.waitForTimeout(1200);
+
+  const read = () => page.evaluate(() => {
+    const s = document.querySelector(".sheet");
+    const b = document.querySelector(".sheet__expand");
+    const r = b?.getBoundingClientRect();
+    return {
+      h: Math.round(s.getBoundingClientRect().height),
+      vh: window.innerHeight,
+      label: b?.getAttribute("aria-label"),
+      tap: r ? Math.round(Math.min(r.width, r.height)) : 0,
+    };
+  });
+
+  const opened = await read();
+  check("there is a button for it", opened.label === "Expand the panel", opened.label);
+  check("big enough for a gloved thumb", opened.tap >= 44, `${opened.tap}px`);
+
+  await page.click(".sheet__expand");
+  await page.waitForTimeout(700);
+  const tall = await read();
+  check("one tap fills the screen", tall.h > opened.h + 100, `${opened.h} to ${tall.h}`);
+  check("and the map is still there", tall.h < tall.vh, `${tall.h} of ${tall.vh}`);
+  check("the button now offers the way back", tall.label === "Shrink the panel", tall.label);
+
+  await page.click(".sheet__expand");
+  await page.waitForTimeout(700);
+  const back = await read();
+  check("which returns it to where the screen opened", Math.abs(back.h - opened.h) < 6,
+    `${back.h} against ${opened.h}`);
+
+  // The drag has to survive the button: they share the same strip.
+  const b = await page.$eval(".sheet", (n) => {
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width };
+  });
+  await page.mouse.move(b.x + b.w / 2, b.y + 12);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(b.x + b.w / 2, b.y + 12 - (300 * i) / 10);
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  const dragged = await read();
+  check("and dragging it still works", dragged.h > opened.h + 50, `${opened.h} to ${dragged.h}`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 } finally {
   await browser.close();
   server.close();

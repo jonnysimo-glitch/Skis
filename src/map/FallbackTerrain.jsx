@@ -81,6 +81,12 @@ const HOME = { bearing: 152, pitch: 46, zoom: 1 };
 const NORTH_UP = 180;
 
 /**
+ * Everything the app floats over this canvas. Place names are placed around
+ * them rather than under them; see drawPlaces.
+ */
+const CHROME = [".maptools", ".resortbar", ".planbtn", ".mapnote", ".nav__status", ".nav__foot", ".sheet", ".topbar .iconbtn"];
+
+/**
  * Camera slack.
  *
  * Loose on purpose. A camera that stops the moment you push it feels broken
@@ -201,7 +207,9 @@ export default function FallbackTerrain({
   const dirty = useRef(true);
   const lastCam = useRef(null);
   const projectRef = useRef(null);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes });
+  const mapTest =
+    typeof window !== "undefined" && window.location.search.includes("maptest=1");
 
   // Rebuilt when the mountain changes, or a new resort would be drawn with the
   // previous one's terrain and slab.
@@ -222,7 +230,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -314,6 +322,20 @@ export default function FallbackTerrain({
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
+
+    // Place names are laid out around the chrome that floats over this canvas,
+    // and the chrome slides into position on a CSS transition. React has the
+    // final value before the element has moved, so a redraw triggered by the
+    // prop change measures the control stack four hundred pixels from where it
+    // ends up — and "Colle Bettaforca" was laid out into a gap that the zoom
+    // buttons then slid over. Nothing redraws after a transition on its own,
+    // so this does: the chrome has stopped moving, look again.
+    const onSettled = (e) => {
+      if (e.target instanceof Element && e.target.closest(CHROME.join(","))) {
+        dirty.current = true;
+      }
+    };
+    window.addEventListener("transitionend", onSettled, true);
 
     // ---- camera ----------------------------------------------------------
     // Screen position is linear in the focal length once the perspective
@@ -671,6 +693,114 @@ export default function FallbackTerrain({
       }
     };
 
+    /**
+     * The names of the places on the mountain, always on.
+     *
+     * A route that says "Champoluc" means nothing against an unlabelled ridge,
+     * and the whole point of the mid-day case is knowing which side of the
+     * mountain you are looking at.
+     *
+     * Always on, but not all at once: thirteen labels on a phone at rest
+     * overlap into a grey smear, which shows fewer names than showing some of
+     * them. So they are placed in order of how much they matter — the valley
+     * bases you drive to first, then the mountain huts, then junctions — and
+     * one that would collide with a name already down is dropped rather than
+     * drawn over. Zoom in and the ones that lost the room come back.
+     */
+    const drawPlaces = (v, cam) => {
+      const list = Object.entries(propsRef.current.nodes ?? {});
+      if (!list.length) return;
+      ctx.font = "600 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+
+      // A base is where a car or a bus is, which is what a lost skier needs
+      // first. A rifugio is somewhere you can stand still. Everything else is
+      // a junction, useful but not urgent.
+      const rank = (n) => (n.base ? 0 : n.rifugio ? 1 : 2);
+
+      // The chrome is DOM drawn over this canvas, so anything the declutterer
+      // does not know about wins the pixels: "Champoluc" rendered half under
+      // the zoom buttons. Measured rather than guessed at — the first attempt
+      // reserved a box where the controls were assumed to be and the compass
+      // sat forty pixels above it. The canvas fills the viewport, so client
+      // rects are already in the coordinates used here.
+      const placed = [];
+      for (const sel of CHROME) {
+        const node = typeof document === "undefined" ? null : document.querySelector(sel);
+        if (!node) continue;
+        const cs = getComputedStyle(node);
+        if (cs.opacity === "0" || cs.visibility === "hidden") continue;
+        const r = node.getBoundingClientRect();
+        if (r.width && r.height) placed.push({ l: r.left - 4, r: r.right + 4, t: r.top - 4, b: r.bottom + 4 });
+      }
+      const pinned = new Set(
+        (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
+      );
+      const candidates = list
+        .filter(([, n]) => !pinned.has(n.name))
+        .map(([, n]) => {
+          const { x, z } = field.proj.project(n.lat, n.lon);
+          return { n, s: project(x, field.sample(x, z), z, v, cam) };
+        })
+        .filter(({ s }) => s.x > -60 && s.x < width + 60 && s.y > -20 && s.y < height + 20)
+        .sort((a, b) => rank(a.n) - rank(b.n) || a.n.name.localeCompare(b.n.name));
+
+      const hits = (box) =>
+        placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
+
+      const drawn = [];
+      for (const { n, s } of candidates) {
+        const w = ctx.measureText(n.name).width;
+        // Four places to put it, in order of preference. Dropping a name on the
+        // first collision cost Champoluc every time, because the zoom buttons
+        // sit exactly over it in the default view — and a base you might be
+        // walking to is the last name that should go. Under, over, then out to
+        // either side; only a point boxed in on all four sides loses its label.
+        const spots = [
+          { x: s.x, y: s.y + 15 },
+          { x: s.x, y: s.y - 9 },
+          { x: s.x - w / 2 - 10, y: s.y + 4 },
+          { x: s.x + w / 2 + 10, y: s.y + 4 },
+        ];
+        let box = null;
+        let tx = 0;
+        let y = 0;
+        for (const spot of spots) {
+          // Pulled inside the frame rather than allowed to run off it. A name
+          // sliced by the screen edge is not a name.
+          const cx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, spot.x));
+          const candidate = { l: cx - w / 2 - 3, r: cx + w / 2 + 3, t: spot.y - 12, b: spot.y + 4 };
+          if (hits(candidate)) continue;
+          box = candidate;
+          tx = cx;
+          y = spot.y;
+          break;
+        }
+        if (!box) continue;
+        placed.push(box);
+
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3.4, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = "rgba(11,26,36,0.55)";
+        ctx.stroke();
+
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(255,255,255,0.92)";
+        ctx.strokeText(n.name, tx, y);
+        ctx.fillStyle = n.base ? "#0b1a24" : "rgba(11,26,36,0.7)";
+        ctx.fillText(n.name, tx, y);
+        drawn.push({ name: n.name, ...box });
+      }
+      // Canvas text leaves no DOM to assert against, so the placement is
+      // published for the feature suite. Same gate as the camera hooks.
+      if (mapTest) window.__skisLabels = drawn;
+    };
+
     const drawPins = (v, cam) => {
       const p = propsRef.current.pins;
       if (!p?.features?.length) return;
@@ -857,6 +987,7 @@ export default function FallbackTerrain({
         ctx.restore();
         drawGraph(v, cam);
         drawRoute(v, cam);
+        drawPlaces(v, cam);
         drawPins(v, cam);
       }
       raf = requestAnimationFrame(frame);
@@ -1184,6 +1315,7 @@ export default function FallbackTerrain({
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
+      window.removeEventListener("transitionend", onSettled, true);
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerup", up);

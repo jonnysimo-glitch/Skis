@@ -10,6 +10,7 @@
  * only committed to state when the gesture ends.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronUp, ChevronDown } from "./Icons.jsx";
 
 /**
  * Three stops, well apart.
@@ -56,6 +57,10 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
     node.style.transition = animate ? "height 0.4s cubic-bezier(0.32,0.72,0,1)" : "none";
     node.style.height = `${Math.round(h)}px`;
     onSnapChange?.(Math.round(h));
+    // Only when the sheet settles, never mid-drag: the expand button's chevron
+    // has to know which way it points, and height lives in a ref precisely so
+    // that dragging does not render.
+    if (animate) force((n) => n + 1);
   }, [onSnapChange]);
 
   // Open at whatever the current screen asked for.
@@ -72,8 +77,10 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
 
     const onDown = (e) => {
       // The body scrolls and the footer's buttons are buttons; starting a drag
-      // on either would fight the gesture the user meant.
-      if (e.target.closest?.(".sheet__body, .sheet__foot")) return;
+      // on either would fight the gesture the user meant. The expand button is
+      // in the drag strip itself, so without it here the sheet captures the
+      // pointer and the tap never becomes a click.
+      if (e.target.closest?.(".sheet__body, .sheet__foot, .sheet__expand")) return;
       drag = { id: e.pointerId, y: e.clientY, from: heightRef.current };
       node.setPointerCapture(e.pointerId);
       // A drag starting on the handle sweeps the pointer across the heading
@@ -122,11 +129,31 @@ export default function Sheet({ snap = "half", snaps, children, onSnapChange }) 
     return () => window.removeEventListener("resize", onResize);
   }, [apply]);
 
+  // Dragging is the nice way to do this and the only way, which is a problem
+  // in a glove on a chairlift: it needs a deliberate, accurate swipe. The
+  // button is the direct route to the same two states — all of it, or back to
+  // the map.
+  const stops = points();
+  const tall = stops[stops.length - 1];
+  const atTop = heightRef.current >= vh() * tall - 4;
+  // Shrinking returns to where the screen opened, which is the height it was
+  // designed around. A screen that opens at the top drops one stop instead.
+  const resting = target < tall - 0.001 ? target : (stops[stops.length - 2] ?? tall);
+  const toggle = () => apply(vh() * (atTop ? resting : tall), true);
+
   return (
     <section ref={el} className="sheet">
       <div className="sheet__grab" role="separator" aria-label="Drag to resize the panel">
         <i />
       </div>
+      <button
+        className="sheet__expand"
+        onClick={toggle}
+        aria-label={atTop ? "Shrink the panel" : "Expand the panel"}
+        aria-expanded={atTop}
+      >
+        {atTop ? <ChevronDown width="18" height="18" /> : <ChevronUp width="18" height="18" />}
+      </button>
       {children}
     </section>
   );
