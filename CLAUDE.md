@@ -53,7 +53,11 @@ Not done, in priority order:
    `src/lib/graph.test.js`. What is missing is a real dataset: a resort needs
    every node's lat/lon/altitude and every run's length, drop and endpoints,
    which only OSM has. See "Replacing the resort data".
-3. iOS wrapper. Capacitor is configured; `npx cap add ios` needs macOS.
+3. iOS wrapper. Capacitor is configured and `npm run ios:prepare` builds the
+   whole Xcode project, plist keys, privacy manifest and icons included — on
+   Linux too, because Capacitor 8 wires plugins through Swift Package Manager
+   rather than CocoaPods. What still needs macOS is the archive itself, which
+   is a hosted runner's job. See `ios-setup/README.md`.
 
 ## Already built and tested — do not redesign these
 
