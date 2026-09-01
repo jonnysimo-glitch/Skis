@@ -720,6 +720,10 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 
 /* --------------------------------------------------------------- empty -- */
 
+/* Content at the top, and the white space below it left alone. Centring it in
+   the sheet was tried and is worse: the heading lives in the sheet's head, so
+   the copy floated away from its own title and the gap moved rather than
+   closed. */
 .empty { padding: var(--s-1) 0 var(--s-5); }
 .empty__big {
   font-family: var(--display);
