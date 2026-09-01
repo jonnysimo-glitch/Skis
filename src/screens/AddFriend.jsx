@@ -94,10 +94,10 @@ export default function AddFriend({ onSave, onClose }) {
               placeholder="+39 333 123 4567"
               onChange={(e) => { setPhone(e.target.value); setError(null); }}
             />
-            <p className="note" style={{ marginTop: 8 }}>
-              With the country code, so the same number typed two ways is the
-              same person.
-            </p>
+            {/* No hint under the field. The placeholder already shows the
+                country code, and the one case that needs explaining is the
+                one that gets it — the error below says what is wrong when a
+                number is typed without one. */}
           </div>
 
           {error && (
