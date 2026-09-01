@@ -1443,7 +1443,65 @@ if (feature("16. One gesture at a time")) {
     await page.evaluate(() => window.__skisSetBearing(40));
     await page.waitForTimeout(500);
     const turned = await needle();
-    check("the needle turns with the map", Math.min(turned, 360 - turned) > 20,
+    // ---- one gesture can be two things -----------------------------------
+  //
+  // The complaint that produced this: pinch to zoom, then twist without lifting
+  // a finger, and nothing rotated until the fingers came off. Zoom and rotate
+  // were one exclusive latch, so whichever crossed its threshold first owned
+  // the whole gesture. MapLibre registers them as separate handlers that name
+  // each other as allowed —
+  //   _add("touchRotate", touchRotate, ["touchPan", "touchZoom"]);
+  //   _add("touchZoom",   touchZoom,   ["touchPan", "touchRotate"]);
+  //   _add("touchPitch",  touchPitch);
+  // so those two run together and only pitch, with no allow-list, excludes
+  // everything else.
+  //
+  // Asymmetric on purpose, like the pinch above: a real hand does not move two
+  // fingers as mirror images.
+  const grip = (r, th, noise) => [
+    cx + Math.cos(th) * r + noise, cy + Math.sin(th) * r,
+    cx - Math.cos(th) * r, cy - Math.sin(th) * r - noise,
+  ];
+  const run = async (frames) => {
+    await reset();
+    const from = await view();
+    await twoFinger(frames);
+    await page.waitForTimeout(420);
+    const to = await view();
+    return {
+      bearing: Math.abs(to.bearing - from.bearing),
+      zoom: Math.abs(to.zoom - from.zoom),
+    };
+  };
+
+  const pinchThenTwist = [];
+  for (let i = 0; i <= 10; i++) pinchThenTwist.push(grip(70 + i * 5, 0, i * 0.3));
+  for (let i = 1; i <= 14; i++) pinchThenTwist.push(grip(120, (i * Math.PI) / 40, i * 0.3));
+  const r1 = await run(pinchThenTwist);
+  check("a pinch that becomes a twist rotates without lifting a finger",
+    r1.bearing > 8, `${r1.bearing.toFixed(0)} degrees`);
+  check("and keeps the zoom it had already done", r1.zoom > 0.15, `${r1.zoom.toFixed(2)}`);
+
+  const twistThenPinch = [];
+  for (let i = 0; i <= 14; i++) twistThenPinch.push(grip(110, (i * Math.PI) / 40, i * 0.3));
+  for (let i = 1; i <= 10; i++) twistThenPinch.push(grip(110 + i * 6, (14 * Math.PI) / 40, i * 0.3));
+  const r2 = await run(twistThenPinch);
+  check("a twist that becomes a pinch zooms without lifting a finger",
+    r2.zoom > 0.15, `${r2.zoom.toFixed(2)}`);
+  check("and keeps the rotation it had already done", r2.bearing > 8, `${r2.bearing.toFixed(0)} degrees`);
+
+  // The thresholds still have to hold, or this is only the cross-talk that the
+  // exclusivity was there to stop.
+  const plainPinch = [];
+  for (let i = 0; i <= 14; i++) plainPinch.push(grip(70 + i * 5, 0, i * 0.4));
+  const r3 = await run(plainPinch);
+  check("a pinch alone still does not rotate", r3.bearing < 2, `${r3.bearing.toFixed(1)} degrees`);
+  const plainTwist = [];
+  for (let i = 0; i <= 16; i++) plainTwist.push(grip(110, (i * Math.PI) / 36, i * 0.4));
+  const r4 = await run(plainTwist);
+  check("and a twist alone still does not zoom", r4.zoom < 0.05, `${r4.zoom.toFixed(3)}`);
+
+  check("the needle turns with the map", Math.min(turned, 360 - turned) > 20,
       `${turned} degrees round from up`);
     await page.tap("[aria-label='Face north']");
     await page.waitForTimeout(700);

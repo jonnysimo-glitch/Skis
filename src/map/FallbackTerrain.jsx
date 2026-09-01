@@ -45,13 +45,27 @@ const GLIDE_DECAY = 0.92;
 const TERRAIN_BLUR = 2.6;
 
 /**
+ * How much of that blur survives once the camera is close.
+ *
+ * The blur is in screen pixels, so at the framing the map opens on it dissolves
+ * the quads and reads as smooth terrain. Pushed right in — which the zoom
+ * ceiling now allows — the same 2.6 pixels are smearing a facet that fills half
+ * the screen, and the mountain looks like frosted glass rather than snow. It
+ * eases off with the zoom instead, so far is smooth and near is crisp.
+ */
+const blurFor = (zoom) => TERRAIN_BLUR * Math.max(0.3, Math.min(1, 2.2 / Math.max(zoom, 1)));
+
+/**
  * Pitch limits. 0 is straight down, which is as far as the camera goes: there
  * is no under the map. The ceiling matches MapLibre's `maxPitch` so tilting
  * feels the same whichever layer is currently drawing, since they swap
  * underneath the user without warning.
  */
 const MIN_PITCH = 0;
-const MAX_PITCH = 75;
+// Measured from straight down, so a bigger number is a lower camera. 75 stopped
+// well short of standing on the slope looking along it, which is the view that
+// tells you what a run actually pitches like.
+const MAX_PITCH = 84;
 
 /**
  * The view you start on and the view the reset button returns to.
@@ -98,7 +112,7 @@ const ZOOM_MIN = 0.34;
 // Room to get right in over a single summit. At 5.2 you ran out of zoom while
 // the peak was still small, and the pan limit grows with the excess, so this
 // also buys the reach to bring that peak to the middle of the screen.
-const ZOOM_MAX = 9;
+const ZOOM_MAX = 16;
 /** How far past the frame the subject may be pushed, as a share of the frame. */
 /**
  * How far past the wall a push is allowed, as a share of the frame.
@@ -992,7 +1006,7 @@ export default function FallbackTerrain({
         // to actually work.
         blurCtx.setTransform(1, 0, 0, 1, 0, 0);
         blurCtx.clearRect(0, 0, blur.width, blur.height);
-        blurCtx.filter = `blur(${TERRAIN_BLUR * dpr}px)`;
+        blurCtx.filter = `blur(${blurFor(v.zoom) * dpr}px)`;
         blurCtx.drawImage(off, 0, 0);
         blurCtx.filter = "none";
         blurCtx.globalCompositeOperation = "destination-in";
@@ -1047,8 +1061,10 @@ export default function FallbackTerrain({
       gesture = {
         x: c.x, y: c.y,
         ...sp,
-        // Two fingers can mean three different things, so the first bit of
-        // movement decides which and the rest of the gesture sticks to it.
+        // Two fingers can mean three things. Tilt excludes the other two and
+        // is latched once; zoom and rotate each latch on their own threshold
+        // and then run together, so a pinch can become a twist without
+        // lifting a finger.
         x0: c.x, y0: c.y, dist0: sp.dist ?? 0, angle0: sp.angle ?? 0,
         // The narrowest the fingers have been. Rotation is gated on arc
         // travel, and using the smallest separation keeps the gate honest
@@ -1064,7 +1080,9 @@ export default function FallbackTerrain({
         canTilt: pts.length >= 2 && isVertical(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
           ? false
           : undefined,
-        mode: null,
+        tilting: false,
+        zooming: false,
+        rotating: false,
       };
     };
 
@@ -1224,10 +1242,30 @@ export default function FallbackTerrain({
           }
         }
 
-        if (!gesture.mode && gesture.canTilt) gesture.mode = "tilt";
+        if (gesture.canTilt) gesture.tilting = true;
 
         // ---- zoom and rotate ------------------------------------------------
-        if (!gesture.mode && gesture.canTilt === false) {
+        //
+        // Independent, and both allowed at once. This was one exclusive latch,
+        // so whichever crossed its threshold first owned the whole gesture:
+        // pinch to zoom and then twist, without lifting your fingers, and
+        // nothing rotated. MapLibre registers these as separate handlers that
+        // name each other as allowed —
+        //
+        //   _add("touchRotate", touchRotate, ["touchPan", "touchZoom"]);
+        //   _add("touchZoom",   touchZoom,   ["touchPan", "touchRotate"]);
+        //   _add("touchPitch",  touchPitch);
+        //
+        // so zoom, rotate and pan run together while pitch, with no allow-list
+        // of its own, is the one that excludes everything else. That is why the
+        // tilt latch above stays exclusive and these two do not.
+        //
+        // Each still has to cross its own threshold, measured from the start of
+        // the gesture, which is what stops a slight unintended twist during a
+        // pinch from spinning the mountain. Once engaged each applies only the
+        // CURRENT frame's delta, so joining half way through a gesture does not
+        // jump by everything that accumulated before it.
+        if (!gesture.tilting && gesture.canTilt === false) {
           const zoomed = Math.abs(Math.log2(dist / (gesture.dist0 || dist)));
           // Arc travel, converted to an angle by the separation. See the note
           // on ROTATE_ARC: this is why a fixed angle gate cross-talks.
@@ -1235,26 +1273,29 @@ export default function FallbackTerrain({
           let swept = angle - gesture.angle0;
           if (swept > Math.PI) swept -= 2 * Math.PI;
           if (swept < -Math.PI) swept += 2 * Math.PI;
-          if (zoomed >= ZOOM_START) gesture.mode = "zoom";
-          else if (Math.abs(swept) >= gate) gesture.mode = "rotate";
+          if (zoomed >= ZOOM_START) gesture.zooming = true;
+          if (Math.abs(swept) >= gate) gesture.rotating = true;
         }
 
-        if (gesture.mode === "tilt") {
+        if (gesture.tilting) {
           const dy =
             ((pts[0].y - gesture.last[0].y) + (pts[1].y - gesture.last[1].y)) / 2;
           v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - dy * PITCH_RATE));
-        } else if (gesture.mode === "rotate") {
-          // Minus, and it matters. Screen y points down, so atan2 between the
-          // two fingers grows as they turn clockwise, while the projection
-          // turns the picture anticlockwise as bearing grows: a point to the
-          // right of centre rises as bearing increases. Adding one to the
-          // other rotated the mountain against the fingers. Pinned by "a
-          // clockwise twist turns the mountain clockwise" in features, and by
-          // the bearing check in field.test.js that this depends on.
-          v.bearing -= (turn * 180) / Math.PI;
-        } else if (gesture.mode === "zoom") {
-          zoomAbout(v, dist / (gesture.dist || dist), c.x, c.y);
-          v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
+        } else {
+          if (gesture.rotating) {
+            // Minus, and it matters. Screen y points down, so atan2 between the
+            // two fingers grows as they turn clockwise, while the projection
+            // turns the picture anticlockwise as bearing grows: a point to the
+            // right of centre rises as bearing increases. Adding one to the
+            // other rotated the mountain against the fingers. Pinned by "a
+            // clockwise twist turns the mountain clockwise" in features, and by
+            // the bearing check in field.test.js that this depends on.
+            v.bearing -= (turn * 180) / Math.PI;
+          }
+          if (gesture.zooming) {
+            zoomAbout(v, dist / (gesture.dist || dist), c.x, c.y);
+            v.zoom = v.targetZoom; // pinch tracks the fingers, no easing
+          }
         }
 
         gesture.dist = dist;
