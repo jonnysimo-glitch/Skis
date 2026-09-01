@@ -16,6 +16,7 @@ import {
   launch,
   toPlan,
   solve,
+  openRoute,
   routeCount,
   toMinutes,
   toForm,
@@ -200,7 +201,7 @@ try {
     async function effectiveStart(page) {
       await solve(page);
       if (!(await routeCount(page))) return null;
-      await page.click(".routecard");
+      await openRoute(page);
       await page.waitForSelector(".leg__nm", { timeout: 10000 });
       const legs = await page.$$eval(".leg", (n) => n.length);
       return { firstLeg: await page.$eval(".leg__nm", (n) => n.textContent.trim()), legs };
@@ -416,7 +417,7 @@ try {
     const page = await newPage(browser);
     await toPlan(page, url);
     await solve(page);
-    await page.click(".routecard");
+    await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn");
 
     check("detail shows a labelled route", (await page.$(".eyebrow--accent")) !== null);
@@ -546,7 +547,7 @@ try {
     await page.click(".planbtn");
     await page.waitForSelector("#p-t1", { timeout: 15000 });
     await solve(page);
-    await page.click(".routecard");
+    await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn");
     await page.click("text=/Save offline and start|^Start$/");
     await page.waitForSelector(".nav", { timeout: 10000 });
@@ -579,7 +580,7 @@ try {
     // On the route detail rather than the options list: the options list is
     // wall-to-wall buttons, so a drag across its body is a tap on a route and
     // the sheet resizes because the screen changed, not because it was dragged.
-    await page.click(".routecard");
+    await openRoute(page);
     await page.waitForSelector(".legs", { timeout: 15000 });
 
     const height = () => page.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
@@ -799,7 +800,7 @@ try {
     );
 
     // And the route has to actually pass somewhere to eat.
-    await page.click(".routecard");
+    await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn", { timeout: 10000 });
     check(
       "the route detail confirms it passes a rifugio",
@@ -818,7 +819,7 @@ try {
       await page.fill("#p-t0", "09:00");
       await page.fill("#p-t1", "16:00");
       await solve(page);
-      await page.click(".routecard");
+      await openRoute(page);
       await page.waitForSelector(".sheet__foot .btn");
       await page.click("text=/Save offline and start|^Start$/");
       await page.waitForSelector(".nav", { timeout: 10000 });
@@ -974,7 +975,7 @@ try {
     await solve(page);
     text += await collect();
     if (await routeCount(page)) {
-      await page.click(".routecard");
+      await openRoute(page);
       await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
       text += await collect();
     }

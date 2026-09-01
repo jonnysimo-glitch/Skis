@@ -185,6 +185,24 @@ export const solve = async (page) => {
 
 export const routeCount = (page) => page.$$eval(".routecard", (n) => n.length);
 
+/**
+ * Open one of the offered days.
+ *
+ * Two taps now, not one: the card selects a day and draws it on the mountain,
+ * and the footer's button opens the one that is selected. Browsing the options
+ * against the terrain is the point of that screen, so a test that reaches the
+ * detail view has to do what a skier does.
+ */
+export const openRoute = async (page, i = 0) => {
+  const bodies = await page.$$(".routecard__body");
+  if (!bodies.length) throw new Error("no routes offered");
+  const n = Math.min(i, bodies.length - 1);
+  await bodies[n].click();
+  await page.waitForTimeout(220);
+  const buttons = await page.$$(".routecard__act .btn");
+  await buttons[n].click();
+};
+
 export const toMinutes = (hhmm) => {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;

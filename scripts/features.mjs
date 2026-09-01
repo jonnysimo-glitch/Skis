@@ -21,6 +21,7 @@ import {
   toForm,
   multiTouch,
   solve,
+  openRoute,
   routeCount,
   toMinutes,
 } from "./harness.mjs";
@@ -244,7 +245,7 @@ if (feature("3. Route between any two points")) {
   check("a day between two mid-mountain points solves", n > 0, `${n} routes`);
 
   if (n > 0) {
-    await page.click(".routecard");
+    await openRoute(page);
     await page.waitForSelector(".legs", { timeout: 15000 });
     const ends = await page.evaluate(() => {
       const legs = [...document.querySelectorAll(".leg")];
@@ -344,7 +345,7 @@ if (feature("5. Navigation follows the GPS")) {
   await toPlan(page, url);
   await solve(page);
   check("a day to navigate", (await routeCount(page)) > 0);
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
   await page.click("text=/Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
@@ -519,7 +520,7 @@ if (feature("7. Finishing a day writes it down, once")) {
   const page = await newPage(browser, { at: [9, 0] });
   await toPlan(page, url);
   await solve(page);
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
   await page.click("text=/Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
@@ -676,7 +677,7 @@ if (feature("9. Navigating is pinned, not dragged")) {
   const page = await newPage(browser, { at: [9, 30] });
   await toPlan(page, url);
   await solve(page);
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
   check("the route detail is still a sheet", (await page.$(".sheet")) !== null);
 
@@ -826,7 +827,7 @@ if (feature("11. It works without a mouse or a screen")) {
   await record("plan");
   await solve(page);
   await record("choose");
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".legs", { timeout: 15000 });
   await record("detail");
   await page.click("text=/Save offline and start|^Start$/");
@@ -1445,7 +1446,7 @@ if (feature("17. The arrow points where you are going")) {
   const page = await newPage(browser, { at: [9, 30] });
   await toPlan(page, `${url}?maptest=1`);
   await solve(page);
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
   await page.click("text=/Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 10000 });
@@ -1547,7 +1548,7 @@ if (feature("19. Navigate keeps its map controls")) {
   const page = await newPage(browser, { at: [9, 30] });
   await toPlan(page, url);
   await solve(page);
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
   await page.waitForTimeout(700);
 
@@ -1609,7 +1610,7 @@ if (feature("18. The rest of the day, without leaving navigation")) {
   const page = await newPage(browser, { at: [9, 30] });
   await toPlan(page, url);
   await solve(page);
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
   await page.click("text=/Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 10000 });
@@ -1843,6 +1844,137 @@ if (feature("21. The panel opens without a drag")) {
   check("and dragging it still works", dragged.h > opened.h + 50, `${opened.h} to ${dragged.h}`);
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
+}
+
+// ===================== 22. BROWSE THE OPTIONS BEFORE COMMITTING TO ONE ==
+// Tapping a card used to jump straight to the detail screen, and a phone has
+// no hover, so there was no way to see a day drawn on the mountain without
+// picking it first and coming back. Comparing three days on the map is the
+// whole job of this screen.
+if (feature("22. Browse the options before committing to one")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, `${url}?maptest=1`);
+  await solve(page);
+  await page.waitForTimeout(1600);
+
+  const state = () => page.evaluate(() => ({
+    onChoose: !!document.querySelector(".routecard"),
+    cards: [...document.querySelectorAll(".routecard")].map((n) => ({
+      title: n.querySelector(".routecard__nm")?.textContent,
+      active: n.classList.contains("routecard--active"),
+      pressed: n.querySelector(".routecard__body")?.getAttribute("aria-pressed"),
+    })),
+    go: [...document.querySelectorAll(".routecard__act .btn")]
+      .map((b) => (b.classList.contains("btn--ghost") ? "quiet" : "primary")),
+  }));
+
+  // A signature of the route layer, so "the map changed" is measured rather
+  // than assumed.
+  const drawn = () => page.evaluate(() => {
+    const c = document.querySelector("canvas[aria-label*='Terrain view']");
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let h = 0;
+    for (let i = 0; i < d.length; i += 53) h = (Math.imul(h, 31) + d[i]) >>> 0;
+    return h;
+  });
+
+  const first = await state();
+  check("more than one day to compare", first.cards.length >= 2, `${first.cards.length} cards`);
+  check("one of them is selected to start with",
+    first.cards.filter((c) => c.active).length === 1,
+    first.cards.map((c) => c.active).join(","));
+  check("every day carries its own way in", first.go.length === first.cards.length, first.go.join(","));
+  check("and only the selected one is the primary",
+    first.go[0] === "primary" && first.go.slice(1).every((g) => g === "quiet"), first.go.join(","));
+
+  const before = await drawn();
+
+  const bodies = await page.$$(".routecard__body");
+  await bodies[1].click();
+  await page.waitForTimeout(1200);
+  const second = await state();
+
+  check("tapping another card does not leave the screen", second.onChoose === true);
+  check("it moves the selection", second.cards[1].active && !second.cards[0].active,
+    second.cards.map((c) => c.active).join(","));
+  check("says so to a screen reader too", second.cards[1].pressed === "true",
+    second.cards.map((c) => c.pressed).join(","));
+  check("the weight follows the selection",
+    second.go[1] === "primary" && second.go[0] === "quiet", second.go.join(","));
+  check("and the mountain redraws with that day on it", (await drawn()) !== before);
+
+  // The one that would make this pointless: opening the wrong day.
+  const acts = await page.$$(".routecard__act .btn");
+  await acts[1].click();
+  await page.waitForTimeout(1400);
+  const opened = await page.evaluate(() => ({
+    title: document.querySelector(".sheet__head .title")?.textContent,
+    start: document.querySelector(".sheet__foot .btn")?.textContent.trim(),
+  }));
+  check("a card's button opens that card's day", opened.title === second.cards[1].title,
+    `${opened.title} against ${second.cards[1].title}`);
+  check("which is the one you commit from", /Save offline and start|^Start$/.test(opened.start), opened.start);
+
+  // Coming back must not silently reset to the first option.
+  await page.click("text=Back to options");
+  await page.waitForTimeout(1200);
+  const returned = await state();
+  check("going back keeps the day you were looking at",
+    returned.cards[1]?.active === true, returned.cards.map((c) => c.active).join(","));
+
+  // Selecting a card scrolls it into view, and it has to bring the whole card.
+  // The browser scrolls the element it focused, which is the card body — the
+  // card minus its button — so it used to stop with the label above the clip
+  // and the button under the footer's fade.
+  const framed = await page.evaluate(() => {
+    const card = document.querySelector(".routecard--active");
+    const body = document.querySelector(".sheet__body").getBoundingClientRect();
+    const lab = card.querySelector(".routecard__lab").getBoundingClientRect();
+    const act = card.querySelector(".routecard__act .btn").getBoundingClientRect();
+    return {
+      label: Math.round(lab.top - body.top),
+      // 20px of the bottom is the scroll fade; a primary action must clear it.
+      button: Math.round(body.bottom - 20 - act.bottom),
+    };
+  });
+  check("the selected card is not scrolled through its own label", framed.label >= -1,
+    `${framed.label}px inside the top`);
+  check("and its button is not left under the fade", framed.button >= -2,
+    `${framed.button}px clear of the fade`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+
+  // Refine until nothing is left. An eighty minute window that solves, then
+  // Shorter and Lunch on top of it, genuinely empties the list — the earlier
+  // version of this check used a window the solver could always fill, so it
+  // asserted nothing.
+  const empty = await newPage(browser, { at: [9, 30] });
+  await toPlan(empty, url);
+  await empty.fill("#p-t0", "11:00");
+  await empty.fill("#p-t1", "12:20");
+  await solve(empty);
+  await empty.waitForTimeout(900);
+  const startedWith = await empty.$$eval(".routecard", (n) => n.length);
+  check("a window that does offer days to begin with", startedWith > 0, `${startedWith} cards`);
+  for (const label of ["Shorter", "Lunch"]) {
+    const chip = await empty.$(`.chips button:text-is("${label}")`);
+    if (chip) { await chip.click(); await empty.waitForTimeout(1000); }
+  }
+  await empty.waitForTimeout(700);
+  const gone = await empty.evaluate(() => ({
+    cards: document.querySelectorAll(".routecard").length,
+    warn: !!document.querySelector(".warn"),
+    go: document.querySelectorAll(".routecard__act .btn").length,
+  }));
+  check("the refinement really did rule everything out", gone.cards === 0 && gone.warn,
+    JSON.stringify(gone));
+  check("and nothing is offering to open a day that is not there", gone.go === 0,
+    `${gone.go} buttons`);
+  check("the chips are still there, because they are the way back",
+    (await empty.$$(".chips .chip")).length > 0);
+  check("no page errors while refining", empty.errors.length === 0, empty.errors.join(" | "));
+  await empty.context_.close();
 }
 
 } finally {

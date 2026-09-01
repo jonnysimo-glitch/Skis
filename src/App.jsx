@@ -758,6 +758,7 @@ export default function App() {
             solving={solving}
             activeIndex={previewIndex}
             onHover={setPreviewIndex}
+            onPreview={setPreviewIndex}
             onRefine={onRefine}
             onPick={(i) => {
               setPickIndex(i);

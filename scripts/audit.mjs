@@ -13,7 +13,7 @@
  *
  * Findings are grouped by screen so a regression points at one place.
  */
-import { serve, launch, newPage as makePage } from "./harness.mjs";
+import { serve, launch, newPage as makePage, openRoute } from "./harness.mjs";
 
 /** The audit itself, run inside the page against whatever is on screen. */
 const PROBE = `(() => {
@@ -209,7 +209,7 @@ for (const [label, at] of [["night before", [21, 30]], ["first lift", [8, 20]], 
   await audit(page, `choose (${label})`);
 
   if (await page.$(".routecard")) {
-    await page.click(".routecard");
+    await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
     await audit(page, `detail (${label})`);
 
@@ -283,7 +283,7 @@ for (const ability of ["Blue", "Anything"]) {
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await page.click("text=Find routes");
   await page.waitForSelector(".routecard", { timeout: 20000 });
-  await page.click(".routecard");
+  await openRoute(page);
   await page.waitForSelector(".sheet__foot .btn");
   await page.click("text=/Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 15000 });

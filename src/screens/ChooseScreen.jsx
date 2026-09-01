@@ -14,13 +14,13 @@
  * Refine is make-or-break. Every chip re-solves in place. The user is never
  * sent back to the form.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { REFINEMENTS, refinementApplies, backAt, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
-import { Info, Clock, Pin } from "../ui/Icons.jsx";
+import { Info, Clock, Pin, Arrow } from "../ui/Icons.jsx";
 import { NODES } from "../resort.js";
 
 /** Above roughly six a list stops being a choice and becomes homework. */
@@ -34,18 +34,38 @@ export default function ChooseScreen({
   refine,
   onRefine,
   onPick,
+  onPreview,
   onHover,
   activeIndex,
   onBack,
   solving,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const cards = useRef([]);
+
+  // Bring the selected day fully into view, button included.
+  //
+  // The browser does scroll a focused element into view on click, but it
+  // scrolls the element it focused — the card body, which is the card minus
+  // its button — and how far it goes depends on the viewport. On a short
+  // screen it left the button under the footer's fade and on a tall one it did
+  // not scroll at all. Doing it here is the same behaviour everywhere, and
+  // `.routecard` carries the scroll margin so the whole card clears the edges.
+  useEffect(() => {
+    const node = cards.current[activeIndex];
+    if (!node) return;
+    const frame = requestAnimationFrame(() =>
+      node.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [activeIndex]);
   const visible = expanded ? routes : routes.slice(0, SHOWN_BY_DEFAULT);
   const hidden = routes.length - visible.length;
   // A refinement can rule out everything. The chips stay on screen because
   // they are the way back: one tap undoes it. Sending the user to the empty
   // screen here would leave the form as the only exit.
   const ruledOut = routes.length === 0;
+
 
   const similar = routes.filter((r) => r.similar).length;
   // The solver returns fewer than asked when the terrain cannot support more.
@@ -110,16 +130,27 @@ export default function ChooseScreen({
         {visible.map((route, i) => {
           const back = backAt(route, opts);
           return (
-            <button
+            <div
               key={route.label}
+              ref={(n) => { cards.current[i] = n; }}
               className={`routecard${activeIndex === i ? " routecard--active" : ""}`}
-              onClick={() => onPick(i)}
+            >
+            {/* Tapping the card draws that day on the map and nothing else.
+                It used to jump straight to the detail screen, and because a
+                phone has no hover there was no way to see a route on the
+                mountain before committing to reading about it — you had to
+                pick one to look at it, then come back. Browsing is the whole
+                job of this screen. */}
+            <button
+              className="routecard__body"
+              aria-pressed={activeIndex === i}
+              onClick={() => onPreview(i)}
               onMouseEnter={() => onHover?.(i)}
               onFocus={() => onHover?.(i)}
             >
               <span className="routecard__lab">{route.label}</span>
               <span className="routecard__nm">{route.title}</span>
-              <ElevationProfile route={route} height={58} id={`c${i}`} />
+              <ElevationProfile route={route} height={48} id={`c${i}`} />
               <span className="routecard__mix">
                 <DifficultyBar route={route} />
               </span>
@@ -140,6 +171,21 @@ export default function ChooseScreen({
                 </span>
               </span>
             </button>
+            {/* One per card, so the thing that opens a day sits on that day.
+                Only the selected one carries full weight: three identical
+                primaries down a list is three ways out and no way to compare.
+                Present on all of them, though, rather than appearing on
+                selection — a button that materialises under your thumb moves
+                everything below it while you are reading. */}
+            <div className="routecard__act">
+              <button
+                className={`btn btn--sm${activeIndex === i ? "" : " btn--ghost"}`}
+                onClick={() => onPick(i)}
+              >
+                See this day <Arrow width="16" height="16" />
+              </button>
+            </div>
+            </div>
           );
         })}
 

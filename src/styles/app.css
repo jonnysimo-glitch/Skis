@@ -492,21 +492,36 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 
 .routecard {
   width: 100%;
-  text-align: left;
-  display: block;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  padding: var(--s-3) 0 var(--s-2);
   margin-bottom: var(--s-2);
   overflow: hidden;
   box-shadow: var(--e-1);
-  transition: transform 0.1s var(--ease-std), border-color 0.14s var(--ease-std);
+  transition: border-color 0.14s var(--ease-std);
 }
-.routecard > * { padding-left: var(--s-4); padding-right: var(--s-4); }
 .routecard .profile { padding: 0; }
-.routecard:active { transform: scale(0.99); }
 .routecard--active { border-color: var(--accent-line); box-shadow: var(--e-2); }
+
+/* The card is now a container: its body selects, its button opens. */
+.routecard__body {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: var(--s-2) 0 var(--s-1);
+  transition: transform 0.1s var(--ease-std);
+}
+.routecard__body > * { padding-left: var(--s-4); padding-right: var(--s-4); }
+.routecard__body:active { transform: scale(0.99); }
+/* Clicking a card focuses its body, and the browser scrolls that focused
+   element into view — the body, which is the card minus its button. So it
+   stopped with the card's own label above the clip and its button below the
+   fold. The bottom margin reserves the action row the scroll does not know
+   about; it is derived from the row's height rather than guessed. */
+.routecard { scroll-margin: var(--s-3) 0 var(--s-5); }
+.routecard__body { scroll-margin: var(--s-3) 0 calc(var(--tap) + var(--s-3)); }
+.routecard__act { padding: var(--s-1) var(--s-4) var(--s-2); }
+.routecard__act .btn { width: 100%; }
 
 .routecard__lab {
   display: inline-block;
@@ -524,11 +539,14 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   margin: var(--s-1) 0 var(--s-3);
 }
 .routecard__mix { margin-top: var(--s-2); }
+/* The legend under the bar is the card's loosest row and the one that can
+   give up the most without reading as cramped. */
+.routecard__mix .mixbar__key { margin-top: var(--s-2); }
 .routecard__foot {
   display: flex; align-items: center; gap: var(--s-2);
-  margin-top: var(--s-2); padding-top: var(--s-2);
+  margin-top: var(--s-1); padding-top: var(--s-2);
   border-top: 1px solid var(--surface-3);
-  min-height: 36px;
+  min-height: 30px;
 }
 .routecard__from { font-size: var(--t-footnote); color: var(--ink-3); display: inline-flex; align-items: center; gap: var(--s-1); }
 .routecard__back { margin-left: auto; font-size: var(--t-footnote); color: var(--ink-3); }
