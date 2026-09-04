@@ -2,9 +2,9 @@
 #
 # This exists because the machine the app is developed on cannot reach
 # overpass-api.de: the network policy answers 403 at the CONNECT, on every
-# public mirror. A GitHub runner has no such policy, so the fetch happens here
-# and the result is committed back. Adding a resort is then a config file and
-# a button rather than anything manual.
+# public mirror, and on api.openstreetmap.org and download.geofabrik.de too.
+# A GitHub runner has no such policy, so the fetch happens here and the result
+# is committed back. Adding a resort is then a config file and a button.
 #
 # Not on push. Overpass is a volunteer service and running a full extraction on
 # every commit would be rude and slow; it is asked only when someone asks.
@@ -57,26 +57,58 @@ jobs:
           key: dem-${{ hashFiles('scripts/resorts/*.json') }}
           restore-keys: dem-
 
+      # The inputs arrive through env rather than ${{ }} inside the script:
+      # interpolating them into the shell would let a dispatch value run as
+      # code on the runner.
       - name: Fetch and build
+        id: fetch
+        env:
+          RESORTS: ${{ github.event.inputs.resorts }}
+          TOLERANCE: ${{ github.event.inputs.tolerance }}
         run: |
-          ARGS="${{ github.event.inputs.resorts }}"
+          set -o pipefail
+          ARGS="$RESORTS"
           if [ -z "$ARGS" ]; then ARGS="--all"; fi
-          if [ -n "${{ github.event.inputs.tolerance }}" ]; then
-            ARGS="$ARGS --tolerance=${{ github.event.inputs.tolerance }}"
-          fi
+          if [ -n "$TOLERANCE" ]; then ARGS="$ARGS --tolerance=$TOLERANCE"; fi
           echo "npm run resort -- $ARGS"
-          npm run resort -- $ARGS
+          # Deliberately not failing the step. With three resorts, one Overpass
+          # timeout must not throw away the two that worked — the commit step
+          # below would never run and the whole twenty-minute fetch would have
+          # to be repeated. The outcome is carried to the last step, which
+          # fails the job after the good data is safely committed.
+          if npm run resort -- $ARGS 2>&1 | tee resort-run.log; then
+            echo "failed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "failed=1" >> "$GITHUB_OUTPUT"
+          fi
+          # The report says how much stitching each graph needed, which is the
+          # number that tells you whether to trust it. On the run page, so it
+          # does not need an artifact download to read.
+          {
+            echo '## Resort data'
+            echo
+            echo '```'
+            cat resort-run.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      # A graph that fails the suite must not be committed. The solver's
-      # behavioural checks are the thing that would notice a mountain stitched
-      # into two disconnected halves.
+      # Gates the commit. scripts/check-resorts.mjs loads every generated
+      # module and asks the solver to plan a real day on it, which is what
+      # catches a mountain stitched into two halves. The rest of the suite
+      # covers the solver itself.
       - name: Check nothing broke
         run: npm test
 
       - name: Commit the result
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # git does not track empty directories, so data/osm does not survive
+          # a clone. Without this, `git add` on a run that fetched nothing
+          # fails on the pathspec and reports a red X for a no-op.
+          mkdir -p data/osm src/resorts
           git add data/osm src/resorts
           if git diff --cached --quiet; then
             echo "No change: OSM has not moved since the last run."
@@ -86,18 +118,32 @@ jobs:
 
           Fetched and built by .github/workflows/resort-data.yml.
           Run: ${{ github.run_id }}"
-          git push
+          # A push can lose a race with someone pushing to the same branch.
+          # Rebase and retry rather than making a person re-run the fetch.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$BRANCH"; then exit 0; fi
+            sleep $((attempt * 5))
+            git pull --rebase --autostash origin "$BRANCH" || exit 1
+          done
+          exit 1
 
-      # The report says how much stitching a graph needed, which is the number
-      # that tells you whether to trust it. Worth keeping even when the commit
-      # is a no-op.
-      - name: Keep the report
+      - name: Keep the log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: resort-report
           path: |
+            resort-run.log
             data/osm/*.json
             src/resorts/*.js
           if-no-files-found: warn
           retention-days: 14
+
+      # Last, so a partial failure is still visibly red without having cost
+      # the resorts that did build.
+      - name: Report a resort that did not build
+        if: steps.fetch.outputs.failed == '1'
+        run: |
+          echo "At least one resort did not build. The log is in the run summary above."
+          echo "Anything that did build has been committed; re-run for the rest."
+          exit 1
