@@ -18,6 +18,7 @@ import { build } from "./osm/graph.mjs";
 import { prune, check } from "./osm/validate.mjs";
 import { elevationFor } from "./osm/elevation.mjs";
 import { emit } from "./osm/emit.mjs";
+import { writeRegistry } from "./osm/registry.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -158,6 +159,11 @@ async function buildOne(id) {
   }
   await writeFile(`${OUT_DIR}${id}.js`, module);
   console.log(`  written     src/resorts/${id}.js`);
+  // The whole promise of this pipeline is that adding a resort is a config
+  // file and a command. Leaving someone to import the new module by hand would
+  // break that, so the import list is regenerated from what is on disk.
+  const wired = await writeRegistry();
+  console.log(`  registry    src/resorts/graphs.js now lists ${wired.join(", ")}`);
   return true;
 }
 

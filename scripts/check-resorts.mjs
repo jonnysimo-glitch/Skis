@@ -21,6 +21,7 @@ import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { solve, asGraph } from "../src/solver.js";
 import { RESORTS } from "../src/resorts/index.js";
+import { graphFor, withGraphs } from "../src/resorts/graphs.js";
 
 const OUT_DIR = new URL("../src/resorts/", import.meta.url);
 const OSM_DIR = new URL("../data/osm/", import.meta.url);
@@ -108,8 +109,11 @@ function checkGraph(id, mod) {
   console.log(failures === before ? `  ok    ${id}: ${shape}` : `        ${id}: ${shape}`);
 }
 
+// index.js is the registry and graphs.js is the generated import list; neither
+// is a resort.
+const NOT_RESORTS = new Set(["index.js", "graphs.js"]);
 const generated = (await readdir(OUT_DIR))
-  .filter((f) => f.endsWith(".js") && f !== "index.js")
+  .filter((f) => f.endsWith(".js") && !NOT_RESORTS.has(f) && !f.endsWith(".test.js"))
   .map((f) => f.replace(/\.js$/, ""));
 
 console.log(`\nResort data: ${generated.length || "no"} generated module(s)`);
@@ -132,6 +136,16 @@ for (const resort of RESORTS) {
     resort.id === BUILT_IN || generated.includes(resort.id),
     "marked available with no generated module");
 
+  // The path the app actually takes when you tap a resort. A file on disk that
+  // graphs.js does not import is a resort the picker offers and cannot open.
+  const wired = graphFor(resort.id);
+  check(`registry: ${resort.id} resolves through graphs.js`, Boolean(wired),
+    "graphs.js has no import for it — run: npm run resort -- " + resort.id);
+  if (wired) {
+    check(`registry: ${resort.id}'s wired module is a graph`,
+      Boolean(wired.NODES && wired.LIFTS && wired.RUNS && wired.buildEdges));
+  }
+
   const missing = LIVE_FIELDS.filter((f) => resort[f] === undefined);
   check(`registry: ${resort.id} has the fields a live resort needs`, missing.length === 0,
     `missing ${missing.join(", ")}`);
@@ -148,6 +162,10 @@ const exports_ = existsSync(OSM_DIR.pathname)
   ? (await readdir(OSM_DIR)).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""))
   : [];
 const unbuilt = exports_.filter((id) => !generated.includes(id));
+// And the reverse: a module nobody imports is dead weight that looks live.
+const unwired = generated.filter((id) => !withGraphs().includes(id));
+check("pipeline: every generated graph is imported by graphs.js", unwired.length === 0,
+  `${unwired.join(", ")} on disk but not in graphs.js — run: npm run resort -- ${unwired[0] || "<id>"} --offline`);
 check("pipeline: every fetched export produced a graph", unbuilt.length === 0,
   `${unbuilt.join(", ")} fetched but not built — run: npm run resort -- ${unbuilt[0] || "<id>"} --offline`);
 

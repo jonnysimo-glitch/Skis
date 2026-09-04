@@ -41,7 +41,8 @@ import PlanButton from "./ui/PlanButton.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
-import { NODES, buildEdges } from "./active-resort.js";
+import { NODES, buildEdges, activeGraph, setActiveResort } from "./active-resort.js";
+import { graphFor } from "./resorts/graphs.js";
 import { useSolver } from "./lib/useSolver.js";
 import { directRoute } from "./lib/direct.js";
 import { load, save } from "./lib/persist.js";
@@ -153,6 +154,10 @@ export default function App() {
   // would keep the first resort's pistes for the life of the page and draw them
   // over somebody else's valley. Keyed on the resort so it follows the swap.
   const graphGeo = useMemo(() => graphToGeoJSON(buildEdges()), [resort.id]);
+  // The graph the solver plans on, as plain data so it survives the trip to
+  // the worker. Rebuilt per resort rather than per solve: refine re-solves on
+  // every chip tap and this is the only large thing in the request.
+  const solverGraph = useMemo(() => activeGraph(), [resort.id]);
 
   // ---- profile and plan ---------------------------------------------------
   const [ability, setAbilityState] = useState(() => load("profile")?.ability ?? "red");
@@ -303,7 +308,10 @@ export default function App() {
         return key === startKey ? { role: "start" } : { role: "finish" };
       }
     );
-  }, [screen, shownRoute, step, plan.start, plan.finish]);
+    // resort.id because this reads the node set: it happened to recompute on a
+    // switch only because plan.start changes too, which is a coincidence to
+    // depend on rather than a reason.
+  }, [screen, shownRoute, step, plan.start, plan.finish, resort.id]);
 
   // Test hook, same opt-in as the map's. The heading arrow is painted on a
   // canvas in the dot's own colour, so a check needs the leg it should be
@@ -420,7 +428,7 @@ export default function App() {
         return;
       }
 
-      const result = await solve(solverOpts);
+      const result = await solve({ ...solverOpts, graph: solverGraph });
       if (!result) return; // superseded by a newer request
 
       // A solving screen that flashes is worse than no solving screen. Hold it
@@ -459,7 +467,10 @@ export default function App() {
         setScreen("choose");
       }
     },
-    [solve]
+    // solverGraph belongs here: without it this callback keeps the graph from
+    // the resort that was active when it was created, which is the same freeze
+    // as a module-scope constant and just as quiet.
+    [solve, solverGraph, resort]
   );
 
   const onSolve = () => runSolve(plan, ability, refine, { showSolving: true });
@@ -544,6 +555,13 @@ export default function App() {
   };
 
   const chooseResort = (id) => {
+    // The graph swaps first and synchronously. defaultPlan below reads the
+    // node set to choose a start, and everything rendered after this state
+    // update reads it too, so a render must never straddle two mountains.
+    const graph = graphFor(id);
+    if (!graph) return; // no data for it; the picker should not have offered it
+    setActiveResort(id, graph);
+
     setResortId(id);
     save("resortId", id);
     setRoutes([]);
@@ -551,15 +569,15 @@ export default function App() {
     setPickIndex(0);
     setPreviewIndex(0);
     setStep(0);
+    // A fix that was near the old resort's lifts says nothing about this one,
+    // and its node key does not exist in this graph. Cleared rather than
+    // carried: one tap of "use my location" re-derives it against the mountain
+    // you are actually looking at, and the distance guard still applies.
+    setGps(null);
     const next = getResort(id);
     // Recomputed for the resort being switched to: the context depends on that
     // resort's lift hours, so the one memoised for the old resort can be wrong.
-    setPlan(defaultPlan(
-      next,
-      detectContext(nowMinutes(), next),
-      nowMinutes(),
-      gps?.state === "ok" ? gps.key : null
-    ));
+    setPlan(defaultPlan(next, detectContext(nowMinutes(), next), nowMinutes(), null));
     setScreen("explore");
   };
 
