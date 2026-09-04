@@ -835,7 +835,9 @@ try {
     const n = await routeCount(page);
     check("a blue-only skier still gets a day planned", n > 0, `${n} routes`);
 
-    const notice = await page.$eval(".sheet__body", (b) => b.textContent);
+    // Choose is a full page rather than a sheet: too much to compare in a
+    // panel you have to drag. The notice lives in the page body now.
+    const notice = await page.$eval(".page__body", (b) => b.textContent);
     check(
       "and is told plainly these are variations on the same runs",
       /variations on the same runs/i.test(notice)
@@ -860,7 +862,7 @@ try {
     await page.fill("#p-t0", "09:15");
     await page.fill("#p-t1", "16:00");
     await solve(page);
-    const rich = await page.$eval(".sheet__body", (b) => b.textContent);
+    const rich = await page.$eval(".page__body", (b) => b.textContent);
     check("with the whole mountain open, nothing is flagged as similar", !/variations on the same runs/i.test(rich));
 
     const eyebrow = await page.$eval(".eyebrow", (e) => e.textContent);

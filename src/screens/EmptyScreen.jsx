@@ -44,7 +44,9 @@ const FIXES = {
    */
   shorterDay: (plan, resort, capacity) => {
     if (!capacity?.minutes) return null;
-    const t1 = plan.t0 + capacity.minutes + (plan.lunch ? 45 : 0);
+    // The budget that was proved to work, not the length of the route it
+    // found. See longestDay() in App.jsx.
+    const t1 = plan.t0 + (capacity.budget || capacity.minutes) + (plan.lunch ? 45 : 0);
     if (t1 >= plan.t1 - 5) return null; // not actually shorter
     return {
       title: `Plan to ${minutesToClock(t1)} instead`,

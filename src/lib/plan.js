@@ -301,6 +301,26 @@ export function diagnose(plan, ability, opts, resort, capacity = null) {
     };
   }
 
+  /*
+   * Probed all the way down to a fifth of the day and still found nothing:
+   * the grade is the constraint, not the clock, and saying "nothing gets you
+   * back in time" would send the reader to fix the wrong thing.
+   *
+   * A blue skier at Monterosa is the case. There are 21 blue edges on that
+   * mountain and they do not link up, so no blue day exists there at any
+   * length. Kronplatz is the opposite: 26 km of linked blue piste, and it
+   * plans a blue day from all four of its bases.
+   */
+  if (capacity && !capacity.minutes) {
+    const grade = ability === "blue" ? "blue" : `${ability} or below`;
+    return {
+      title: `No ${ability} day here`,
+      headline: `There is no day on ${grade} runs at ${resort?.name ?? "this resort"}, however long you give it.`,
+      body: `The ${grade} pistes here do not link up into a loop from ${NODES[plan.start].name}, so every way out needs something harder.`,
+      fixes: ability === "black" ? [] : ["harder"],
+    };
+  }
+
   return {
     headline: "Nothing gets you back in time.",
     body: `Every route from ${NODES[plan.start].name} either misses a last lift or overruns ${minutesToClock(plan.t1)}.`,

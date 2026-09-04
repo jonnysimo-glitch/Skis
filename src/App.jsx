@@ -433,13 +433,49 @@ export default function App() {
    * otherwise a dead end.
    */
   const longestDay = useCallback(async (solverOpts) => {
+    const attempt = async (budget) => {
+      if (budget < 30) return null;
+      const probe = await solve({ ...solverOpts, budget, graph: solverGraph, count: 1 });
+      return probe?.routes?.length ? probe.routes[0].minutes : null;
+    };
+
+    // The pair has to come from the same probe. Tracked apart, the answer
+    // was "the longest day here is about 5h 59m" over a button offering to
+    // plan until 16:21 — which is 7h 16m, and is the largest budget that
+    // happened to return anything rather than the day it returned.
+    let lo = 0, hi = solverOpts.budget, best = null;
     for (const fraction of [0.66, 0.45, 0.3, 0.2]) {
       const budget = Math.round(solverOpts.budget * fraction);
-      if (budget < 30) break;
-      const probe = await solve({ ...solverOpts, budget, graph: solverGraph, count: 1 });
-      if (probe?.routes?.length) return { minutes: probe.routes[0].minutes };
+      const minutes = await attempt(budget);
+      if (minutes) { lo = budget; best = { minutes, budget }; break; }
+      hi = budget;
     }
-    return null;
+    // Nothing at a fifth of the day either. Reported as zero rather than as
+    // null, because "probed and found nothing" and "never probed" lead to
+    // different things to say, and a blue skier at Monterosa is the first.
+    if (best === null) return { minutes: 0, budget: 0 };
+
+
+    // Then close the gap. The coarse steps answered "about 4h 45m" where six
+    // hours was on offer, and the fix built from that number offered to plan
+    // a day an hour and a quarter shorter than the mountain supports. Four
+    // more solves is a fifth of a second on a path that is already a dead end.
+    for (let i = 0; i < 4 && hi - lo > 15; i++) {
+      const mid = Math.round((lo + hi) / 2);
+      const minutes = await attempt(mid);
+      // A longer day, or nothing new. The budget kept is the smallest one
+      // that reached this length, so the finish time offered sits just past
+      // where the route actually ends rather than hours beyond it.
+      if (minutes) { lo = mid; if (minutes > best.minutes) best = { minutes, budget: mid }; }
+      else hi = mid;
+    }
+    // `budget` as well as `minutes`, because the fix built from this has to
+    // re-solve and get an answer. solve() is deterministic per options, so
+    // the same budget reproduces the route that was just found — asking for
+    // the route's own length instead is a different question, and at
+    // Paganella it came back empty: "Plan to 14:14 instead" offered a day
+    // the app could not then plan.
+    return best;
   }, [solve, solverGraph]);
 
   const runSolve = useCallback(
@@ -556,7 +592,7 @@ export default function App() {
       runSolve(nextPlan, ability, refine, { showSolving: true });
     } else if (id === "shorterDay") {
       // Finish when the mountain runs out rather than when you asked to.
-      const t1 = plan.t0 + capacity.minutes + (plan.lunch ? LUNCH_MINUTES : 0);
+      const t1 = plan.t0 + (capacity.budget || capacity.minutes) + (plan.lunch ? LUNCH_MINUTES : 0);
       const nextPlan = { ...plan, t1 };
       setPlan(nextPlan);
       runSolve(nextPlan, ability, refine, { showSolving: true });
@@ -854,7 +890,11 @@ export default function App() {
         />
       )}
 
-        {screen === "choose" && opts && (
+      {/* `choosing`, not `screen === "choose"`: this is a full page at the
+          same layer as Home and Stats, and without the tab check it stayed
+          mounted over them. Tapping Home from the options list left the
+          resort list underneath an unrelated page of routes. */}
+      {choosing && opts && (
         <ChooseScreen
           routes={routes}
           opts={opts}

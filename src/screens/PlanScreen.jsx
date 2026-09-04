@@ -99,10 +99,14 @@ export default function PlanScreen({
 
       <div className="page__body">
         <h1 className="title">
-          {copy.title.split("\n").map((line, i) => (
+          {copy.title.split("\n").map((line, i, all) => (
             <span key={i}>
               {line}
-              {i === 0 && <br />}
+              {/* The space belongs in the text, not just in the layout. The
+                  break alone made the heading "When do you needto be down?"
+                  to anything reading it rather than looking at it, a screen
+                  reader included. */}
+              {i < all.length - 1 && <>{" "}<br /></>}
             </span>
           ))}
         </h1>

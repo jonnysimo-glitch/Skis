@@ -118,7 +118,10 @@ function buildAdjacency(g, opts) {
   return adj;
 }
 
-/** Dijkstra over reversed edges: minutes from every node back to `finish`. */
+/**
+ * Dijkstra over reversed edges: minutes from every node back to `finish`,
+ * plus the latest clock you can still be standing there and get home.
+ */
 function timesHome(g, adj, finish) {
   const dist = {}, via = {}, reversed = {};
   for (const key in g.NODES) { dist[key] = Infinity; reversed[key] = []; }
@@ -139,7 +142,38 @@ function timesHome(g, adj, finish) {
       }
     }
   }
-  return { dist, via };
+
+  /*
+   * The clock on the way home, not just the minutes.
+   *
+   * `dist` says how long it takes to get back; it says nothing about whether
+   * the lifts on that path will still be turning when you get to them. So a
+   * walk wandered until it had spent nearly the whole budget, and only then
+   * discovered that the ride home shut at four. At Monterosa with a full-day
+   * window that was every single sample: 3500 walks, none legal, and the app
+   * told a skier there was not enough terrain to fill their day when what
+   * there was not enough of was daylight.
+   *
+   * Walking the `via` tree in order of distance means the next hop home is
+   * always resolved first. `latest[node]` is the last minute you can be at
+   * `node` and still catch every lift between there and the finish, so the
+   * candidate filter can refuse the edge that would strand you rather than
+   * throwing the walk away at the end.
+   */
+  const latest = {};
+  for (const key in g.NODES) latest[key] = -Infinity;
+  latest[finish] = Infinity;
+  const byDistance = Object.keys(g.NODES)
+    .filter((key) => key !== finish && dist[key] < Infinity)
+    .sort((a, b) => dist[a] - dist[b]);
+  for (const key of byDistance) {
+    const edge = via[key];
+    if (!edge) continue;
+    const onward = latest[edge.to] - edge.min;
+    latest[key] = edge.kind === "lift" ? Math.min(edge.lastUp, onward) : onward;
+  }
+
+  return { dist, via, latest };
 }
 
 function pathHome(via, from, finish) {
@@ -154,28 +188,56 @@ function pathHome(via, from, finish) {
   return node === finish ? path : null;
 }
 
+/**
+ * What the repeat cap counts.
+ *
+ * A run is its own edge. A lift is its *wire*, in either direction: a gondola
+ * that runs both ways is two edges with two ids, so counting them separately
+ * let one cable car be ridden up nine times and down nine times inside one
+ * "day". A blue skier at Monterosa was offered five hours of Stafal -
+ * Sant'Anna, up and down, for 166 metres of descent and 1.2 km of skiing.
+ */
+const useKey = (edge) =>
+  edge.kind === "run"
+    ? edge.id
+    : `lift:${edge.from < edge.to ? `${edge.from}~${edge.to}` : `${edge.to}~${edge.from}`}`;
+
+/**
+ * Riding a wire and immediately riding it back.
+ *
+ * Never a leg of a ski day in either order, and it is what padding looks like
+ * when a lift runs both ways. Crossing a valley — ride one gondola down, ride
+ * a different one up the other side — is a different wire, so it still works.
+ */
+const reverses = (prev, edge) =>
+  Boolean(prev) && prev.kind === "lift" && edge.kind === "lift" &&
+  prev.from === edge.to && prev.to === edge.from;
+
 /** One randomised walk. Returns null if it cannot be made legal. */
 function sampleWalk(g, opts, adj, home, rng, caps) {
   const repeatCap = edge => (edge.kind === "run" ? caps.run : caps.lift);
-  const { dist, via } = home;
+  const { dist, via, latest } = home;
   if (dist[opts.start] === Infinity) return null;
 
   let node = opts.start, elapsed = 0;
   const segments = [], uses = {};
 
   for (let step = 0; step < WALK_LIMIT; step++) {
+    const prev = segments[segments.length - 1];
     const candidates = adj[node].filter(edge => {
       if (elapsed + edge.min + dist[edge.to] > opts.budget) return false;
       if (edge.kind === "lift" && opts.startClock + elapsed > edge.lastUp) return false;
-      return (uses[edge.id] || 0) < repeatCap(edge);
+      // Would taking this leave you somewhere the ride home has already shut?
+      if (opts.startClock + elapsed + edge.min > latest[edge.to]) return false;
+      if (reverses(prev, edge)) return false;
+      return (uses[useKey(edge)] || 0) < repeatCap(edge);
     });
     if (!candidates.length) break;
 
     const weights = candidates.map(edge => {
       let w = edge.kind === "run" ? 1.6 : 1;
-      const seen = uses[edge.id] || 0;
+      const seen = uses[useKey(edge)] || 0;
       w *= seen === 0 ? 3.2 : seen === 1 ? 0.4 : 0.1;
-      const prev = segments[segments.length - 1];
       if (edge.kind === "lift" && prev && prev.kind === "lift") w *= 0.35;
       return w;
     });
@@ -186,7 +248,7 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
 
     const edge = candidates[i];
     segments.push(edge);
-    uses[edge.id] = (uses[edge.id] || 0) + 1;
+    uses[useKey(edge)] = (uses[useKey(edge)] || 0) + 1;
     elapsed += edge.min;
     node = edge.to;
 
@@ -196,9 +258,14 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
   const tail = pathHome(via, node, opts.finish);
   if (!tail) return null;
   for (const edge of tail) {
+    // The seam. The walk refuses to ride a wire straight back, and a shortest
+    // path home cannot contain one, but the join between them can: three
+    // Kronplatz days ended by riding the Pré da Peres up and immediately back
+    // down again.
+    if (reverses(segments[segments.length - 1], edge)) return null;
     if (edge.kind === "lift" && opts.startClock + elapsed > edge.lastUp) return null;
-    uses[edge.id] = (uses[edge.id] || 0) + 1;
-    if (uses[edge.id] > repeatCap(edge)) return null;
+    uses[useKey(edge)] = (uses[useKey(edge)] || 0) + 1;
+    if (uses[useKey(edge)] > repeatCap(edge)) return null;
     segments.push(edge);
     elapsed += edge.min;
   }
@@ -206,6 +273,28 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
   if (!segments.length) return null;
   if (elapsed > opts.budget || elapsed < opts.budget * MIN_BUDGET_FILL) return null;
   if (opts.lunch && !segments.some(e => g.NODES[e.to].rifugio)) return null;
+
+  /*
+   * A day cannot spend longer riding down than skiing down.
+   *
+   * A hard constraint, filtered here rather than ranked later, because a
+   * route that breaks it is not a worse day — it is not a ski day. Where a
+   * mountain has nothing to offer somebody, the honest answer is the empty
+   * state and its list of fixes, not a plan.
+   *
+   * A blue skier at Monterosa was the case that found this. There are 21 blue
+   * edges and 9.6 km of blue piste, and none of it links up, so the sampler
+   * filled 90 minutes with gondola rides: 0.1 km skied, 17 metres of descent,
+   * 44% of the day riding a cable car downhill. Every genuine route measured
+   * across the three resorts spends at most 17% of the day riding down, which
+   * is a valley crossing or two, against 24-73% skiing.
+   */
+  let skiing = 0, ridingDown = 0;
+  for (const edge of segments) {
+    if (edge.kind === "run") skiing += edge.min;
+    else if (edge.down) ridingDown += edge.min;
+  }
+  if (ridingDown > skiing) return null;
 
   return { segments, minutes: elapsed };
 }

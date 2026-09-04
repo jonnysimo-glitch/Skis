@@ -144,6 +144,11 @@ function checkGraph(id, mod) {
    */
   const graph = asGraph({ NODES, SHORT_NAMES, buildEdges });
   const ABILITIES = ["blue", "red", "black"];
+  /**
+   * Every route this resort offers anybody, so what it offers can be checked
+   * rather than assumed. A day is a plan somebody will follow off a lift.
+   */
+  const offered = [];
   for (const start of bases) {
     const served = [];
     const longest = {};
@@ -158,6 +163,7 @@ function checkGraph(id, mod) {
           budget, startClock: 9 * 60, count: 1,
         });
         if (routes.length) best = Math.max(best, routes[0].minutes);
+        for (const route of routes) offered.push({ start, ability, budget, route });
       }
       longest[ability] = best;
       if (best >= 90) served.push(ability);
@@ -170,6 +176,53 @@ function checkGraph(id, mod) {
         `${NODES[start].name} — longest day: ` +
         ABILITIES.map((a) => `${a} ${longest[a]}min`).join(", "));
     }
+  }
+
+  /**
+   * What is in the days it offers.
+   *
+   * A route can satisfy every clock and still be nonsense. Riding one cable
+   * car up and down for five hours passes the budget check, the last-lift
+   * check and the repeat cap, and it was what a blue skier at Monterosa was
+   * handed: 0.1 km skied, 17 metres of descent, and 44% of the day spent
+   * riding a lift downhill. So the shape of a day is checked too.
+   */
+  if (offered.length) {
+    const transport = offered.filter(({ route }) => {
+      let ski = 0, down = 0;
+      for (const e of route.segments) {
+        if (e.kind === "run") ski += e.min;
+        else if (e.down) down += e.min;
+      }
+      return down > ski;
+    });
+    check(`${id}: no day spends longer riding down than skiing`, transport.length === 0,
+      transport.slice(0, 3).map(({ ability, route }) =>
+        `${ability}: ${route.km} km, ${route.vertical} m`).join("; "));
+
+    const reversals = offered.filter(({ route }) => route.segments.some((e, i) => {
+      const prev = route.segments[i - 1];
+      return prev && prev.kind === "lift" && e.kind === "lift" &&
+        prev.from === e.to && prev.to === e.from;
+    }));
+    check(`${id}: no day rides a lift straight back the way it came`, reversals.length === 0,
+      reversals.slice(0, 3).map(({ ability, route }) => `${ability}: ${route.title}`).join("; "));
+
+    const trivial = offered.filter(({ route }) => route.vertical < 150 || route.km < 1);
+    check(`${id}: every day skis somewhere`, trivial.length === 0,
+      trivial.slice(0, 3).map(({ ability, route }) =>
+        `${ability}: ${route.km} km, ${route.vertical} m in ${route.minutes} min`).join("; "));
+
+    const late = offered.filter(({ route, budget }) => {
+      let t = 9 * 60;
+      return route.segments.some((e) => {
+        const bad = e.kind === "lift" && t > e.lastUp;
+        t += e.min;
+        return bad;
+      }) || route.minutes > budget;
+    });
+    check(`${id}: nothing boards a lift after it has shut, or overruns`, late.length === 0,
+      late.slice(0, 3).map(({ ability, route }) => `${ability}: ${route.title}`).join("; "));
   }
 
   const total = RUNS.reduce((sum, r) => sum + (r[4] || 0), 0);

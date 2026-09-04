@@ -10,7 +10,7 @@
     11.13,
     46.24
   ],
-  "tolerance": 75,
+  "tolerance": 100,
   "bases": [
     "Andalo",
     "Fai della Paganella",
@@ -36,7 +36,7 @@
   ],
   "defaultBase": "Andalo",
   "defaultBaseWhy": "The main village and the larger of the two lift bases.",
-  "toleranceWhy": "Measured with npm run resort:tune. 75 is where the second valley connects: 14 of 15 lifts and 32 km against 7 lifts and 15 km at 60.",
+  "toleranceWhy": "100 stitches all 15 of the resort's published lifts into the graph; 75 left one of them unattached and cost a stranded node. It merges station endpoints a kilometre of piste apart into 47 nodes instead of 55, which is 1.1 km of piste less and the whole lift network more.",
   "published": {
     "lifts": 15,
     "runs": 31,

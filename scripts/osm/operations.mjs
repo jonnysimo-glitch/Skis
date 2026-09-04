@@ -135,13 +135,32 @@ function applyOperations(graph, config) {
     }
   }
 
+  /**
+   * A base is somewhere a ski day can start, which means a lift out of it.
+   *
+   * Three nodes on this mountain are called "Olang I - Valdaora I" — the
+   * valley station, the top station, and a way endpoint between them. The
+   * tie-break used to be edge count, measured before the prune, and it picked
+   * the one at 1194 m whose only exit is a red run. So a blue skier at
+   * Kronplatz could not leave the base: 30 km of blue piste up top, and the
+   * app could offer them nothing at all. Whether you can board a lift is the
+   * thing that makes a node a base, so it decides first.
+   */
+  const liftsOut = {};
+  for (const lift of graph.LIFTS) liftsOut[lift.from] = (liftsOut[lift.from] || 0) + 1;
+
   const chosen = new Set();
   for (const keys of candidates.values()) {
     chosen.add(keys.reduce((best, key) => {
-      const d = degree[key] || 0;
-      const bestD = degree[best] || 0;
-      if (d !== bestD) return d > bestD ? key : best;
-      return NODES[key].alt < NODES[best].alt ? key : best;
+      const up = (liftsOut[key] || 0) > 0;
+      const bestUp = (liftsOut[best] || 0) > 0;
+      if (up !== bestUp) return up ? key : best;
+      // Then the lower of the two, before edge count. "Korer" is the name of
+      // both ends of the same gondola, and the end you park at is the bottom
+      // one; the count of edges says nothing about which that is, and it is
+      // measured before the prune besides.
+      if (NODES[key].alt !== NODES[best].alt) return NODES[key].alt < NODES[best].alt ? key : best;
+      return (degree[key] || 0) > (degree[best] || 0) ? key : best;
     }));
   }
 

@@ -106,8 +106,8 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
             <Lift className="info__icon" width="17" height="17" />
             <span>
               {down.count === 1 ? "One leg rides" : `${down.count} legs ride`} a{" "}
-              {down.kinds.join(" or ")} back <b>down</b> — that is the dashed line
-              heading downhill, not a run.
+              {down.kinds.join(" or ")} back <b>down</b>. That dashed line heading
+              downhill is a lift, not a run.
             </span>
           </div>
         )}
