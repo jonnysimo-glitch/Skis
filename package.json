@@ -6,7 +6,7 @@
   "description": "Route planner for a day's skiing. Tell it where you are, when you need to be down, and what you're comfortable on.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/make-fetch-page.mjs && vite build",
     "preview": "vite preview",
     "test": "node src/solver.test.js && node scripts/osm/graph.test.mjs && node src/lib/graph.test.js && node src/map/field.test.js && node src/map/camera.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node src/lib/plan.test.js && node src/lib/friends.test.js && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
     "bench": "node scripts/bench-solver.js",
@@ -24,6 +24,7 @@
     "features": "npm run build && node scripts/features.mjs",
     "resort": "node scripts/build-resort.mjs",
     "resort:query": "node scripts/build-resort.mjs --query",
+    "resort:page": "node scripts/make-fetch-page.mjs",
     "icons": "node scripts/make-icons.mjs",
     "preflight": "node scripts/preflight.mjs",
     "resort:turbo": "node scripts/build-resort.mjs --turbo",
