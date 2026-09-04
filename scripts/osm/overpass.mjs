@@ -118,8 +118,13 @@ export async function fetchResort(resort, { force = false, offline = false, endp
 
   throw new Error(
     `Could not reach any Overpass mirror.\n  ${tried.join("\n  ")}\n\n` +
-      `If this environment blocks OSM, run the query in a browser at\n` +
-      `https://overpass-turbo.eu, export as GeoJSON->raw JSON, and save it to\n` +
-      `${path}. Then re-run with --offline.`
+      `A 403 on every mirror is a network policy, not an outage, and no amount\n` +
+      `of retrying gets round it. Two ways out:\n\n` +
+      `  1. Run it where the internet is open. The Resort data workflow in\n` +
+      `     .github/workflows/resort-data.yml does exactly this on a GitHub\n` +
+      `     runner and commits the result back. Actions tab, Run workflow.\n\n` +
+      `  2. Fetch it from a phone: open fetch-resort-data.html on the\n` +
+      `     deployed site, tap the resort, and save the file to\n` +
+      `     ${path}. Then re-run with --offline.`
   );
 }

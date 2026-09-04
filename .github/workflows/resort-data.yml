@@ -1,0 +1,103 @@
+# Fetch a resort's OpenStreetMap data and build its graph.
+#
+# This exists because the machine the app is developed on cannot reach
+# overpass-api.de: the network policy answers 403 at the CONNECT, on every
+# public mirror. A GitHub runner has no such policy, so the fetch happens here
+# and the result is committed back. Adding a resort is then a config file and
+# a button rather than anything manual.
+#
+# Not on push. Overpass is a volunteer service and running a full extraction on
+# every commit would be rude and slow; it is asked only when someone asks.
+name: Resort data
+
+on:
+  workflow_dispatch:
+    inputs:
+      resorts:
+        description: 'Which resorts, space separated. Blank does every config in scripts/resorts/.'
+        required: false
+        default: ''
+      tolerance:
+        description: 'Stitching tolerance in metres. Blank uses each config own value.'
+        required: false
+        default: ''
+  # Once a month, because OSM is edited continuously and a resort that gained a
+  # lift last season should not need someone to remember.
+  schedule:
+    - cron: '0 4 1 * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: resort-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Elevation tiles are fetched per resort and are large. Caching them
+      # keeps a re-run to the Overpass call, and keeps the load off a public
+      # bucket that owes us nothing.
+      - name: Cache elevation tiles
+        uses: actions/cache@v4
+        with:
+          path: data/dem
+          key: dem-${{ hashFiles('scripts/resorts/*.json') }}
+          restore-keys: dem-
+
+      - name: Fetch and build
+        run: |
+          ARGS="${{ github.event.inputs.resorts }}"
+          if [ -z "$ARGS" ]; then ARGS="--all"; fi
+          if [ -n "${{ github.event.inputs.tolerance }}" ]; then
+            ARGS="$ARGS --tolerance=${{ github.event.inputs.tolerance }}"
+          fi
+          echo "npm run resort -- $ARGS"
+          npm run resort -- $ARGS
+
+      # A graph that fails the suite must not be committed. The solver's
+      # behavioural checks are the thing that would notice a mountain stitched
+      # into two disconnected halves.
+      - name: Check nothing broke
+        run: npm test
+
+      - name: Commit the result
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/osm src/resorts
+          if git diff --cached --quiet; then
+            echo "No change: OSM has not moved since the last run."
+            exit 0
+          fi
+          git commit -m "Resort data from OpenStreetMap
+
+          Fetched and built by .github/workflows/resort-data.yml.
+          Run: ${{ github.run_id }}"
+          git push
+
+      # The report says how much stitching a graph needed, which is the number
+      # that tells you whether to trust it. Worth keeping even when the commit
+      # is a no-op.
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resort-report
+          path: |
+            data/osm/*.json
+            src/resorts/*.js
+          if-no-files-found: warn
+          retention-days: 14
