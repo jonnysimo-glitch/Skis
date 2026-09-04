@@ -41,6 +41,26 @@ export const routeStats = (route) => [
   { icon: Runs, k: "runs", v: route.distinctPistes ?? route.distinctRuns },
 ];
 
+/**
+ * Lifts a route rides downhill, grouped by kind.
+ *
+ * A gondola that runs both ways is a legitimate leg of a ski day — it is how
+ * you cross a valley when the piste back is shut or does not exist — but on
+ * the elevation profile and on the map it draws as a dashed line heading
+ * *down*, which reads as a bug rather than a ride. Every download edge in the
+ * graph is a gondola, cable car or funicular, so the honest fix is to say so
+ * rather than to hide the leg.
+ */
+export function ridesDown(route) {
+  const kinds = new Map();
+  for (const edge of legsOf(route)) {
+    if (edge.kind !== "lift" || !edge.down) continue;
+    kinds.set(edge.liftType, (kinds.get(edge.liftType) || 0) + 1);
+  }
+  const count = [...kinds.values()].reduce((a, b) => a + b, 0);
+  return { count, kinds: [...kinds.keys()] };
+}
+
 export const detailStats = (route) => [
   { icon: Descend, k: "descent", v: route.vertical.toLocaleString(), unit: " m" },
   { icon: Ruler, k: "distance", v: route.km, unit: " km" },

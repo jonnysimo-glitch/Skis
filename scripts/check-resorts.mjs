@@ -87,6 +87,43 @@ function checkGraph(id, mod) {
   check(`${id}: every lift has a ride time, last-up and queue`, badOps.length === 0,
     badOps.slice(0, 3).map((l) => l[2]).join(", "));
 
+  /**
+   * Direction. A dashed line heading downhill on the profile is a gondola
+   * ride, and the only reason it is trustworthy is that these hold: nothing
+   * flagged `down` is a drag lift or a chair, and no run ever climbs. If a
+   * future dataset breaks either one the app is drawing a lie.
+   */
+  const edges = mod.buildEdges();
+  const RIDEABLE_DOWN = new Set(["gondola", "cable car", "funicular"]);
+  const badDown = edges.filter((e) =>
+    e.down && (!RIDEABLE_DOWN.has(e.liftType) || !(e.gain < 0)));
+  check(`${id}: every ride down is a gondola, cable car or funicular`, badDown.length === 0,
+    badDown.slice(0, 3).map((e) => `${e.name} (${e.liftType}, ${e.gain} m)`).join("; "));
+  const badUp = edges.filter((e) => e.kind === "lift" && !e.down && !(e.gain > 0));
+  check(`${id}: every lift ridden up gains height`, badUp.length === 0,
+    badUp.slice(0, 3).map((e) => `${e.name} (${e.gain} m)`).join("; "));
+  // Zero is allowed: a flat link across a plateau or between two valley
+  // stations is a real piste, and three of them exist across these resorts.
+  // A negative drop is not — that is a run drawn the wrong way round.
+  const uphillRuns = edges.filter((e) => e.kind === "run" && !(e.drop >= 0));
+  check(`${id}: no run goes uphill`, uphillRuns.length === 0,
+    uphillRuns.slice(0, 3).map((e) => `${e.name} (${e.drop} m)`).join("; "));
+
+  /**
+   * Nothing on the mountain is called Point 61.
+   *
+   * Every node gets a name a skier could say out loud, and so does every run.
+   * A placeholder leaking into either is the specific thing that made the plan
+   * form useless, and it came back once already through a stage ordering.
+   */
+  const placeholder = /Point \d+|\bundefined\b|\bnull\b|^\s*$/;
+  const badNames = [
+    ...keys.filter((k) => placeholder.test(NODES[k].name || "")).map((k) => `node ${k}: ${NODES[k].name}`),
+    ...edges.filter((e) => placeholder.test(e.name || "")).map((e) => `${e.kind}: ${e.name}`),
+  ];
+  check(`${id}: nothing is called Point 61`, badNames.length === 0,
+    badNames.slice(0, 3).join("; "));
+
   const bases = keys.filter((k) => NODES[k].base);
   if (!check(`${id}: has at least one base to start and finish at`, bases.length > 0,
     "no node matched the config's `bases`")) return;

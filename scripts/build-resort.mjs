@@ -20,7 +20,7 @@ import { elevationFor } from "./osm/elevation.mjs";
 import { emit } from "./osm/emit.mjs";
 import { writeRegistry } from "./osm/registry.mjs";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
-import { contractChains } from "./osm/simplify.mjs";
+import { contractChains, nameRuns } from "./osm/simplify.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -84,8 +84,14 @@ async function buildOne(id) {
   // before the prune, so connectivity is judged on the graph the app will use.
   graph = contractChains(graph);
   graph = prune(graph);
+  // Last, so an unsigned run is described by the nodes that survived the
+  // merge and the prune, under the names they ended up with.
+  graph = nameRuns(graph);
 
   const r = graph.report;
+  if (r.runsNamedByEndpoints) {
+    console.log(`  named       ${r.runsNamedByEndpoints} unsigned run(s) named after where they go`);
+  }
   if (r.chainsMerged) {
     console.log(`  simplified  ${r.chainsMerged} way-end joins contracted, ` +
       `${r.nodesContracted} node(s) that were only a continuation removed`);

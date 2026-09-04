@@ -74,7 +74,7 @@ export function contractChains({ NODES, LIFTS, RUNS, report = {} }) {
         to: b.to,
         // The named half wins. OSM often names only the first way of a chain,
         // and "Salati to Point 31" is a worse answer than the piste's name.
-        name: pickName(a, b, nodes),
+        name: pickName(a, b),
         km: Math.round((a.km + b.km) * 10) / 10,
         minutes: a.minutes + b.minutes,
         metres: (a.metres || 0) + (b.metres || 0),
@@ -103,13 +103,49 @@ export function contractChains({ NODES, LIFTS, RUNS, report = {} }) {
 /**
  * The name for a merged run.
  *
- * A generated endpoint name ("Salati to Point 31") carries no information and
- * two of them joined carry less, so a real piste name on either half wins.
+ * OSM often signs only the first way of a chain, so a real piste name on
+ * either half wins. Neither half named leaves it null for nameRuns() below,
+ * which describes the whole thing once the merging has finished — naming it
+ * here would name it after a halfway point that is about to disappear.
  */
-function pickName(a, b, nodes) {
-  const generated = (name) => / to /.test(name) && /Point \d+/.test(name);
-  if (!generated(a.name)) return a.name;
-  if (!generated(b.name)) return b.name;
-  // Both generated: describe the whole thing rather than either half.
-  return `${nodes[a.from]?.name ?? a.from} to ${nodes[b.to]?.name ?? b.to}`;
+function pickName(a, b) {
+  return a.name || b.name || null;
+}
+
+/**
+ * The last resort: a run nobody signed, described by where it goes.
+ *
+ * Runs after the chains have merged and the junctions have their names, so
+ * both ends are a place a skier could point at rather than a placeholder.
+ */
+export function nameRuns({ NODES, LIFTS, RUNS, report }) {
+  let named = 0;
+  const runs = RUNS.map((run) => {
+    if (run.name) return run;
+    named++;
+    return { ...run, name: describe(NODES[run.from], NODES[run.to], run) };
+  });
+  return { NODES, LIFTS, RUNS: runs, report: { ...report, runsNamedByEndpoints: named } };
+}
+
+/**
+ * "Where does this one go?", answered in the words a skier would use.
+ *
+ * The endpoint names are written to locate a person standing on the mountain,
+ * which is not the same job: "Ostafa 1 junction" is a good answer to "where
+ * are you" and a bad half of a run name, and "Above Pianalunga-Bocchetta to
+ * Pianalunga-Bocchetta" is not a sentence anybody says. So the place words
+ * come off first, and a run between a place and just-above-it is described by
+ * the descent rather than by both ends of it.
+ */
+function describe(fromNode, toNode, run) {
+  const place = (n, key) => (n?.name ?? key).replace(/ junction$/, "");
+  const from = place(fromNode, run.from);
+  const to = place(toNode, run.to);
+  const under = (a, b) => a === `Above ${b}` || a === `Below ${b}`;
+
+  if (from === to) return `${from} link`;
+  if (under(from, to)) return `Down to ${to}`;
+  if (under(to, from)) return `Down from ${from}`;
+  return `${from} to ${to}`;
 }

@@ -285,10 +285,17 @@ export default function NavigateScreen({
         </div>
         <div className="navmetric">
           <div className="navmetric__v">
-            {speed !== null ? speed : isLift ? leg.gain : leg.drop}
+            {speed !== null ? speed : isLift ? Math.abs(leg.gain) : leg.drop}
             <span className="navmetric__u">{speed !== null ? "km/h" : "m"}</span>
           </div>
-          <div className="navmetric__k">{speed !== null ? "speed" : isLift ? "up" : "down"}</div>
+          {/* A gondola that runs both ways carries a negative gain in the
+              downhill direction, and this read the number straight out: a
+              cable car down to Stafal said "-352 m up". The sign is the
+              direction, so it belongs in the label, not in front of the
+              metre count. */}
+          <div className="navmetric__k">
+            {speed !== null ? "speed" : isLift && !leg.down ? "up" : "down"}
+          </div>
         </div>
         <div className={`navmetric${overrun > 0 ? " navmetric--warn" : ""}`}>
           <div className="navmetric__v">{minutesToClock(projectedFinish)}</div>

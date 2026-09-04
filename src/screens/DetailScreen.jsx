@@ -11,12 +11,12 @@
  */
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
-import { LegList, StatRow, detailStats, hours } from "../ui/RouteBits.jsx";
+import { LegList, StatRow, detailStats, hours, ridesDown } from "../ui/RouteBits.jsx";
 import { backAt, legClocks, LUNCH_MINUTES } from "../lib/plan.js";
-import { minutesToClock } from "../solver.js";
+import { minutesToClock, legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
 import { commitRoute } from "../lib/offline.js";
-import { Back, Download, Warning, Check, Wifi, Clock } from "../ui/Icons.jsx";
+import { Back, Download, Warning, Check, Wifi, Clock, Lift } from "../ui/Icons.jsx";
 
 export default function DetailScreen({ route, opts, plan, resortId, onStart, onBack }) {
   const back = backAt(route, opts);
@@ -34,6 +34,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
   };
 
   const stats = detailStats(route);
+  const down = ridesDown(route);
 
   return (
     <>
@@ -96,6 +97,21 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
           </div>
         )}
 
+        {/* Why a dashed line goes downhill on the profile and on the map.
+            Without this the leg looks like a mistake in the data, and the
+            first thing a skier does with a route they do not trust is close
+            it. */}
+        {down.count > 0 && (
+          <div className="info">
+            <Lift className="info__icon" width="17" height="17" />
+            <span>
+              {down.count === 1 ? "One leg rides" : `${down.count} legs ride`} a{" "}
+              {down.kinds.join(" or ")} back <b>down</b> — that is the dashed line
+              heading downhill, not a run.
+            </span>
+          </div>
+        )}
+
         {opts.lunch && (
           <div className="info">
             <Check className="info__icon" width="17" height="17" />
@@ -108,7 +124,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
 
         <div className="sectionrule">
           <div className="eyebrow" style={{ marginBottom: 4 }}>
-            {route.segments.length} legs · {hours(route.minutes)} on the hill
+            {legsOf(route).length} legs · {hours(route.minutes)} on the hill
           </div>
         </div>
 

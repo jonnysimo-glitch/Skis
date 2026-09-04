@@ -378,7 +378,18 @@ export function build(osm, { tolerance = 45, elevation }) {
     const raw = el.tags["piste:difficulty"];
     let difficulty = DIFFICULTY[raw];
     if (!difficulty) { difficulty = "red"; report.difficultyAssumed++; }
-    if (!el.tags.name) report.unnamedRuns++;
+    // The name a skier reads on the signpost, wherever OSM put it. `name` is
+    // the obvious place, but a third of Kronplatz's pistes carry it as
+    // `piste:name` instead, and some are signed only by number. Reading just
+    // `name` threw away nineteen real names — Seewiese, Arndt, Plateau, Sonne
+    // — and replaced them with a pair of junction names.
+    const signed =
+      el.tags.name ||
+      el.tags["piste:name"] ||
+      (el.tags["piste:ref"] || el.tags["piste:number"]
+        ? `Piste ${el.tags["piste:ref"] || el.tags["piste:number"]}`
+        : null);
+    if (!signed) report.unnamedRuns++;
 
     // Split the way wherever it passes through a graph node, so a run that
     // three others join is three edges rather than one uninterruptible slide.
@@ -408,7 +419,12 @@ export function build(osm, { tolerance = 45, elevation }) {
       const drop = NODES[from].alt - NODES[to].alt;
       RUNS.push({
         from, to,
-        name: el.tags.name || `${NODES[from].name} to ${NODES[to].name}`,
+        // Left null on purpose when nothing is signed. The endpoint fallback
+        // is applied by nameRuns() after the junctions have their own names
+        // and the chains have merged: built here it froze the placeholder, so
+        // a run came out as "Point 61 to Arndt" between two nodes since
+        // renamed "Above Plateau" and "Arndt".
+        name: signed,
         difficulty,
         km: Math.round((length / 1000) * 10) / 10,
         minutes: runMinutes(length, drop, difficulty),
@@ -437,8 +453,9 @@ export function build(osm, { tolerance = 45, elevation }) {
     const namedNodes = Object.entries(NODES).filter(([, n]) => n.named);
     const touching = {};
     for (const edge of [...LIFTS, ...RUNS]) {
-      const real = edge.name && !/ to |^Point \d+$/.test(edge.name);
-      if (!real) continue;
+      // Only a signed name locates a junction. Nothing is generated yet, so
+      // this no longer has to guess which names were.
+      if (!edge.name) continue;
       (touching[edge.from] ||= new Set()).add(edge.name);
       (touching[edge.to] ||= new Set()).add(edge.name);
     }
