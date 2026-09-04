@@ -1085,6 +1085,133 @@ try {
     await page.context_.close();
   }
 
+  // ------------------------------------------------------------------------
+  if (section("S. Every live resort serves every kind of skier")) {
+    // The brief's five moments, run against each resort that has data. The
+    // requirement is never "there is a route" — a small mountain honestly has
+    // nothing to offer a seven-hour day. It is that the app always answers:
+    // routes, or a plain reason and a fix that works. Never a crash, never a
+    // spinner that does not stop, never an invented day.
+    const PERSONAS = [
+      // Abilities are the chips' own labels, which are how a skier says it
+      // rather than the grade names: "Blue and red", not "red".
+      { name: "a full day from the base", t0: "09:00", t1: "16:00", ability: "Blue and red" },
+      { name: "an afternoon only", t0: "13:00", t1: "16:00", ability: "Blue and red" },
+      { name: "blue runs only", t0: "09:30", t1: "15:30", ability: "Blue" },
+      // The one the whole product is meant to be known for.
+      { name: "90 minutes and the car is elsewhere", t0: "14:00", t1: "15:30", ability: "Blue and red" },
+      { name: "an expert with the whole mountain", t0: "09:00", t1: "16:00", ability: "Anything" },
+    ];
+
+    for (const [index, resort] of LIVE.entries()) {
+      const page = await newPage(browser, { at: [9, 0] });
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".hero", { timeout: 20000 });
+      await (await page.$$(".hero"))[index].click();
+      await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 15000 });
+
+      for (const persona of PERSONAS) {
+        // Reload rather than navigate back. The choose screen has no route to
+        // the form that does not depend on which screen the last persona left
+        // us on, and the app restores the picked resort, so this lands on the
+        // mountain with Plan one tap away every time.
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.waitForSelector(".planbtn", { timeout: 20000 });
+        await toForm(page);
+        // fill, not a hand-rolled value assignment: React tracks a controlled
+        // input's value through a property descriptor, so setting .value and
+        // dispatching input does nothing. The first version of this section
+        // did exactly that and every persona silently solved the same default
+        // day — five identical passes that proved nothing.
+        await page.fill("#p-t0", persona.t0);
+        await page.fill("#p-t1", persona.t1);
+        for (const chip of await page.$$('.chips[aria-label="Ability"] .chip')) {
+          if ((await chip.evaluate((n) => n.textContent)).trim() === persona.ability) {
+            await chip.click();
+            break;
+          }
+        }
+
+        // Read it back before solving. A persona that did not apply is worse
+        // than a failing one, because it passes.
+        const applied = await page.evaluate(() => ({
+          t0: document.querySelector("#p-t0")?.value,
+          t1: document.querySelector("#p-t1")?.value,
+          ability: [...document.querySelectorAll('.chips[aria-label="Ability"] .chip')]
+            .find((c) => c.getAttribute("aria-pressed") === "true")?.textContent.trim(),
+        }));
+        check(`${resort.id}: ${persona.name} — the form took the settings`,
+          applied.t0 === persona.t0 && applied.t1 === persona.t1 &&
+          applied.ability === persona.ability,
+          `${applied.t0}-${applied.t1} ${applied.ability}`);
+
+        await page.click("text=Find routes");
+        // Either answer is fine. Neither arriving is not: that is the stuck
+        // solving screen a render crash leaves behind.
+        let outcome = "nothing";
+        try {
+          await page.waitForSelector(".routecard, .empty", { timeout: 25000 });
+          outcome = (await page.$(".routecard")) ? "routes" : "empty";
+        } catch { outcome = "stuck on solving" }
+
+        if (outcome === "routes") {
+          const titles = await page.$$eval(".routecard__nm", (n) => n.map((c) => c.textContent.trim()));
+          const numbers = (await page.$$eval(".routecard", (n) => n.map((c) => c.textContent).join(" ")));
+          check(`${resort.id}: ${persona.name} gets a day`, titles.length > 0 && titles.every(Boolean),
+            `${titles.length}: ${titles.slice(0, 2).join(", ")}`);
+          // A route with a missing number is worse than no route: it looks
+          // authoritative and is not.
+          check(`${resort.id}: ${persona.name} — every number is real`,
+            !/NaN|undefined|Infinity/.test(numbers),
+            (numbers.match(/NaN|undefined|Infinity/g) || []).join(", "));
+
+          // The promise the whole product rests on: nothing offered may get
+          // you back after the time you said you had to be down. Checked on
+          // the clock each card prints, not on the solver's own arithmetic,
+          // because that is the number a skier reads and trusts.
+          const backs = await page.$$eval(".routecard__back", (n) =>
+            n.map((c) => (c.textContent.match(/(\d{1,2}):(\d{2})/) || [])).filter((m) => m.length)
+              .map((m) => Number(m[1]) * 60 + Number(m[2])));
+          const due = toMinutes(persona.t1);
+          const late = backs.filter((b) => b > due);
+          check(`${resort.id}: ${persona.name} — nothing gets you back late`,
+            backs.length > 0 && late.length === 0,
+            backs.length
+              ? late.map((b) => `back ${Math.floor(b / 60)}:${String(b % 60).padStart(2, "0")}`).join(", ") ||
+                `${due - Math.max(...backs)} min to spare on the latest`
+              : "no return clock shown on any card");
+
+          // And it has to be a day, not a token loop: a seven-hour window that
+          // comes back a route of forty minutes has not answered the question.
+          const window = due - toMinutes(persona.t0);
+          const longest = Math.max(...backs) - toMinutes(persona.t0);
+          check(`${resort.id}: ${persona.name} — the day fills the window`,
+            longest >= window * 0.5,
+            `${longest} min offered against a ${window} min window`);
+        } else if (outcome === "empty") {
+          const headline = await page.$eval(".empty__big", (n) => n.textContent.trim());
+          const body = await page.$eval(".empty__p", (n) => n.textContent.trim());
+          const fixes = await page.$$eval(".fixlist button", (n) => n.length);
+          check(`${resort.id}: ${persona.name} is told why, plainly`,
+            headline.length > 10 && body.length > 20 && !/NaN|undefined/.test(headline + body),
+            headline);
+          // No fix is allowed when nothing would genuinely help, but the copy
+          // then has to be the kind that says so rather than trailing off.
+          check(`${resort.id}: ${persona.name} — the reason stands on its own`,
+            fixes > 0 || /shut|no |noth|not enough|already/i.test(headline + body),
+            `${fixes} fixes: ${body.slice(0, 70)}`);
+        } else {
+          check(`${resort.id}: ${persona.name} gets an answer at all`, false, outcome);
+        }
+      }
+
+      check(`${resort.id}: no page errors across all five`, page.errors.length === 0,
+        page.errors.slice(0, 2).join(" | "));
+      await page.context_.close();
+    }
+  }
+
   if (section("Q. How it reads")) {
     // Two rules, both easy to break by accident on the next copy edit.
     const page = await newPage(browser);

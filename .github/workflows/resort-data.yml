@@ -92,14 +92,17 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Gates the commit. scripts/check-resorts.mjs loads every generated
-      # module and asks the solver to plan a real day on it, which is what
-      # catches a mountain stitched into two halves. The rest of the suite
-      # covers the solver itself.
-      - name: Check nothing broke
-        run: npm test
-
-      - name: Commit the result
+      # The raw exports go first, before anything can fail.
+      #
+      # Asking Overpass is the slow and rude part of this job; building a graph
+      # from what it sent is fast and repeatable. An export is an input, so it
+      # is safe to keep whatever the build then makes of it — and if the build
+      # refuses the graph, having the export on the branch means the next
+      # attempt is a local `--offline` build instead of another twenty minutes
+      # of someone else's donated hardware. The first time the build failed
+      # this way the export survived only because it had been committed before
+      # the graph existed at all.
+      - name: Bank the raw exports
         env:
           BRANCH: ${{ github.ref_name }}
         run: |
@@ -108,15 +111,49 @@ jobs:
           # git does not track empty directories, so data/osm does not survive
           # a clone. Without this, `git add` on a run that fetched nothing
           # fails on the pathspec and reports a red X for a no-op.
-          mkdir -p data/osm src/resorts
-          git add data/osm src/resorts
+          mkdir -p data/osm
+          git add data/osm
           if git diff --cached --quiet; then
-            echo "No change: OSM has not moved since the last run."
+            echo "No new or changed export."
             exit 0
           fi
-          git commit -m "Resort data from OpenStreetMap
+          git commit -m "OpenStreetMap exports for the resort graphs
 
-          Fetched and built by .github/workflows/resort-data.yml.
+          The raw Overpass responses, committed before the graphs are built so
+          a refused graph does not cost another fetch.
+          Run: ${{ github.run_id }}"
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$BRANCH"; then exit 0; fi
+            sleep $((attempt * 5))
+            git pull --rebase --autostash origin "$BRANCH" || exit 1
+          done
+          exit 1
+
+      # Gates the graphs, not the exports. scripts/check-resorts.mjs loads
+      # every generated module and asks the solver to plan a real day on it,
+      # which is what catches a mountain stitched into two halves. It also
+      # fails when an export has no graph beside it — which is now an expected
+      # state rather than an impossible one, so this step is where that shows
+      # up, with the export already safe on the branch.
+      - name: Check nothing broke
+        run: npm test
+
+      - name: Commit the graphs
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p src/resorts
+          git add src/resorts
+          if git diff --cached --quiet; then
+            echo "No change: the graphs are the same as last time."
+            exit 0
+          fi
+          git commit -m "Resort graphs from OpenStreetMap
+
+          Built by .github/workflows/resort-data.yml from the exports in
+          data/osm.
           Run: ${{ github.run_id }}"
           # A push can lose a race with someone pushing to the same branch.
           # Rebase and retry rather than making a person re-run the fetch.
