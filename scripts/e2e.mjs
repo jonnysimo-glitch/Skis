@@ -35,6 +35,17 @@ const liveGraph = graphFor(LIVE[0].id);
 const allKeys = Object.keys(liveGraph.NODES);
 const baseKeys = allKeys.filter((k) => liveGraph.NODES[k].base);
 
+/**
+ * The key of the place called `name`, or null.
+ *
+ * Cases used to name keys directly — "champoluc" — which stopped existing when
+ * the graph came from OSM: that place is now a node keyed p31 that carries the
+ * name Champoluc. A selectOption for a value with no option waits until the
+ * whole run times out, so this looks the name up instead.
+ */
+const keyNamed = (name) =>
+  allKeys.find((k) => new RegExp(name, "i").test(liveGraph.NODES[k].name)) ?? null;
+
 const HEADED = process.argv.includes("--headed");
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).toLowerCase();
 
@@ -603,7 +614,15 @@ try {
       const page = await newPage(browser);
       await toPlan(page, url);
       if (opts.ability) await page.click(`button.chip:text-is("${opts.ability}")`);
-      if (opts.finish) await page.selectOption("#p-finish", opts.finish);
+      // By name: see keyNamed above.
+      const finishKey = opts.finish ? keyNamed(opts.finish) : null;
+      if (opts.finish && !finishKey) {
+        check(`${label}: the resort has a place called ${opts.finish}`, false,
+          "not in the graph, so this case cannot run");
+        await page.context_.close();
+        continue;
+      }
+      if (finishKey) await page.selectOption("#p-finish", finishKey);
       await page.fill("#p-t0", opts.t0);
       await page.fill("#p-t1", opts.t1);
       await solve(page);
