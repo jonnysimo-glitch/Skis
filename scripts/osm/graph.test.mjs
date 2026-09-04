@@ -43,9 +43,11 @@ const OSM = {
     // No duration: estimated from length and the speed a chair runs at.
     { type: "way", id: 11, tags: { aerialway: "chair_lift", name: "Summit chair" },
       nodes: [2, 3], geometry: [at(46.16, 11.01), at(46.17, 11.02)] },
-    // Drawn downhill. A lift goes up whichever way the mapper drew it.
+    // Drawn downhill. A lift goes up whichever way the mapper drew it. It also
+    // returns to the middle station, so the nursery area is part of the
+    // mountain rather than an island the prune would rightly discard.
     { type: "way", id: 12, tags: { aerialway: "drag_lift", name: "Nursery drag" },
-      nodes: [30, 31], geometry: [at(46.1555, 11.004), at(46.152, 11.001)] },
+      nodes: [31, 2], geometry: [at(46.16, 11.01), at(46.152, 11.001)] },
     // Not a lift, whatever the marketing says.
     { type: "way", id: 13, tags: { aerialway: "zip_line", name: "Zip wire" },
       nodes: [1, 3], geometry: [at(46.15, 11.0), at(46.17, 11.02)] },
@@ -57,12 +59,15 @@ const OSM = {
     // what tracing from a GPS trace against someone else's imagery looks like.
     { type: "way", id: 21, tags: { "piste:type": "downhill", "piste:difficulty": "easy", name: "Valley blue" },
       nodes: [41, 42, 1], geometry: [at(46.16022, 11.01), at(46.155, 11.005), at(46.15, 11.0)] },
-    // No difficulty tag at all.
+    // No difficulty tag at all. Crosses "Summit red" at node 40, sharing it,
+    // which is exactly how OSM maps a junction and the only genuine one here.
     { type: "way", id: 22, tags: { "piste:type": "downhill", name: "Direct" },
-      nodes: [3, 43, 1], geometry: [at(46.17, 11.02), at(46.16, 11.005), at(46.15, 11.0)] },
-    // No name either.
+      nodes: [3, 40, 43, 1],
+      geometry: [at(46.17, 11.02), at(46.165, 11.015), at(46.16, 11.005), at(46.15, 11.0)] },
+    // No name either. Runs from the middle station down to the nursery drag.
     { type: "way", id: 23, tags: { "piste:type": "downhill", "piste:difficulty": "novice" },
-      nodes: [31, 30], geometry: [at(46.152, 11.001), at(46.1555, 11.004)] },
+      nodes: [2, 30, 31],
+      geometry: [at(46.16, 11.01), at(46.1555, 11.004), at(46.152, 11.001)] },
     // A one-way trap: skiable down, nothing comes back. Must not survive.
     { type: "way", id: 24, tags: { "piste:type": "downhill", "piste:difficulty": "advanced", name: "The trap" },
       nodes: [3, 50], geometry: [at(46.17, 11.02), at(46.18, 11.04)] },
@@ -152,6 +157,27 @@ is("and a merged node sits between the points that formed it",
 is("a restaurant at a station marks it for lunch", raw.NODES[middle[0]].rifugio === true);
 const valley = Object.entries(raw.NODES).find(([, n]) => n.name === "Valley");
 is("a restaurant down in the village does not", raw.NODES[valley[0]].rifugio !== true);
+
+console.log("\nA JUNCTION IS A SHARED NODE, NOT EVERY VERTEX");
+// Node 40 is interior to both "Summit red" and "Direct", which is how OSM maps
+// a junction. Node 43 is interior to "Direct" alone and is just a bend in the
+// piste. Counting the second as a junction turned every vertex of every piste
+// into a graph node — 951 of them for Monterosa — chopping runs into
+// hundred-metre fragments and merging neighbouring vertices into each other,
+// which chained whole valleys into one blob and left the largest strongly
+// connected component covering a single valley.
+is("exactly one junction is found in the fixture", raw.report.junctions === 1,
+  `${raw.report.junctions}`);
+is("the piste that is crossed is split there",
+  raw.RUNS.filter((r) => r.name === "Summit red").length === 2,
+  raw.RUNS.filter((r) => r.name === "Summit red").map((r) => `${r.from}->${r.to}`).join(", "));
+is("and a plain bend does not become a node",
+  raw.RUNS.filter((r) => r.name === "Direct").length === 2,
+  raw.RUNS.filter((r) => r.name === "Direct").map((r) => `${r.from}->${r.to}`).join(", "));
+// The count that matters: a toy mountain with three lifts and six pistes must
+// come out as a handful of places, not one per traced vertex.
+is("the graph is places, not vertices", Object.keys(raw.NODES).length <= 10,
+  `${Object.keys(raw.NODES).length} nodes`);
 
 console.log("\nPRUNING TO WHAT CANNOT STRAND YOU");
 const pruned = prune(raw);

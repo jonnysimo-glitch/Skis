@@ -64,11 +64,44 @@ function applyOperations(graph, config) {
 
   // Bases are editorial: which valley stations a skier would drive to and park
   // at. Matched on name so the config survives a graph rebuild renumbering.
+  //
+  // One name can match several nodes. OSM names a lift station, a car park and
+  // a hamlet the same thing, and stitching only merges them if they fall
+  // within the tolerance of each other — Monterosa came out with two separate
+  // "Stafal" bases twenty metres apart in altitude, which in the app is two
+  // identical choices in the base picker. So each configured name marks one
+  // node: the busiest, since a base is where lifts start, and the lowest of
+  // those if they tie, since that is where the road reaches.
   const wanted = new Set(config.bases || []);
   const NODES = { ...graph.NODES };
-  let bases = 0;
+
+  const degree = {};
+  for (const edge of [...graph.LIFTS, ...graph.RUNS]) {
+    degree[edge.from] = (degree[edge.from] || 0) + 1;
+    degree[edge.to] = (degree[edge.to] || 0) + 1;
+  }
+  const candidates = new Map(); // matched name -> node keys
   for (const [key, node] of Object.entries(NODES)) {
-    if (wanted.has(node.name) || wanted.has(key)) {
+    const match = wanted.has(node.name) ? node.name : wanted.has(key) ? key : null;
+    if (!match) continue;
+    if (!candidates.has(match)) candidates.set(match, []);
+    candidates.get(match).push(key);
+  }
+
+  const chosen = new Set();
+  for (const keys of candidates.values()) {
+    chosen.add(keys.reduce((best, key) => {
+      const d = degree[key] || 0;
+      const bestD = degree[best] || 0;
+      if (d !== bestD) return d > bestD ? key : best;
+      return NODES[key].alt < NODES[best].alt ? key : best;
+    }));
+  }
+
+  let bases = 0;
+  const duplicateBases = [...candidates.values()].reduce((n, keys) => n + keys.length - 1, 0);
+  for (const [key, node] of Object.entries(NODES)) {
+    if (chosen.has(key)) {
       NODES[key] = { ...node, base: true, area: config.areas?.[node.name] ?? node.area };
       bases++;
     } else if (config.areas?.[node.name]) {
@@ -76,7 +109,7 @@ function applyOperations(graph, config) {
     }
   }
 
-  return { ...graph, NODES, LIFTS, report: { ...graph.report, liftHoursMatched: matched, bases } };
+  return { ...graph, NODES, LIFTS, report: { ...graph.report, liftHoursMatched: matched, bases, duplicateBases } };
 }
 
 /**
@@ -140,8 +173,23 @@ async function buildOne(id) {
   const r = graph.report;
   console.log(`  connected   kept ${r.nodesKept} of ${r.nodesKept + r.nodesDropped} nodes ` +
     `(${r.components} components), dropped ${r.liftsDropped} lifts and ${r.runsDropped} runs`);
+  // Two different faults, and the numbers tell them apart. Nodes outside the
+  // largest undirected piece are places the data never joined to the mountain
+  // at all — a clipped valley, a lift stopping short of its piste, endpoints
+  // beyond the stitching tolerance. Nodes inside that piece but outside the
+  // strongly connected core are places you can reach and not leave, which is a
+  // missing or one-way lift. The first wants a wider bbox or more tolerance;
+  // the second wants a look at the lifts.
+  const unjoined = r.nodesKept + r.nodesDropped - r.largestPiece;
+  if (unjoined || r.strandedOnly) {
+    console.log(`  broken      ${r.pieces} unjoined piece(s): ${unjoined} node(s) never touch the ` +
+      `mountain, ${r.strandedOnly} more can be reached but not left`);
+  }
   if (r.difficultyAssumed) console.log(`  assumed     ${r.difficultyAssumed} pistes had no difficulty, taken as red`);
-  if (r.bases !== undefined) console.log(`  bases       ${r.bases} matched from config`);
+  if (r.bases !== undefined) {
+    console.log(`  bases       ${r.bases} matched from config` +
+      (r.duplicateBases ? `, ${r.duplicateBases} same-named node(s) not marked` : ""));
+  }
 
   const problems = check(graph);
   if (problems.length) {

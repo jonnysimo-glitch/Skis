@@ -79,9 +79,50 @@ function stronglyConnected(nodeKeys, edges) {
  *
  * @returns {{ NODES, LIFTS, RUNS, report }}
  */
+/**
+ * Pieces of the mountain that are not joined by any edge at all, in either
+ * direction.
+ *
+ * This is a different fault from the strongly connected one below, and needs a
+ * different fix. Undirected pieces mean the data does not physically join up:
+ * a lift that stops short of the piste it serves, a valley whose lower slopes
+ * were clipped by the bounding box, endpoints further apart than the stitching
+ * tolerance. More strongly connected components than undirected pieces means
+ * the opposite — the mountain does join up and you cannot get back, which is a
+ * missing or one-way lift.
+ *
+ * Reported rather than acted on, because telling the two apart is the first
+ * thing anyone looking at a disappointing graph needs to know.
+ */
+function undirectedPieces(keys, edges) {
+  const adj = {};
+  for (const key of keys) adj[key] = [];
+  for (const e of edges) {
+    if (!adj[e.from] || !adj[e.to]) continue;
+    adj[e.from].push(e.to);
+    adj[e.to].push(e.from);
+  }
+  const seen = new Set();
+  const pieces = [];
+  for (const key of keys) {
+    if (seen.has(key)) continue;
+    const stack = [key];
+    const piece = [];
+    seen.add(key);
+    while (stack.length) {
+      const at = stack.pop();
+      piece.push(at);
+      for (const next of adj[at]) if (!seen.has(next)) { seen.add(next); stack.push(next); }
+    }
+    pieces.push(piece);
+  }
+  return pieces.sort((a, b) => b.length - a.length);
+}
+
 export function prune({ NODES, LIFTS, RUNS, report = {} }) {
   const keys = Object.keys(NODES);
   const edges = [...LIFTS, ...RUNS];
+  const pieces = undirectedPieces(keys, edges);
   const components = stronglyConnected(keys, edges);
   components.sort((a, b) => b.length - a.length);
   const keep = new Set(components[0] || []);
@@ -98,6 +139,9 @@ export function prune({ NODES, LIFTS, RUNS, report = {} }) {
     report: {
       ...report,
       components: components.length,
+      pieces: pieces.length,
+      largestPiece: pieces[0]?.length ?? 0,
+      strandedOnly: (pieces[0]?.length ?? 0) - Object.keys(keptNodes).length,
       nodesKept: Object.keys(keptNodes).length,
       nodesDropped: keys.length - Object.keys(keptNodes).length,
       liftsKept: keptLifts.length,

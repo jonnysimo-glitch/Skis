@@ -201,6 +201,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     unnamedRuns: 0,
     geometryHoles: 0,
     waysWithHoles: 0,
+    junctions: 0,
   };
 
   if (!lifts.length) throw new Error("No aerialways in the data. Check the bounding box.");
@@ -257,21 +258,39 @@ export function build(osm, { tolerance = 45, elevation }) {
     endpointRef.set(`${el.id}:end`, clusters.add({ ...b, wayId: el.id, role: "end" }));
   }
 
-  // Shared interior nodes: a junction where one piste splits off another.
-  const seen = new Map();
+  // A junction is an interior point of a piste that some other way also uses.
+  //
+  // Every way's every node ref is counted, endpoints included, because the
+  // commonest junction on a mountain is a T: one piste ends in the middle of
+  // another, which OSM maps by sharing a node. Counting only interior uses
+  // would miss those and leave the joining piste a dead end.
+  //
+  // The threshold has to be two. Counting interior points with a use count of
+  // one made a graph node out of every single vertex of every piste — nine
+  // hundred and fifty for Monterosa instead of a few dozen — so pistes were
+  // chopped into hundred-metre fragments and neighbouring vertices, usually
+  // closer together than the stitching tolerance, merged into each other and
+  // chained whole valleys into one blob. The largest strongly connected
+  // component came out as a single valley and everything else was pruned away.
+  const uses = new Map();
+  for (const el of [...lifts, ...pistes]) {
+    if (!Array.isArray(el.nodes)) continue;
+    for (const nodeId of el.nodes) uses.set(nodeId, (uses.get(nodeId) || 0) + 1);
+  }
+
+  const junctionRef = new Map();
   for (const el of pistes) {
     if (!el.geometry || !el.nodes) continue;
     el.nodes.forEach((nodeId, i) => {
       if (i === 0 || i === el.nodes.length - 1) return;
-      if (!seen.has(nodeId)) { seen.set(nodeId, { count: 0, at: el.geometry[i] }); }
-      seen.get(nodeId).count++;
+      if (junctionRef.has(nodeId)) return;
+      if ((uses.get(nodeId) || 0) < 2) return;
+      const at = el.geometry[i];
+      if (!at) return;
+      junctionRef.set(nodeId, clusters.add({ ...at, role: "junction" }));
     });
   }
-  const junctionRef = new Map();
-  for (const [nodeId, { count, at }] of seen) {
-    if (count < 1 || !at) continue;
-    junctionRef.set(nodeId, clusters.add({ ...at, role: "junction" }));
-  }
+  report.junctions = junctionRef.size;
 
   // --- clusters become nodes -------------------------------------------------
   const groups = clusters.groups();
