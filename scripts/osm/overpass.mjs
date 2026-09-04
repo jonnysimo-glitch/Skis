@@ -153,6 +153,14 @@ export async function fetchResort(resort, { force = false, offline = false, endp
     // re-run would have rebuilt the same junctionless mountain from disk and
     // never asked Overpass again.
     if (offline) {
+      // A bounding box that has moved is a reason to refetch, not a reason to
+      // refuse: the cached export is still real data, just covering less than
+      // the config now asks for. Anything else — an export with no node
+      // references, say — cannot build at all and still stops here.
+      if (/bounding box/.test(stale)) {
+        console.log(`  cache       ${stale}; building from what is cached`);
+        return { ...raw, source: "cache", path, narrow: true };
+      }
       throw new Error(
         `The cached OSM data for "${resort.id}" is stale: ${stale}\n` +
           `  Re-fetch it with:  npm run resort -- ${resort.id} --force\n` +

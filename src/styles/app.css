@@ -293,9 +293,14 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   display: inline-flex; align-items: center; gap: var(--s-2);
 }
 .chip:active { transform: scale(0.96); }
+/* Selected, on a dark theme.
+   This used to fill with --ink and write in white, which worked when --ink was
+   near-black and became white text on a white chip the moment the theme
+   flipped. The accent is what "chosen" means everywhere else in this app, so
+   it is what a chosen chip is filled with. */
 .chip[aria-pressed="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
   font-weight: 600;
 }
@@ -372,7 +377,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   transition: background 0.14s var(--ease-std), color 0.14s var(--ease-std);
 }
 .segmented__opt[aria-pressed="true"] {
-  background: var(--surface);
+  background: var(--surface-3);
   color: var(--ink);
   box-shadow: var(--e-1);
 }

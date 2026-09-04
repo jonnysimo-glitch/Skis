@@ -136,6 +136,12 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, report, fetchedAt }) {
       n.area ? `area: ${quote(n.area)}` : null,
       n.base ? "base: true" : null,
       n.rifugio ? "rifugio: true" : null,
+      // Whether OSM actually named this place. An unnamed junction carries a
+      // description so the plan form can offer it as somewhere you might be
+      // standing ("Above Gabiet"), and the map needs to know not to write that
+      // on the mountain. Dropping this flag was why "Point 74" was still
+      // being drawn after the labels were supposedly fixed.
+      n.named === false ? "named: false" : null,
     ].filter(Boolean);
     return `  ${pad(key + ":", keyWidth)}{ name: ${pad(quote(n.name) + ",", nameWidth)} ` +
       `lat: ${n.lat.toFixed(5)}, lon: ${n.lon.toFixed(5)}, alt: ${n.alt}` +

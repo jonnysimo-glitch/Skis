@@ -153,7 +153,12 @@ function applyOperations(graph, config) {
   for (const [name, keys] of candidates) {
     for (const key of keys) if (chosen.has(key) && !chosenBy.has(key)) chosenBy.set(key, name);
   }
-  const generated = (name) => /^Point \d+$/.test(String(name || ""));
+  // The flag, not the text. Unnamed junctions are given a readable
+  // description in graph.mjs before this runs, so testing for "Point 74"
+  // stopped matching and Monterosa's Alagna gondola station kept "Below
+  // Crest" instead of becoming Champoluc — which cost it a whole valley,
+  // because the area comes off the name.
+  const generated = (node) => node.named === false;
 
   for (const [key, node] of Object.entries(NODES)) {
     if (chosen.has(key)) {
@@ -161,7 +166,7 @@ function applyOperations(graph, config) {
       // Monterosa's Alagna gondola station is just a way endpoint, so the app
       // opened its default day at "Point 31". The configured name that found
       // it is the right name for it, and the one a skier would use.
-      const name = generated(node.name) ? chosenBy.get(key) ?? node.name : node.name;
+      const name = generated(node) ? chosenBy.get(key) ?? node.name : node.name;
       if (name !== node.name) renamedBases++;
       NODES[key] = {
         ...node,

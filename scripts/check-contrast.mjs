@@ -67,14 +67,23 @@ const check = (name, ok, detail) => {
 
 console.log("\nTEXT CONTRAST (WCAG AA)");
 const white = "#ffffff";
+// Against the surface tokens rather than a hardcoded white. Every one of
+// these read "on white" while the app was a light theme, so flipping it to
+// dark left them all checking a background that is no longer behind anything.
+const surface = token("surface");
 const pairs = [
   ["white on the primary button", white, token("accent"), 4.5],
-  ["accent text on white", token("accent-ink"), white, 4.5],
-  ["body text on white", token("ink"), white, 4.5],
-  ["secondary text on white", token("ink-2"), white, 4.5],
-  ["tertiary text on white", token("ink-3"), white, 4.5],
+  ["accent text on the surface", token("accent-ink"), surface, 4.5],
+  ["body text on the surface", token("ink"), surface, 4.5],
+  ["secondary text on the surface", token("ink-2"), surface, 4.5],
+  ["tertiary text on the surface", token("ink-3"), surface, 4.5],
+  ["body text on the tinted surface", token("ink"), token("surface-2"), 4.5],
   ["secondary text on the tinted surface", token("ink-2"), token("surface-2"), 4.5],
-  ["white on the dark banner", white, token("n-95"), 4.5],
+  // The pair that was missing. Most small print in this app — hints, notes,
+  // stat labels — sits on the tinted surface rather than the base one, and
+  // checking only the base one let 23 failures through to the audit.
+  ["tertiary text on the tinted surface", token("ink-3"), token("surface-2"), 4.5],
+  ["text on the app background", token("ink"), token("n-95"), 4.5],
 ];
 for (const [name, fg, bg, min] of pairs) {
   const c = contrast(fg, bg);

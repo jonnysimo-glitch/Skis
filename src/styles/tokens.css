@@ -26,42 +26,66 @@
   --accent-press: #005f84;
   --accent-tint: #e8f5fb;
   --accent-line: #2ac4ee;   /* over terrain: brightness beats text contrast */
-  --accent-ink: #036183;    /* accent-coloured text on light backgrounds */
+  --accent-ink: #5cd3f5;    /* accent-coloured text, on the dark surface */
 
   /* --- Neutrals -----------------------------------------------------------
      Snow and its shadow: a single ramp, cool throughout, so the whole surface
      reads as ice rather than as grey. Contrast against white is checked, not
      assumed — --n-50 used to be too light to carry text.
 
-     Deepened once, after a tester put it plainly: the colour suits the snow
-     and mountain theme but it was too light. The whole ramp came down by
+     Deepened twice, after a tester put it plainly: the colour suits the snow
+     and mountain theme but it was too light, and then, asked what he meant,
+     "more blue and black". So the ramp is both darker and further round
+     towards blue — every rung carries more of it, and the dark end is close
+     to black rather than to slate. The whole ramp came down by
      roughly one step, which gives the tinted surfaces enough presence to read
      as surfaces rather than as almost-white, and every rung more weight
      against the map behind it. The piste signals below are untouched, because
      they are safety signals rather than a mood. scripts/check-contrast.mjs is
      what says whether this is still legible. */
   --n-00: #ffffff;
-  --n-05: #e9f0f6;
-  --n-10: #dae4ee;
-  --n-20: #c4d3e0;
-  --n-30: #a4b9ca;
-  --n-40: #7d95a9;
-  --n-50: #52697b;   /* AA on the tinted card surface, not just on white */
-  --n-60: #3f5567;
-  --n-70: #2d4052;
-  --n-80: #1b2b38;
-  --n-90: #101f2b;
-  --n-95: #07141d;
+  --n-05: #e4edf5;
+  --n-10: #d2e0ec;
+  --n-20: #b7cbdd;
+  --n-30: #92aec6;
+  --n-40: #6a89a4;
+  --n-50: #445e75;   /* AA on the tinted card surface, not just on white */
+  --n-60: #314a60;
+  --n-70: #223648;
+  --n-80: #13222f;
+  --n-90: #0a1622;
+  --n-95: #040c14;
 
-  --ink: var(--n-95);
-  --ink-2: var(--n-60);
-  --ink-3: var(--n-50);
+  /* --- The theme ----------------------------------------------------------
+     Dark, and blue rather than grey.
+
+     This was a light theme — white surfaces, near-black text — and the ramp
+     above was deepened twice trying to answer the same note each time: too
+     light, more blue and black. Deepening a light theme was never going to
+     satisfy that, because the thing being asked about was the surfaces.
+
+     So the roles are the other way round now. It also happens to be the right
+     answer for what this app is: the map is the hero and the map is a
+     mountain, so chrome that recedes into the dark leaves the terrain as the
+     brightest thing on screen. And it is a phone held on a chairlift in flat
+     alpine light, where a white panel is a torch.
+
+     Contrast is asserted against these tokens rather than against white, in
+     scripts/check-contrast.mjs, and against real composited pixels in
+     scripts/audit.mjs. */
+  --ink: #eef5fa;          /* cool white, not pure: pure white glares on OLED */
+  --ink-2: var(--n-30);
+  /* One rung lighter than the ramp suggests, on purpose. --ink-3 at --n-40
+     cleared 4.5:1 against the base surface and only managed 4.12 against the
+     tinted one, which is what most small print actually sits on — 23 findings
+     across the audit, every one of them the same pair. */
+  --ink-3: var(--n-30);
   --ink-4: var(--n-40);
-  --surface: var(--n-00);
-  --surface-2: var(--n-05);
-  --surface-3: var(--n-10);
-  --line: var(--n-20);
-  --line-strong: var(--n-30);
+  --surface: #0e1c28;      /* panels and sheets */
+  --surface-2: #162836;    /* controls and tinted cards */
+  --surface-3: #1f3647;    /* pressed states */
+  --line: #24394b;
+  --line-strong: #35516a;
 
   /* --- Domain signals -----------------------------------------------------
      European piste convention. Not decoration — do not restyle. */
@@ -70,9 +94,9 @@
   --piste-black: #101820;
   --lift: #7d95a5;
 
-  --warn: #8a4f0c;
-  --warn-bg: #f7ecdb;
-  --warn-line: #e0c79a;
+  --warn: #f0b45e;
+  --warn-bg: #2c2113;
+  --warn-line: #4a3a1e;
 
   /* An informational note, which is not a warning.
      A tester said the pale orange panel looked like the ones on a
@@ -80,9 +104,9 @@
      "sharing is not connected yet" is not a caution, it is a fact about the
      build. Cool and quiet, so it belongs to the app rather than shouting at
      someone about their booking. */
-  --note-bg: var(--n-05);
-  --note-line: var(--n-20);
-  --note-ink: var(--n-60);
+  --note-bg: var(--surface-2);
+  --note-line: var(--line);
+  --note-ink: var(--ink-2);
 
   /* --- Type ---------------------------------------------------------------
      Body resolves to SF Pro on iPhone, so text metrics match the OS. Inter is

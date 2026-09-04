@@ -37,6 +37,7 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
           <button
             key={r.id}
             className="hero"
+            data-resort={r.id}
             aria-pressed={selected === r.id}
             onClick={() => onSelect(r.id)}
           >
@@ -57,7 +58,7 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
                     number a skier can check against anything. */}
                 <span className="hero__stat"><b>{r.stats.km ?? r.stats.runs}</b><span>{r.stats.km ? "km piste" : "runs"}</span></span>
                 <span className="hero__stat"><b>{(r.stats.top / 1000).toFixed(1)}k</b><span>m top</span></span>
-                <span className="hero__stat"><b>{r.stats.valleys}</b><span>valleys</span></span>
+                <span className="hero__stat"><b>{r.stats.valleys}</b><span>{r.stats.valleys === 1 ? "valley" : "valleys"}</span></span>
               </span>
             </span>
           </button>
