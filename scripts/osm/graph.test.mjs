@@ -192,5 +192,66 @@ const stranded = check({
 });
 is("a base no other base can reach is caught", stranded.some((p) => /cannot reach/.test(p)), stranded.join(" | "));
 
+console.log("\nREAL OVERPASS DEFECTS THE FIXTURES NEVER HAD");
+// Overpass leaves a null in the geometry array for a vertex it will not
+// resolve, keeping it the same length as the node refs. The first real fetch of
+// Monterosa had two of these: the Alagna-Pianalunga gondola with five leading
+// holes, and the Alagna black with twenty-four trailing ones. Before this was
+// handled, wayLength dereferenced the null and the whole build died with
+// "Cannot read properties of null".
+const holed = {
+  elements: [
+    { type: "node", id: 1, lat: 46.15, lon: 11.0, tags: { aerialway: "station", name: "Valley" } },
+    { type: "node", id: 3, lat: 46.17, lon: 11.02, tags: { natural: "peak", name: "Summit" } },
+    // Leading holes, as the gondola had.
+    { type: "way", id: 10, tags: { aerialway: "gondola", name: "Holed gondola" },
+      nodes: [98, 99, 1, 2, 3],
+      geometry: [null, null, at(46.15, 11.0), at(46.16, 11.01), at(46.17, 11.02)] },
+    // An interior hole: the length is measured straight across the gap.
+    { type: "way", id: 20, tags: { "piste:type": "downhill", "piste:difficulty": "intermediate", name: "Holed red" },
+      nodes: [3, 40, 41, 1],
+      geometry: [at(46.17, 11.02), at(46.165, 11.015), null, at(46.15, 11.0)] },
+    // Trailing holes, as the black had.
+    { type: "way", id: 21, tags: { "piste:type": "downhill", "piste:difficulty": "easy", name: "Holed blue" },
+      nodes: [3, 42, 1, 96, 97],
+      geometry: [at(46.17, 11.02), at(46.16, 11.005), at(46.15, 11.0), null, null] },
+  ],
+};
+let holedGraph = null;
+try {
+  holedGraph = build(structuredClone(holed), { tolerance: 45, elevation: (lat) => elevation(lat) });
+  is("a way with null vertices does not crash the build", true);
+} catch (error) {
+  is("a way with null vertices does not crash the build", false, error.message);
+}
+if (holedGraph) {
+  is("the holes are counted rather than hidden",
+    holedGraph.report.geometryHoles === 5 && holedGraph.report.waysWithHoles === 3,
+    `${holedGraph.report.geometryHoles} holes across ${holedGraph.report.waysWithHoles} ways`);
+  is("every surviving node still has real coordinates",
+    Object.values(holedGraph.NODES).every((n) => Number.isFinite(n.lat) && Number.isFinite(n.lon)));
+  // The point of stripping refs in lockstep: an off-by-one here would cut a
+  // piste at the wrong vertex and put a junction somewhere nobody can ski to.
+  is("the lift still runs valley to summit",
+    holedGraph.LIFTS.length === 1 &&
+    holedGraph.NODES[holedGraph.LIFTS[0].to].alt > holedGraph.NODES[holedGraph.LIFTS[0].from].alt);
+  is("and its length is measured over the vertices that survived",
+    Math.abs(holedGraph.LIFTS[0].metres - wayLength([at(46.15, 11.0), at(46.16, 11.01), at(46.17, 11.02)])) < 2,
+    `${holedGraph.LIFTS[0].metres} m`);
+}
+
+// Without node refs no junction is findable, so every piste becomes one
+// unsplittable edge. That builds a graph that looks fine and is not connected,
+// which is worse than failing.
+let refless = "built anyway";
+try {
+  build({ elements: holed.elements.map(({ nodes, ...rest }) => rest) },
+    { tolerance: 45, elevation: (lat) => elevation(lat) });
+} catch (error) {
+  refless = error.message;
+}
+is("an export with no node references is refused, not silently flattened",
+  refless.includes("node references"), refless.split("\n")[0]);
+
 console.log("\n" + (failures ? `${failures} FAILING` : "all pipeline checks passed"));
 process.exit(failures ? 1 : 0);

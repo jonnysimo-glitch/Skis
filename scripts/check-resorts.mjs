@@ -17,11 +17,14 @@
  * Run: node scripts/check-resorts.mjs   (part of `npm test`)
  */
 import { readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { solve, asGraph } from "../src/solver.js";
 import { RESORTS } from "../src/resorts/index.js";
 
 const OUT_DIR = new URL("../src/resorts/", import.meta.url);
+const OSM_DIR = new URL("../data/osm/", import.meta.url);
+const CONFIG_DIR = new URL("../scripts/resorts/", import.meta.url);
 
 /**
  * Monterosa is live from src/resort.js, which predates the pipeline. Until the
@@ -136,6 +139,17 @@ for (const resort of RESORTS) {
 
 const orphans = generated.filter((id) => !RESORTS.some((r) => r.id === id));
 check("registry: every generated resort is listed", orphans.length === 0, orphans.join(", "));
+
+// Raw export but no module means the fetch worked and the build did not. The
+// first workflow run left exactly this on the branch — a committed Monterosa
+// export with no graph beside it — and the suite passed, because there was no
+// generated module to find anything wrong with. Silence there is the problem.
+const exports_ = existsSync(OSM_DIR.pathname)
+  ? (await readdir(OSM_DIR)).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""))
+  : [];
+const unbuilt = exports_.filter((id) => !generated.includes(id));
+check("pipeline: every fetched export produced a graph", unbuilt.length === 0,
+  `${unbuilt.join(", ")} fetched but not built — run: npm run resort -- ${unbuilt[0] || "<id>"} --offline`);
 
 // Not a failure: data can land before someone writes the camera position and
 // flips the flag. Say so, because otherwise it is silently invisible in the app.

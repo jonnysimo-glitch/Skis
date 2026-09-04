@@ -48,6 +48,11 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, report, fetchedAt }) {
       ? `${report.unnamedRuns} run${report.unnamedRuns === 1 ? "" : "s"} were unnamed and are ` +
         `described by their endpoints`
       : null,
+    report.geometryHoles
+      ? `${report.geometryHoles} vertices across ${report.waysWithHoles} ` +
+        `way${report.waysWithHoles === 1 ? "" : "s"} came back from Overpass unresolved; those ` +
+        `ways are measured straight across the gap and so read slightly short`
+      : null,
     `${report.nodesDropped} node${report.nodesDropped === 1 ? "" : "s"}, ` +
       `${report.liftsDropped} lift${report.liftsDropped === 1 ? "" : "s"} and ` +
       `${report.runsDropped} run${report.runsDropped === 1 ? "" : "s"} were outside the largest ` +

@@ -170,8 +170,23 @@ if (!targets.length) {
   process.exit(2);
 }
 
+/**
+ * Between resorts, when there is more than one and we are actually fetching.
+ *
+ * overpass-api.de gives a client two slots. Three resorts back to back means
+ * the second asks while the first is still holding one, and the answer is a
+ * 429 rather than a queue. The fetch retries those now, but not asking in the
+ * first place is better manners and faster than being told to wait.
+ */
+const SPACING_MS = 20000;
+const fetching = !flag("offline") && !flag("dry") && !flag("query");
+
 let ok = true;
-for (const id of targets) {
+for (const [index, id] of targets.entries()) {
+  if (index && fetching && targets.length > 1) {
+    console.log(`\n  pausing ${SPACING_MS / 1000}s so Overpass has a free slot\n`);
+    await new Promise((resolve) => setTimeout(resolve, SPACING_MS));
+  }
   try {
     if (!(await buildOne(id))) ok = false;
   } catch (error) {
@@ -179,4 +194,8 @@ for (const id of targets) {
     ok = false;
   }
 }
+
+// The summary matters when this runs unattended: the workflow reads stdout into
+// the run page, and "which of the three worked" is the first question.
+console.log(`\n${ok ? "All" : "Some"} of ${targets.length} resort(s) built: ${targets.join(", ")}`);
 process.exit(ok ? 0 : 1);

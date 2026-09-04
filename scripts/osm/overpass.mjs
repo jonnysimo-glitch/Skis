@@ -26,6 +26,30 @@ export const ENDPOINTS = [
 ];
 
 /**
+ * Statuses worth asking again about.
+ *
+ * 429 is the one that matters: overpass-api.de gives a client two slots, so
+ * three resorts in a row means the second and third arrive while the first is
+ * still holding one. The first real run of the workflow fetched Monterosa and
+ * came back with nothing at all for Kronplatz and Paganella, which is what
+ * that looks like from the outside. 504 is the query timing out server-side,
+ * 502 and 503 are the instance being restarted or overloaded — all of them
+ * are "later", not "never", unlike a 403 from a network policy.
+ */
+const RETRYABLE = new Set([429, 502, 503, 504]);
+const ATTEMPTS = 4;
+const BACKOFF_MS = [5000, 20000, 45000];
+
+/**
+ * Overpass etiquette asks for a User-Agent that identifies the client, so an
+ * operator can tell who is generating load and get in touch instead of just
+ * blocking it.
+ */
+const USER_AGENT = "skis-route-planner/1.0 (+https://github.com/jonnysimo-glitch/Skis)";
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Aerialway values that carry a skier uphill.
  *
  * `goods` and `pylon` are not lifts. `zip_line` is not a lift either, whatever
@@ -43,6 +67,14 @@ export const LIFT_TYPES = [
  * Pistes and lifts as ways, plus aerialway station nodes, which is where the
  * good names live: a gondola way is often named for the lift while its top
  * station is named for the place, and the place is what a skier is told.
+ *
+ * The ways go out as `out geom`, not `out geom tags`. Overpass's `tags` mode
+ * prints tags but omits a way's node references, and the node references are
+ * what make a junction findable: a piste splits off another where the two
+ * share an OSM node, and without refs there is nothing to compare. The first
+ * real fetch came back with no refs, so every piste was one unsplittable
+ * top-to-bottom edge and the mountain had no junctions at all. `out geom`
+ * is body mode, which prints both.
  */
 export function query(bbox, { timeout = 180 } = {}) {
   const [w, s, e, n] = bbox;
@@ -52,7 +84,7 @@ export function query(bbox, { timeout = 180 } = {}) {
   way["piste:type"="downhill"](${box});
   way["aerialway"~"^(${LIFT_TYPES.join("|")})$"](${box});
 );
-out geom tags;
+out geom;
 (
   node["aerialway"~"^(station|pylon)$"](${box});
   node["natural"="peak"](${box});
@@ -73,6 +105,25 @@ out center tags;`;
 const cachePath = (id) => new URL(`../../data/osm/${id}.json`, import.meta.url).pathname;
 
 /**
+ * Why a cached export cannot be used, or null if it can.
+ *
+ * The cache is keyed only by resort id, so it long outlives the query that
+ * produced it. This is the one check that matters: without a way's node
+ * references the graph builder cannot find a single junction, and it refuses
+ * to build at all — so noticing here and re-fetching is the difference between
+ * a green run and a person having to work out why.
+ */
+export function staleReason(raw) {
+  if (!raw?.elements?.length) return "no elements";
+  const ways = raw.elements.filter((el) => el.type === "way" && el.geometry);
+  if (!ways.length) return "no ways with geometry";
+  if (!ways.some((el) => Array.isArray(el.nodes) && el.nodes.length)) {
+    return "fetched with `out geom tags`, so it carries no node references";
+  }
+  return null;
+}
+
+/**
  * Fetch a resort's raw OSM data, or read it from the cache.
  *
  * `force` re-fetches. `offline` fails loudly rather than reaching the network,
@@ -84,7 +135,21 @@ export async function fetchResort(resort, { force = false, offline = false, endp
 
   if (!force && existsSync(path)) {
     const raw = JSON.parse(await readFile(path, "utf8"));
-    return { ...raw, source: "cache", path };
+    const stale = staleReason(raw);
+    if (!stale) return { ...raw, source: "cache", path };
+    // A cache written by an older query is worse than no cache: it looks like
+    // data and builds a graph that is quietly wrong. Monterosa's first export
+    // was fetched with `out geom tags` and had no node references at all, so a
+    // re-run would have rebuilt the same junctionless mountain from disk and
+    // never asked Overpass again.
+    if (offline) {
+      throw new Error(
+        `The cached OSM data for "${resort.id}" is stale: ${stale}\n` +
+          `  Re-fetch it with:  npm run resort -- ${resort.id} --force\n` +
+          `  Or delete ${path} and run the Resort data workflow.`
+      );
+    }
+    console.log(`  cache       stale (${stale}), re-fetching`);
   }
   if (offline) {
     throw new Error(
@@ -97,22 +162,46 @@ export async function fetchResort(resort, { force = false, offline = false, endp
   const body = query(resort.bbox);
   const tried = [];
   for (const url of endpoint ? [endpoint] : ENDPOINTS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ data: body }),
-      });
-      if (!res.ok) { tried.push(`${url} -> HTTP ${res.status}`); continue; }
-      const json = await res.json();
-      if (!json.elements?.length) { tried.push(`${url} -> empty result`); continue; }
-      json.fetchedAt = new Date().toISOString();
-      json.bbox = resort.bbox;
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, JSON.stringify(json));
-      return { ...json, source: url, path };
-    } catch (error) {
-      tried.push(`${url} -> ${error.message}`);
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+      if (attempt) {
+        const pause = BACKOFF_MS[attempt - 1];
+        console.log(`  waiting     ${pause / 1000}s before retrying ${new URL(url).host}`);
+        await wait(pause);
+      }
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+          },
+          body: new URLSearchParams({ data: body }),
+        });
+        if (!res.ok) {
+          tried.push(`${url} -> HTTP ${res.status}`);
+          if (RETRYABLE.has(res.status)) continue;
+          break; // a 403 or a 400 will say the same thing however long we wait
+        }
+        // Overpass reports some failures as an HTML page with a 200, so the
+        // status alone is not enough to know the body is a result.
+        const text = await res.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          const snippet = text.trim().slice(0, 120).replace(/\s+/g, " ");
+          tried.push(`${url} -> 200 but not JSON: ${snippet}`);
+          continue;
+        }
+        if (!json.elements?.length) { tried.push(`${url} -> empty result`); continue; }
+        json.fetchedAt = new Date().toISOString();
+        json.bbox = resort.bbox;
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, JSON.stringify(json));
+        return { ...json, source: url, path };
+      } catch (error) {
+        tried.push(`${url} -> ${error.message}`);
+      }
     }
   }
 

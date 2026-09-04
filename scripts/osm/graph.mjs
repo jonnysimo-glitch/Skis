@@ -199,10 +199,44 @@ export function build(osm, { tolerance = 45, elevation }) {
     droppedNoGeometry: 0,
     difficultyAssumed: 0,
     unnamedRuns: 0,
+    geometryHoles: 0,
+    waysWithHoles: 0,
   };
 
   if (!lifts.length) throw new Error("No aerialways in the data. Check the bounding box.");
   if (!pistes.length) throw new Error("No downhill pistes in the data. Check the bounding box.");
+
+  // A piste splits off another where the two share an OSM node, so without
+  // node references there are no junctions to find and every piste becomes one
+  // unsplittable top-to-bottom edge. That produces a graph that looks
+  // plausible and is not connected — the worst kind of wrong — so it is worth
+  // refusing rather than reporting. `out geom tags` omits refs; `out geom`
+  // includes them. See scripts/osm/overpass.mjs.
+  if (!pistes.some((el) => Array.isArray(el.nodes) && el.nodes.length)) {
+    throw new Error(
+      "No way carries node references, so no junction can be found and every\n" +
+      "  piste would become a single unsplittable edge. The export was made with\n" +
+      "  `out geom tags`, which omits refs. Re-fetch with `out geom`:\n" +
+      "    npm run resort -- <id> --force"
+    );
+  }
+
+  // Overpass leaves a null in the geometry array for any vertex it will not
+  // resolve, keeping the array the same length as the node refs. Real data has
+  // them; the fixtures never did. Strip them from geometry and refs together
+  // so the two stay index-aligned, because the junction logic indexes one by
+  // the other. A run that loses an interior vertex is measured straight across
+  // the gap, so it reads slightly short — recorded rather than hidden.
+  for (const el of [...lifts, ...pistes]) {
+    if (!Array.isArray(el.geometry)) continue;
+    const holes = el.geometry.reduce((n, p) => n + (p ? 0 : 1), 0);
+    if (!holes) continue;
+    const keep = el.geometry.map((p, i) => (p ? i : -1)).filter((i) => i >= 0);
+    el.geometry = keep.map((i) => el.geometry[i]);
+    if (Array.isArray(el.nodes)) el.nodes = keep.map((i) => el.nodes[i]);
+    report.geometryHoles += holes;
+    report.waysWithHoles++;
+  }
 
   // --- candidate graph points ------------------------------------------------
   // Lift ends always are. Piste ends always are. Interior piste points are only
@@ -216,6 +250,9 @@ export function build(osm, { tolerance = 45, elevation }) {
   for (const el of [...lifts, ...pistes]) {
     if (!el.geometry || el.geometry.length < 2) { report.droppedNoGeometry++; continue; }
     const [a, b] = ends(el);
+    // Spreading a null here would make a cluster with no coordinates, which
+    // then poisons every distance it takes part in without ever throwing.
+    if (!a || !b) { report.droppedNoGeometry++; continue; }
     endpointRef.set(`${el.id}:start`, clusters.add({ ...a, wayId: el.id, role: "end" }));
     endpointRef.set(`${el.id}:end`, clusters.add({ ...b, wayId: el.id, role: "end" }));
   }
