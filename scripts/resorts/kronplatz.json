@@ -5,10 +5,10 @@
   "country": "Italy",
   "note": "Plan de Corones. One mountain, lifts up from three valleys.",
   "bbox": [
-    11.86,
-    46.71,
-    12.03,
-    46.81
+    11.8,
+    46.66,
+    12.08,
+    46.84
   ],
   "tolerance": 60,
   "bases": [
@@ -52,5 +52,6 @@
     "top": 2275,
     "bottom": 950
   },
-  "publishedSource": "Kronplatz's own published network figures, as recorded in src/resorts/index.js before this resort had data."
+  "publishedSource": "Kronplatz's own published network figures, as recorded in src/resorts/index.js before this resort had data.",
+  "bboxWhy": "Widened south and out to take in St Vigil / San Vigilio and Pfalzen. The old box stopped at 46.71 and three lifts — Miara, Col Toron, Ski Pfalzen — already ran off its edges, which is why the graph held 19 of the 32 lifts the resort publishes."
 }

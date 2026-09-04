@@ -113,8 +113,18 @@ const cachePath = (id) => new URL(`../../data/osm/${id}.json`, import.meta.url).
  * to build at all — so noticing here and re-fetching is the difference between
  * a green run and a person having to work out why.
  */
-export function staleReason(raw) {
+export function staleReason(raw, resort = null) {
   if (!raw?.elements?.length) return "no elements";
+  // A widened bounding box makes the cache the wrong shape, not just old.
+  // Kronplatz held 19 of its 32 published lifts because the box stopped short
+  // of St Vigil, and without this the next run would have rebuilt the same
+  // truncated mountain from disk and never asked Overpass for the rest.
+  if (resort?.bbox && Array.isArray(raw.bbox) && raw.bbox.length === 4) {
+    const moved = resort.bbox.some((v, i) => Math.abs(v - raw.bbox[i]) > 1e-6);
+    if (moved) {
+      return `fetched for a different bounding box (${raw.bbox.join(", ")})`;
+    }
+  }
   const ways = raw.elements.filter((el) => el.type === "way" && el.geometry);
   if (!ways.length) return "no ways with geometry";
   if (!ways.some((el) => Array.isArray(el.nodes) && el.nodes.length)) {
@@ -135,7 +145,7 @@ export async function fetchResort(resort, { force = false, offline = false, endp
 
   if (!force && existsSync(path)) {
     const raw = JSON.parse(await readFile(path, "utf8"));
-    const stale = staleReason(raw);
+    const stale = staleReason(raw, resort);
     if (!stale) return { ...raw, source: "cache", path };
     // A cache written by an older query is worse than no cache: it looks like
     // data and builds a graph that is quietly wrong. Monterosa's first export

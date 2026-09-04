@@ -801,11 +801,14 @@ export default function FallbackTerrain({
        * Salati" and "Gabiet" each came out twice, side by side, which reads as
        * a bug rather than as detail. The best-ranked one keeps the name.
        */
-      const generated = (name) => /^Point \d+$/.test(String(name || ""));
+      // Labels come from the graph's own `named` flag rather than from
+      // guessing at the text: an unnamed junction now carries a readable
+      // description ("Above Gabiet", "Olen junction") so the plan form can
+      // offer it, and none of those belong on the mountain as a label.
       const spoken = new Set();
 
       const candidates = list
-        .filter(([, n]) => !pinned.has(n.name) && !generated(n.name))
+        .filter(([, n]) => !pinned.has(n.name) && n.named !== false)
         .sort((a, b) => rank(a[1]) - rank(b[1]))
         .filter(([, n]) => {
           if (spoken.has(n.name)) return false;

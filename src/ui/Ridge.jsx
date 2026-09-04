@@ -1,10 +1,43 @@
 /**
- * Terrain illustration standing in for photography. Layered ridgelines with
- * atmospheric recession, scaled by the resort's own vertical range so a high,
- * steep resort looks different to a low one. A real photograph goes here when
- * there is one to use.
+ * The picture on a resort's card.
+ *
+ * A resort with data gets its own mountain: scripts/make-resort-art.mjs
+ * renders shaded relief from the same elevation tiles the 3D map uses, with
+ * that resort's pistes and lifts drawn over it. So Kronplatz's card shows
+ * Kronplatz — the dome with its runs radiating off it — rather than a generic
+ * peak. Photography would be better and there is none to use: every image
+ * host is refused by this machine's network policy.
+ *
+ * A resort with no data yet falls back to the drawn ridge below, which is
+ * honest about being a stand-in. The fallback is wired to the image's own
+ * error rather than to a flag, so a missing file degrades instead of breaking.
  */
+import { useState } from "react";
+
 export default function Ridge({ resort, hero }) {
+  const [artFailed, setArtFailed] = useState(false);
+  const art = resort.available && !artFailed
+    ? `${import.meta.env.BASE_URL}resorts/${resort.id}.png`
+    : null;
+
+  if (art) {
+    return (
+      <img
+        className={hero ? "hero__art" : "resortcard__thumb"}
+        src={art}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setArtFailed(true)}
+      />
+    );
+  }
+
+  return <DrawnRidge resort={resort} hero={hero} />;
+}
+
+/** The stand-in, for a resort whose terrain has not been rendered. */
+function DrawnRidge({ resort, hero }) {
   const top = resort.stats?.top ?? 3000;
   const bottom = resort.stats?.bottom ?? 1200;
   // 0 = gentle and low, 1 = high and steep.

@@ -418,5 +418,50 @@ export function build(osm, { tolerance = 45, elevation }) {
     }
   }
 
+  /**
+   * Give the unnamed places a name a skier could say out loud.
+   *
+   * OSM names lift stations, summits and cols; it does not name the junction
+   * where two pistes part company. Those came out as "Point 74", and the plan
+   * form offered seventy-odd of them as somewhere you might be standing —
+   * which is useless to the one person who needs it most, someone stranded
+   * mid-mountain trying to say where they are.
+   *
+   * They cannot simply be dropped: a GPS fix snaps to the nearest node in the
+   * graph, and that is often one of these. So each takes its name from what is
+   * actually there — the piste it sits on, or the named place it is above or
+   * below. `named` stays false, which is how the map knows to draw the route
+   * through it without cluttering the mountain with a label.
+   */
+  {
+    const namedNodes = Object.entries(NODES).filter(([, n]) => n.named);
+    const touching = {};
+    for (const edge of [...LIFTS, ...RUNS]) {
+      const real = edge.name && !/ to |^Point \d+$/.test(edge.name);
+      if (!real) continue;
+      (touching[edge.from] ||= new Set()).add(edge.name);
+      (touching[edge.to] ||= new Set()).add(edge.name);
+    }
+
+    for (const [key, node] of Object.entries(NODES)) {
+      if (node.named) continue;
+      const here = [...(touching[key] || [])];
+      if (here.length === 1) {
+        NODES[key] = { ...node, name: `${here[0]} junction` };
+        continue;
+      }
+      // Nearest named place, and which side of it you are on. "Above Gabiet"
+      // locates someone; "Point 74" does not.
+      let nearest = null;
+      for (const [, other] of namedNodes) {
+        const d = metres(node.lat, node.lon, other.lat, other.lon);
+        if (!nearest || d < nearest.d) nearest = { d, other };
+      }
+      NODES[key] = nearest
+        ? { ...node, name: `${node.alt >= nearest.other.alt ? "Above" : "Below"} ${nearest.other.name}` }
+        : node;
+    }
+  }
+
   return { NODES, LIFTS, RUNS, report };
 }

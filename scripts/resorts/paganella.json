@@ -6,9 +6,9 @@
   "note": "Andalo and Fai della Paganella, one ridge above the Brenta valley.",
   "bbox": [
     10.98,
-    46.11,
-    11.1,
-    46.2
+    46.1,
+    11.13,
+    46.24
   ],
   "tolerance": 75,
   "bases": [
@@ -43,5 +43,6 @@
     "top": 2125,
     "bottom": 1028
   },
-  "publishedSource": "Paganella Ski's own published network figures, as recorded in src/resorts/index.js before this resort had data."
+  "publishedSource": "Paganella Ski's own published network figures, as recorded in src/resorts/index.js before this resort had data.",
+  "bboxWhy": "Widened a little. This one already holds 14 of its 15 published lifts, so the margin is only to stop a piste running off an edge."
 }

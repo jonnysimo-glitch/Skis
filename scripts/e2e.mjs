@@ -711,10 +711,14 @@ try {
     const rest = await height();
     check("the map is never fully covered", rest < 900 * 0.92, `sheet is ${rest} of 900`);
 
+    // All the way to the top, not a fixed 220 px. The detail sheet opens as a
+    // bar now rather than at half height, so a fixed distance no longer
+    // reaches the point where the sheet covers the map controls — which is the
+    // condition the checks below are about.
     const head = await (await page.$(".sheet__head")).boundingBox();
     await page.mouse.move(head.x + head.width / 2, head.y + 8);
     await page.mouse.down();
-    await page.mouse.move(head.x + head.width / 2, head.y - 220, { steps: 12 });
+    await page.mouse.move(head.x + head.width / 2, 40, { steps: 16 });
     await page.mouse.up();
     await page.waitForTimeout(700);
     const dragged = await height();
