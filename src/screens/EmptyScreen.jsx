@@ -6,7 +6,7 @@
  */
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import { minutesToClock } from "../lib/plan.js";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 import { Warning, Arrow } from "../ui/Icons.jsx";
 
 /**

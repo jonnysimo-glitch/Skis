@@ -21,7 +21,7 @@ import { useGeolocation, kmh } from "../lib/useGeolocation.js";
 import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
 import { LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Close, ChevronDown, ChevronUp } from "../ui/Icons.jsx";
 import { LegList } from "../ui/RouteBits.jsx";
 import { legClocks } from "../lib/plan.js";

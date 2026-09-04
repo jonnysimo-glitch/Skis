@@ -7,7 +7,7 @@
  */
 
 import { minutesToClock, clockToMinutes } from "../solver.js";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 
 export { minutesToClock, clockToMinutes };
 

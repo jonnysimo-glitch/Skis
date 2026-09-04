@@ -14,7 +14,7 @@ import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { LegList, StatRow, detailStats, hours } from "../ui/RouteBits.jsx";
 import { backAt, legClocks, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 import { commitRoute } from "../lib/offline.js";
 import { Back, Download, Warning, Check, Wifi, Clock } from "../ui/Icons.jsx";
 

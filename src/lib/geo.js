@@ -5,7 +5,7 @@
  * place the graph on real terrain. The solver never reads them.
  */
 
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 
 export const PISTE_COLOUR = {
   blue: "#1d6fcc",

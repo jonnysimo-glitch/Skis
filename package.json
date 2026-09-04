@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "node scripts/make-fetch-page.mjs && vite build",
     "preview": "vite preview",
-    "test": "node src/solver.test.js && node scripts/osm/graph.test.mjs && node src/lib/graph.test.js && node src/map/field.test.js && node src/map/camera.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node src/lib/plan.test.js && node src/lib/friends.test.js && node scripts/check-resorts.mjs && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
+    "test": "node src/solver.test.js && node scripts/osm/graph.test.mjs && node src/lib/graph.test.js && node src/map/field.test.js && node src/map/camera.test.js && node src/lib/geo.test.js && node src/lib/progress.test.js && node src/lib/direct.test.js && node src/lib/plan.test.js && node src/lib/friends.test.js && node src/active-resort.test.js && node scripts/check-resorts.mjs && node scripts/validate-layers.mjs && node scripts/check-contrast.mjs",
     "bench": "node scripts/bench-solver.js",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:prepare": "node scripts/ios-prepare.mjs",
@@ -27,6 +27,7 @@
     "resort:page": "node scripts/make-fetch-page.mjs",
     "icons": "node scripts/make-icons.mjs",
     "preflight": "node scripts/preflight.mjs",
+    "test:active": "node src/active-resort.test.js",
     "test:resorts": "node scripts/check-resorts.mjs",
     "resort:turbo": "node scripts/build-resort.mjs --turbo",
     "bench:scale": "node scripts/bench-scale.mjs"

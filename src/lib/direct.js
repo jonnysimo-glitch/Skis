@@ -12,10 +12,24 @@
  * The same hard constraints apply: nothing above your ability, nothing that
  * boards a lift after it has shut, and no drags if you have said so.
  */
-import { NODES, DIFFICULTY_RANK, buildEdges } from "../resort.js";
+import { NODES, DIFFICULTY_RANK, buildEdges } from "../active-resort.js";
 import { measure } from "../solver.js";
 
-const EDGES = buildEdges();
+/**
+ * The active resort's edges.
+ *
+ * This was a module-scope constant, which was right while there was one
+ * mountain and silently wrong the moment there were two: it ran once at import
+ * and would have routed every later resort over Monterosa's pistes without
+ * ever failing, because a graph of the wrong runs still returns a path.
+ * Memoised on the node set rather than rebuilt per call — NODES is a new
+ * object for each resort and the same one throughout it.
+ */
+let cache = { nodes: null, edges: null };
+const edgesForActive = () => {
+  if (cache.nodes !== NODES) cache = { nodes: NODES, edges: buildEdges() };
+  return cache.edges;
+};
 
 function allowed(edge, opts) {
   if (edge.kind === "run") {
@@ -46,7 +60,7 @@ export function directRoute(opts) {
 
   const adj = {};
   for (const key in NODES) adj[key] = [];
-  for (const edge of EDGES) if (allowed(edge, opts)) adj[edge.from].push(edge);
+  for (const edge of edgesForActive()) if (allowed(edge, opts)) adj[edge.from].push(edge);
 
   const best = {};       // node -> minutes from start
   const via = {};        // node -> the edge taken to reach it

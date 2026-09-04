@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef } from "react";
 import { Close, Info } from "../ui/Icons.jsx";
-import { LIFTS, RUNS, NODES } from "../resort.js";
+import { LIFTS, RUNS, NODES } from "../active-resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 
 const hhmm = (min) =>

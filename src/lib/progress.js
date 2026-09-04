@@ -9,7 +9,7 @@
  * they are still skiing; too late and they are standing at a lift wondering
  * why the app has not noticed.
  */
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 import { metresBetween } from "./geo.js";
 import { USABLE_ACCURACY_M } from "./useGeolocation.js";
 

@@ -8,6 +8,7 @@
  */
 import { buildField, slabFor, toUnit, SKIRT, GRID } from "./field.js";
 import { NODES as MONTEROSA, projector as monterosaProjector } from "../resort.js";
+import { projectorFor } from "../lib/projector.js";
 
 let failures = 0;
 let ran = 0;
@@ -17,18 +18,12 @@ const check = (name, pass, detail = "") => {
   console.log(`  ${pass ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
 };
 
-/** A projector for any node set, the same maths resort.js uses. */
-const projectorFor = (nodes) => () => {
-  const lats = Object.values(nodes).map((n) => n.lat);
-  const lons = Object.values(nodes).map((n) => n.lon);
-  const lat0 = (Math.min(...lats) + Math.max(...lats)) / 2;
-  const lon0 = (Math.min(...lons) + Math.max(...lons)) / 2;
-  const mPerLon = 111320 * Math.cos((lat0 * Math.PI) / 180);
-  return {
-    lat0, lon0,
-    project: (lat, lon) => ({ x: (lon - lon0) * mPerLon, z: -(lat - lat0) * 111320 }),
-  };
-};
+/**
+ * A projector for any node set. This used to be a third copy of the formula,
+ * written here because resort.js closes its own over one node set; it now
+ * comes from src/lib/projector.js, which is what a generated resort uses too.
+ */
+const makeProjector = (nodes) => () => projectorFor(nodes);
 
 // A second resort: smaller, lower, and a long way from the Alps, so nothing
 // can pass by coincidence. Roughly Paganella's relief over a third of the area.
@@ -41,8 +36,23 @@ const OTHER = {
 
 console.log("\nTHE TERRAIN BELONGS TO A RESORT");
 
+// resort.js keeps its own copy of this formula so that the solver's import
+// graph stays free of everything but its graph. That is a deliberate
+// duplication, so it is asserted rather than trusted: if the two ever drift,
+// Monterosa's terrain and a generated resort's would be projected differently.
+{
+  const own = monterosaProjector();
+  const shared = projectorFor(MONTEROSA);
+  const a = own.project(45.87, 7.85);
+  const b = shared.project(45.87, 7.85);
+  check("the shared projector agrees with resort.js's own",
+    own.lat0 === shared.lat0 && own.lon0 === shared.lon0 &&
+    Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.z - b.z) < 1e-9,
+    `${a.x.toFixed(3)},${a.z.toFixed(3)} against ${b.x.toFixed(3)},${b.z.toFixed(3)}`);
+}
+
 const mono = buildField(MONTEROSA, monterosaProjector);
-const other = buildField(OTHER, projectorFor(OTHER));
+const other = buildField(OTHER, makeProjector(OTHER));
 
 check("a resort's terrain covers its own ground", mono.span > other.span * 1.5,
   `${(mono.span / 1000).toFixed(1)}km vs ${(other.span / 1000).toFixed(1)}km`);
@@ -170,7 +180,7 @@ console.log("\nWHICH WAY BEARING TURNS THE PICTURE");
 }
 
 console.log("\nAND IT IS THE SAME MOUNTAIN EVERY TIME");
-const again = buildField(OTHER, projectorFor(OTHER));
+const again = buildField(OTHER, makeProjector(OTHER));
 check("rebuilding a resort gives an identical field",
   again.heights.every((h, i) => h === other.heights[i]) && again.lo === other.lo,
   `${again.heights.length} samples`);

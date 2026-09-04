@@ -10,7 +10,7 @@
  * chip; it is not asked for every session.
  */
 import { Back } from "../ui/Icons.jsx";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES } from "../lib/plan.js";
 import { Clock, Arrow, Locate, Info } from "../ui/Icons.jsx";
 import { hours } from "../ui/RouteBits.jsx";

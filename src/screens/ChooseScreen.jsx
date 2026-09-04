@@ -21,7 +21,7 @@ import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { REFINEMENTS, refinementApplies, backAt, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
 import { Info, Clock, Pin, Arrow } from "../ui/Icons.jsx";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 
 /** Above roughly six a list stops being a choice and becomes homework. */
 const SHOWN_BY_DEFAULT = 3;

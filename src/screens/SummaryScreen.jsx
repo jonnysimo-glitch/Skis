@@ -6,7 +6,7 @@ import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { backAt } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
-import { NODES } from "../resort.js";
+import { NODES } from "../active-resort.js";
 import { Mountain, Restart } from "../ui/Icons.jsx";
 
 export default function SummaryScreen({ route, opts, plan, onAgain, onDone }) {

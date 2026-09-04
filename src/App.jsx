@@ -41,7 +41,7 @@ import PlanButton from "./ui/PlanButton.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
-import { NODES, buildEdges } from "./resort.js";
+import { NODES, buildEdges } from "./active-resort.js";
 import { useSolver } from "./lib/useSolver.js";
 import { directRoute } from "./lib/direct.js";
 import { load, save } from "./lib/persist.js";
@@ -62,8 +62,6 @@ import {
 } from "./lib/geo.js";
 import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
 
-const EDGES = buildEdges();
-const GRAPH_GEOJSON = graphToGeoJSON(EDGES);
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
 /**
@@ -150,6 +148,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const resort = getResort(resortId) || defaultResort;
+  // The whole mountain as map geometry. This was a module constant, which was
+  // right while there was one mountain and is a trap now: computed at import it
+  // would keep the first resort's pistes for the life of the page and draw them
+  // over somebody else's valley. Keyed on the resort so it follows the swap.
+  const graphGeo = useMemo(() => graphToGeoJSON(buildEdges()), [resort.id]);
 
   // ---- profile and plan ---------------------------------------------------
   const [ability, setAbilityState] = useState(() => load("profile")?.ability ?? "red");
@@ -584,7 +587,7 @@ export default function App() {
         <Suspense fallback={null}>
           <MapCanvas
             resort={resort}
-            graph={GRAPH_GEOJSON}
+            graph={graphGeo}
             route={routeGeo}
             pins={pins}
             focus={focus}
@@ -601,7 +604,7 @@ export default function App() {
       {onMountain && showSchematic && (
         <FallbackTerrain
           route={routeGeo}
-          graph={GRAPH_GEOJSON}
+          graph={graphGeo}
           pins={pins}
           camera={focus}
           controlRef={mapControl}

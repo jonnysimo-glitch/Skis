@@ -12,7 +12,7 @@
  * construction: there is nothing to fetch.
  */
 import { useEffect, useRef } from "react";
-import { NODES as MONTEROSA_NODES, projector as monterosaProjector } from "../resort.js";
+import { NODES as ACTIVE_NODES, activeProjector } from "../active-resort.js";
 import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
   SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
@@ -222,8 +222,10 @@ export default function FallbackTerrain({
   viewportBottom = 0,
   viewportTop = 0,
   block = false,
-  nodes = MONTEROSA_NODES,
-  makeProjector = monterosaProjector,
+  // Defaults follow whichever resort is active, so a caller that does not care
+  // which mountain it is drawing still draws the right one.
+  nodes = ACTIVE_NODES,
+  makeProjector = activeProjector,
 }) {
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
