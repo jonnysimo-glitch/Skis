@@ -283,7 +283,8 @@ export const META = {
     "bottom": 1584,
     "valleys": 2
   },
-  "blurb": "Gressoney, Ayas and Alagna, linked over two high cols."
+  "blurb": "Gressoney, Ayas and Alagna, linked over two high cols.",
+  "published": null
 };
 
 /**

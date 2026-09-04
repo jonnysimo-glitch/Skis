@@ -125,6 +125,42 @@ async function verify(id) {
     if (bad) problems++;
   }
 
+  // --- grades that block the mountain --------------------------------------
+  //
+  // The find that made this worth writing: Monterosa's whole red-ability
+  // crossing from Passo dei Salati to Champoluc hangs on one hundred-metre run
+  // called "Sarezza-Contenéry", tagged `advanced` in OSM and so black here,
+  // sitting between two reds. A red skier could not cross the valleys at all
+  // because of it.
+  //
+  // It is not fixed here and must not be. OSM's `advanced` rounds up to black
+  // on purpose — rounding a grade down is the direction that sends someone
+  // onto something they cannot ski — so this reports the specific hundred
+  // metres to check against the piste map rather than deciding.
+  const RANK = { blue: 1, red: 2, black: 3 };
+
+  // A run is a chokepoint if allowing it, alone, opens up materially more of
+  // the mountain to a grade that cannot currently use it.
+  for (const ability of ["blue", "red"]) {
+    const baseline = reachAtWith(NODES, LIFTS, RUNS, ability, -1);
+    const harder = RUNS.map((r, i) => [r, i]).filter(([r]) => RANK[r[3]] > RANK[ability]);
+    const openers = [];
+    for (const [, index] of harder) {
+      const gained = reachAtWith(NODES, LIFTS, RUNS, ability, index) - baseline;
+      if (gained >= 5) openers.push({ run: RUNS[index], gained });
+    }
+    openers.sort((a, b) => b.gained - a.gained);
+    if (openers.length) {
+      console.log(`  chokepoint ${ability}: ${openers.length} harder run(s) each open 5+ more places`);
+      for (const { run, gained } of openers.slice(0, 3)) {
+        console.log(`    note  "${run[2]}" (${run[3]}, ${run[4]} km) would add ${gained} places — ` +
+          `check the piste map`);
+      }
+    } else {
+      console.log(`  chokepoint ${ability}: none — no single harder run is blocking the mountain`);
+    }
+  }
+
   // --- physical plausibility ----------------------------------------------
   const steep = RUNS.filter(([from, to, , , runKm]) => {
     const drop = NODES[from].alt - NODES[to].alt;
@@ -156,3 +192,36 @@ for (const id of targets) {
 console.log(`\n${problems ? `${problems} gap(s) to look at` : "nothing to flag"}`);
 console.log("A PDF piste map or Google's slope layer would settle what is left;");
 console.log("neither is reachable from this machine.\n");
+
+/**
+ * How much of the mountain a grade can round-trip if one harder run is allowed.
+ *
+ * Separate from the rest so the "what if this one run were rideable" question
+ * is asked the same way every time.
+ */
+function reachAtWith(NODES, LIFTS, RUNS, ability, allowIndex) {
+  const RANK = { blue: 1, red: 2, black: 3 };
+  const DOWN = new Set(["gondola", "cable car", "funicular"]);
+  const fwd = {};
+  const rev = {};
+  for (const k of Object.keys(NODES)) { fwd[k] = []; rev[k] = []; }
+  for (const [f, t, , kind] of LIFTS) {
+    fwd[f].push(t); rev[t].push(f);
+    if (DOWN.has(kind)) { fwd[t].push(f); rev[f].push(t); }
+  }
+  RUNS.forEach((r, i) => {
+    if (RANK[r[3]] <= RANK[ability] || i === allowIndex) { fwd[r[0]].push(r[1]); rev[r[1]].push(r[0]); }
+  });
+  const walk = (adj, start) => {
+    const seen = new Set([start]);
+    const queue = [start];
+    while (queue.length) {
+      for (const next of adj[queue.shift()]) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+    return seen;
+  };
+  const start = Object.keys(NODES).find((k) => NODES[k].base) ?? Object.keys(NODES)[0];
+  const f = walk(fwd, start);
+  const b = walk(rev, start);
+  return [...f].filter((k) => b.has(k)).length;
+}

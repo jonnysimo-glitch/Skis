@@ -25,6 +25,7 @@
  */
 import * as builtIn from "./resort.js";
 import { projectorFor } from "./lib/projector.js";
+import { graphFor } from "./resorts/graphs.js";
 
 /**
  * Monterosa from `resort.js` is the built-in. It predates the OSM pipeline and
@@ -33,7 +34,18 @@ import { projectorFor } from "./lib/projector.js";
  */
 export const BUILT_IN_ID = "monterosa";
 
-let current = { id: BUILT_IN_ID, module: builtIn };
+/**
+ * The built-in graph is a fallback, not a claim that Monterosa is selected.
+ *
+ * `id` starts null on purpose. It used to start as BUILT_IN_ID, which made
+ * ensureActive("monterosa") decide the right resort was already active while
+ * these bindings still held the hand-typed graph — so the app posted a
+ * thirteen-node mountain to the solver with node keys from the seventy-six
+ * node one, and every solve after a reload died inside the adjacency walk.
+ * Nothing is "active" until someone says so; the exports below just have to
+ * be usable before that happens.
+ */
+let current = { id: null, module: builtIn };
 
 export let NODES = builtIn.NODES;
 export let LIFTS = builtIn.LIFTS;
@@ -69,6 +81,29 @@ export function setActiveResort(id, module) {
   DIFFICULTY_RANK = module.DIFFICULTY_RANK;
   buildEdges = module.buildEdges;
   return current.id;
+}
+
+/**
+ * Point the bindings at `id` unless they already are.
+ *
+ * The reason this exists rather than leaving callers to call setActiveResort:
+ * the app restores the last-used resort from storage on load, and nothing was
+ * telling these bindings about it. So a reload left the registry returning the
+ * generated Monterosa graph while these still held the hand-typed one, and the
+ * first solve looked up an OSM node key in a graph that had never heard of it.
+ * That surfaced as "l[u] is not iterable" from inside the adjacency walk, and
+ * the app showed "The planner stopped short" with no way forward.
+ *
+ * Idempotent and cheap, so it is safe to call on every render as a way of
+ * keeping this module in step with the registry.
+ */
+export function ensureActive(id) {
+  const module = graphFor(id);
+  if (!module) return current.id; // no data for it; leave the last one standing
+  // Compared by module as well as by id, so a resort whose generated graph
+  // has replaced a hand-typed one still swaps.
+  if (current.id === id && current.module === module) return current.id;
+  return setActiveResort(id, module);
 }
 
 /**

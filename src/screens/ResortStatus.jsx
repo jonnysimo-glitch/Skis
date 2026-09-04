@@ -78,6 +78,13 @@ export default function ResortStatus({ resort, onClose }) {
   const firstToShut = Math.min(...lastUps);
   const lastToShut = Math.max(...lastUps);
   const alts = Object.values(NODES).map((n) => n.alt);
+  // A gap worth mentioning: below nine tenths of the published lift count, the
+  // graph is missing enough of the mountain to change a route.
+  const published = resort.published;
+  const coverage =
+    published?.lifts && LIFTS.length / published.lifts < 0.9
+      ? { got: LIFTS.length, want: published.lifts }
+      : null;
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={`What is open at ${resort.name}`}>
@@ -158,6 +165,22 @@ export default function ResortStatus({ resort, onClose }) {
               afterwards, so a plan will never leave you above a lift that has
               closed. Run names and times are provisional.
             </p>
+
+            {/* How much of the mountain this is.
+
+                OpenStreetMap's coverage of an alpine resort is good and never
+                complete. Kronplatz publishes thirty-two lifts and the graph
+                holds nineteen, and a planner that does not say so will tell a
+                skier there is no way across when there is. Only shown when
+                the resort's own figure is recorded and the gap is real
+                enough to change a decision. */}
+            {coverage && (
+              <p className="note" style={{ marginTop: "var(--s-3)" }}>
+                Built from OpenStreetMap, which has {coverage.got} of the{" "}
+                {coverage.want} lifts {resort.name} publishes. Somewhere it does
+                not know a lift, a route may take a longer way round.
+              </p>
+            )}
           </div>
         </div>
       </div>

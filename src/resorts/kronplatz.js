@@ -335,7 +335,12 @@ export const META = {
     "bottom": 942,
     "valleys": 1
   },
-  "blurb": "Plan de Corones. One mountain, lifts up from three valleys."
+  "blurb": "Plan de Corones. One mountain, lifts up from three valleys.",
+  "published": {
+    "lifts": 32,
+    "top": 2275,
+    "bottom": 950
+  }
 };
 
 /**

@@ -14,7 +14,7 @@ import { readdir, readFile } from "node:fs/promises";
 import * as active from "./active-resort.js";
 import {
   NODES, LIFTS, RUNS, SHORT_NAMES, DIFFICULTY_RANK, buildEdges,
-  setActiveResort, activeGraph, activeResortId, activeProjector, BUILT_IN_ID,
+  setActiveResort, activeGraph, activeResortId, activeProjector, ensureActive, BUILT_IN_ID,
 } from "./active-resort.js";
 import { solve } from "./solver.js";
 
@@ -58,8 +58,18 @@ const OTHER = {
   },
 };
 
-console.log("\nTHE DEFAULT IS THE BUILT-IN MOUNTAIN");
-check("it opens on Monterosa", activeResortId() === BUILT_IN_ID);
+console.log("\nNOTHING IS ACTIVE UNTIL SOMETHING SAYS SO");
+// The bindings have to be usable from the moment the module loads, but the id
+// must not claim a resort is selected. It used to start as "monterosa", so
+// ensureActive("monterosa") decided the right graph was already in place while
+// these still held the hand-typed thirteen-node one — and the app posted that
+// to the solver with node keys from the built graph. Every solve after a
+// reload died inside the adjacency walk with "not iterable".
+check("no resort is active yet", activeResortId() === null, String(activeResortId()));
+check("but the bindings are usable anyway", Object.keys(NODES).length > 0);
+check("ensureActive swaps in the built graph rather than deciding it is there",
+  ensureActive(BUILT_IN_ID) === BUILT_IN_ID && Object.keys(NODES).length > 20,
+  `${Object.keys(NODES).length} nodes after ensureActive`);
 const monterosaNodeCount = Object.keys(NODES).length;
 check("with its nodes", monterosaNodeCount > 0, `${monterosaNodeCount} nodes`);
 
@@ -103,9 +113,13 @@ catch (error) { nulled = error.message; }
 check("so is no module at all", nulled.includes("No graph module"), nulled);
 
 console.log("\nAND BACK");
-setActiveResort(BUILT_IN_ID, await import("./resort.js"));
+// Through ensureActive, not by importing resort.js: "monterosa" means whatever
+// graphs.js says it means, which is the generated graph once one exists. The
+// hand-typed file is only the fallback for an id with no data.
+ensureActive(BUILT_IN_ID);
 check("Monterosa returns intact", activeResortId() === BUILT_IN_ID &&
-  Object.keys(NODES).length === monterosaNodeCount);
+  Object.keys(NODES).length === monterosaNodeCount,
+  `${Object.keys(NODES).length} nodes, expected ${monterosaNodeCount}`);
 
 console.log("\nNOTHING DERIVES THESE AT MODULE LOAD");
 /**

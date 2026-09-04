@@ -103,6 +103,14 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
       valleys: areas.size || 1,
     },
     blurb: config.note ?? null,
+    /**
+     * What the resort itself publishes, where the config records it, so the
+     * app can say how much of the mountain it actually holds. A planner
+     * quietly missing thirteen of thirty-two lifts will tell a skier there is
+     * no way across when there is, and that is the failure this whole pipeline
+     * exists to prevent.
+     */
+    published: config.published ?? null,
   };
 }
 

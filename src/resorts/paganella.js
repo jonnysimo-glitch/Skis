@@ -224,7 +224,13 @@ export const META = {
     "bottom": 1028,
     "valleys": 2
   },
-  "blurb": "Andalo and Fai della Paganella, one ridge above the Brenta valley."
+  "blurb": "Andalo and Fai della Paganella, one ridge above the Brenta valley.",
+  "published": {
+    "lifts": 15,
+    "runs": 31,
+    "top": 2125,
+    "bottom": 1028
+  }
 };
 
 /**

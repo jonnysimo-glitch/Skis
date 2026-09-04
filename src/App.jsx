@@ -41,7 +41,7 @@ import PlanButton from "./ui/PlanButton.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
-import { NODES, buildEdges, activeGraph, setActiveResort } from "./active-resort.js";
+import { NODES, buildEdges, activeGraph, setActiveResort, ensureActive } from "./active-resort.js";
 import { graphFor } from "./resorts/graphs.js";
 import { useSolver } from "./lib/useSolver.js";
 import { directRoute } from "./lib/direct.js";
@@ -152,6 +152,13 @@ export default function App() {
   // came back empty. Read by the empty state to offer a finish that works.
   const [capacity, setCapacity] = useState(null);
   const resort = getResort(resortId) || defaultResort;
+  // Keep the graph bindings in step with the registry, on the very first
+  // render as well as after a switch. chooseResort swaps them when the user
+  // picks a resort, but a reload restores resortId from storage without going
+  // through it — and the bindings were then a different mountain from the one
+  // the registry reported, which made the first solve look up an OSM node key
+  // in the hand-typed graph. Idempotent, so calling it every render is free.
+  ensureActive(resort.id);
   // The whole mountain as map geometry. This was a module constant, which was
   // right while there was one mountain and is a trap now: computed at import it
   // would keep the first resort's pistes for the life of the page and draw them
