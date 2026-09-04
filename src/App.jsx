@@ -148,6 +148,9 @@ export default function App() {
   const [screen, setScreen] = useState("explore");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  // The longest day the active mountain supports, measured only when a solve
+  // came back empty. Read by the empty state to offer a finish that works.
+  const [capacity, setCapacity] = useState(null);
   const resort = getResort(resortId) || defaultResort;
   // The whole mountain as map geometry. This was a module constant, which was
   // right while there was one mountain and is a trap now: computed at import it
@@ -394,6 +397,24 @@ export default function App() {
 
   // ---- actions ------------------------------------------------------------
 
+  /**
+   * The longest day this mountain supports, or null if it supports none.
+   *
+   * Cuts the budget in steps until something comes back, which finds the
+   * answer in a few solves rather than scanning. Only ever called after a
+   * solve has already returned nothing, so the cost lands on a path that is
+   * otherwise a dead end.
+   */
+  const longestDay = useCallback(async (solverOpts) => {
+    for (const fraction of [0.66, 0.45, 0.3, 0.2]) {
+      const budget = Math.round(solverOpts.budget * fraction);
+      if (budget < 30) break;
+      const probe = await solve({ ...solverOpts, budget, graph: solverGraph, count: 1 });
+      if (probe?.routes?.length) return { minutes: probe.routes[0].minutes };
+    }
+    return null;
+  }, [solve, solverGraph]);
+
   const runSolve = useCallback(
     async (nextPlan, nextAbility, nextRefine, { showSolving = false, fromRefine = false } = {}) => {
       const solverOpts = toSolverOpts({
@@ -460,8 +481,15 @@ export default function App() {
         // where they are and say which one did it.
         setScreen("choose");
       } else if (!result.routes.length) {
+        // Before blaming the clock, find out whether this mountain can fill
+        // any day at all. A small resort and a full-day plan fails for the
+        // opposite reason — routes exist, there is just not enough terrain to
+        // fill the hours — and saying "everything overruns" there is simply
+        // untrue. One extra solve, on a path that already has nothing to show.
+        const capacityNow = await longestDay(solverOpts);
+        setCapacity(capacityNow);
         // The refined ability is what actually constrained the search.
-        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts, resort));
+        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts, resort, capacityNow));
         setScreen("empty");
       } else {
         setScreen("choose");
@@ -470,7 +498,7 @@ export default function App() {
     // solverGraph belongs here: without it this callback keeps the graph from
     // the resort that was active when it was created, which is the same freeze
     // as a module-scope constant and just as quiet.
-    [solve, solverGraph, resort]
+    [solve, solverGraph, resort, longestDay]
   );
 
   const onSolve = () => runSolve(plan, ability, refine, { showSolving: true });
@@ -497,6 +525,12 @@ export default function App() {
       runSolve(nextPlan, ability, next, { showSolving: true });
     } else if (id === "finishHere") {
       const nextPlan = { ...plan, finish: plan.start };
+      setPlan(nextPlan);
+      runSolve(nextPlan, ability, refine, { showSolving: true });
+    } else if (id === "shorterDay") {
+      // Finish when the mountain runs out rather than when you asked to.
+      const t1 = plan.t0 + capacity.minutes + (plan.lunch ? LUNCH_MINUTES : 0);
+      const nextPlan = { ...plan, t1 };
       setPlan(nextPlan);
       runSolve(nextPlan, ability, refine, { showSolving: true });
     } else if (id === "harder") {
@@ -823,6 +857,7 @@ export default function App() {
             diagnosis={diagnosis}
             plan={plan}
             resort={resort}
+            capacity={capacity}
             onFix={onFix}
             onBack={() => setScreen("plan")}
           />

@@ -22,6 +22,11 @@ import {
   toForm,
 } from "./harness.mjs";
 
+import { RESORTS } from "../src/resorts/index.js";
+
+const LIVE = RESORTS.filter((r) => r.available);
+const SOON = RESORTS.filter((r) => !r.available);
+
 const HEADED = process.argv.includes("--headed");
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).toLowerCase();
 
@@ -73,11 +78,23 @@ try {
     );
     check("settings is reachable from the bar", (await page.$('.iconbtn[aria-label="Settings"]')) !== null);
 
-    check("only one resort is offered as live", (await page.$$(".hero")).length === 1);
+    // Against the registry, not against a number that was true when it was
+    // typed: this used to assert "exactly one", which would fail the day a
+    // second resort's data landed and tell you nothing about why.
+    check(`every live resort is offered (${LIVE.length})`,
+      (await page.$$(".hero")).length === LIVE.length,
+      `${(await page.$$(".hero")).length} cards for ${LIVE.map((r) => r.id).join(", ")}`);
     check(
-      "the live resort is Monterosa",
+      "and the first one is Monterosa",
       (await page.$eval(".hero__nm", (n) => n.textContent)).includes("Monterosa")
     );
+    check(`nothing without data is offered as live (${SOON.length} to come)`,
+      (await page.$$eval(".resortcard__soon", (n) => n.length)) === SOON.length);
+    // Every live card reads its stats without optional chaining, so a resort
+    // promoted to live with an incomplete META would render "NaNk m top".
+    const heroText = (await page.$$eval(".hero", (n) => n.map((h) => h.textContent))).join(" ");
+    check("no live card shows a missing number", !/NaN|undefined/.test(heroText),
+      heroText.slice(0, 120));
     check("resorts not ready are listed and marked", (await page.$$(".resortcard")).length >= 3);
     check(
       "an unavailable resort is not a button",
@@ -966,6 +983,108 @@ try {
   }
 
   // ============================================================ Q. COPY ==
+  // ------------------------------------------------------------------------
+  if (section("R. Switching resort switches the mountain")) {
+    const page = await newPage(browser, { at: [9, 0] });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+
+    /** Plan and solve on the resort whose card is at `index`, and report it. */
+    const dayOn = async (index) => {
+      const heroes = await page.$$(".hero");
+      await heroes[index].click();
+      await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 15000 });
+      const shown = await page.$eval(".resortbar__nm", (n) => n.textContent.trim());
+      await page.click(".planbtn");
+      await page.waitForSelector("#p-t1", { timeout: 15000 });
+      const start = await page.$eval("#p-start", (n) => n.value ?? n.textContent);
+      await page.click("text=Find routes");
+      await page.waitForSelector(".routecard, .empty", { timeout: 20000 });
+
+      // A resort with little terrain and a full-day plan legitimately has
+      // nothing to offer, and the requirement there is an honest empty state
+      // with a fix that works — not a route. So take the fix if one is offered
+      // and report what came back either way.
+      let usedFix = null;
+      if (await page.$(".empty")) {
+        const buttons = await page.$$(".fixlist button");
+        if (buttons.length) {
+          usedFix = (await buttons[0].evaluate((n) => n.innerText)).split("\n")[0];
+          await buttons[0].click();
+          await page.waitForSelector(".routecard, .empty", { timeout: 20000 });
+        }
+      }
+      const cards = await page.$$eval(".routecard", (n) => n.map((c) => c.textContent));
+      const titles = await page.$$eval(".routecard__nm",
+        (n) => n.map((c) => c.textContent.trim()));
+      return { shown, start, cards, titles, usedFix };
+    };
+
+    /** Back to the resort list. */
+    const toHome = async () => {
+      const tabs = await page.$$(".tabbar__tab");
+      for (const tab of tabs) {
+        if (/home/i.test(await tab.evaluate((n) => n.textContent))) { await tab.click(); break; }
+      }
+      await page.waitForSelector(".hero", { timeout: 15000 });
+    };
+
+    const first = await dayOn(0);
+    check("the first resort plans a day", first.cards.length > 0,
+      `${first.cards.length} routes${first.usedFix ? ` after "${first.usedFix}"` : ""}`);
+    check("and the bar names the resort you picked", /Monterosa/.test(first.shown), first.shown);
+
+    if (LIVE.length < 2) {
+      // Not a pass dressed up as one: with one resort there is nothing to
+      // switch to, and this says so rather than reporting a green tick.
+      console.log("  ....  only one live resort, so there is nothing to switch to yet");
+      console.log("        the rest of this section runs as soon as a second resort's data lands");
+    } else {
+      await toHome();
+      const second = await dayOn(1);
+
+      // Either a day, or an empty state whose fix produced one. Both are
+      // correct; silently offering nothing is not.
+      check("the second resort ends up with a day too", second.cards.length > 0,
+        `${second.cards.length} routes${second.usedFix ? ` after "${second.usedFix}"` : ""}`);
+      if (second.usedFix) {
+        check("and it said why rather than just failing", /instead|until|through|red/i.test(second.usedFix),
+          second.usedFix);
+      }
+      check("the bar names the resort you switched to", second.shown !== first.shown,
+        `${first.shown} then ${second.shown}`);
+      check("the plan starts at the new resort's base", second.start !== first.start,
+        `${first.start} then ${second.start}`);
+
+      // Route titles are built from the active graph's own place names, so a
+      // solver still holding the first graph produces the first mountain's
+      // titles — which is what a stale module constant or a stale useCallback
+      // closure does, and neither throws.
+      //
+      // Not asserted as disjoint: two real resorts can share a place name, and
+      // a graph built from the same geography certainly does. Different is the
+      // claim that holds. The stronger check — that every leg belongs to the
+      // active node set — is a unit test, in src/active-resort.test.js.
+      check("and the day it offers is a different day",
+        second.titles.length > 0 && second.titles.join("|") !== first.titles.join("|"),
+        `${first.titles[0] || "?"} then ${second.titles[0] || "?"}`);
+
+      // Switching back must be just as clean, because the second graph is now
+      // the one in every closure.
+      await toHome();
+      const back = await dayOn(0);
+      check("switching back returns the first mountain", back.shown === first.shown, back.shown);
+      check("with the day it offered the first time",
+        back.titles.length > 0 && back.titles.join("|") === first.titles.join("|"),
+        `${back.titles[0] || "(no title found)"} against ${first.titles[0] || "(no title found)"}`);
+      check("and its own start", back.start === first.start, `${back.start} against ${first.start}`);
+    }
+
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+
   if (section("Q. How it reads")) {
     // Two rules, both easy to break by accident on the next copy edit.
     const page = await newPage(browser);

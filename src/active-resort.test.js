@@ -139,5 +139,37 @@ for (const path of await jsFiles("src")) {
 check("no importer computes a value from the graph at module scope",
   offenders.length === 0, offenders.join(" | "));
 
+/**
+ * The other way to read the wrong mountain.
+ *
+ * `measure` and `altitudeSeries` take an optional graph and fall back to
+ * Monterosa when they are not given one. That default is right for the solver,
+ * which is the only caller that can be sure, and a trap everywhere else:
+ * ElevationProfile called altitudeSeries(route) and crashed the render with
+ * "Cannot read properties of undefined (reading 'alt')" on any other resort,
+ * leaving the app stuck on the solving screen. direct.js had the same call and
+ * failed silently — the route was right and every number attached to it was
+ * read off Monterosa.
+ *
+ * Both only need NODES, so passing `{ NODES }` costs nothing. Checked by
+ * source, because a single-argument call is correct-looking code.
+ */
+const FALLBACK_FNS = ["measure", "altitudeSeries"];
+const graphless = [];
+for (const path of await jsFiles("src")) {
+  if (path.endsWith("src/solver.js")) continue; // the one caller that owns the default
+  const source = await readFile(path, "utf8");
+  source.split("\n").forEach((line, i) => {
+    for (const fn of FALLBACK_FNS) {
+      // One argument means no graph: `fn(route)` rather than `fn(route, g)`.
+      if (new RegExp(`\\b${fn}\\(\\s*[^,()]*\\)`).test(line)) {
+        graphless.push(`${path}:${i + 1} ${line.trim()}`);
+      }
+    }
+  });
+}
+check("nothing calls measure or altitudeSeries without a node set",
+  graphless.length === 0, graphless.join(" | "));
+
 console.log("\n" + (failures ? `${failures} FAILING` : `active-resort holds, all ${ran} checks`));
 process.exit(failures ? 1 : 0);

@@ -243,7 +243,7 @@ export function legClocks(route, startClock) {
  * Why nothing fits, in plain language, plus the changes that would actually
  * unblock it. Never invent a route that strands someone; do say what to change.
  */
-export function diagnose(plan, ability, opts, resort) {
+export function diagnose(plan, ability, opts, resort, capacity = null) {
   const window = plan.t1 - plan.t0;
   const sameBase = plan.start === plan.finish;
   // Whether there is any later finish to offer, or whether the mountain itself
@@ -279,6 +279,23 @@ export function diagnose(plan, ability, opts, resort) {
       headline: `Nothing gets you from ${NODES[plan.start].name} to ${NODES[plan.finish].name} in time.`,
       body: "Every option either misses a last lift or leaves you on the wrong side of the mountain. Crossing the valleys needs the high cols, and those lifts shut first.",
       fixes: ["laterFinish", "finishHere", ...(ability === "blue" ? ["harder"] : [])],
+    };
+  }
+
+  // A small mountain and a long day is a different failure, and the honest
+  // message is the opposite of the one below: routes exist, there just is not
+  // enough terrain to fill that many hours without lapping the same run past
+  // the repeat cap. `capacity` is the longest day the caller found by probing
+  // with shorter budgets; without it there is nothing to claim.
+  if (capacity && capacity.minutes && capacity.minutes < opts.budget * 0.9) {
+    const hours = Math.floor(capacity.minutes / 60);
+    const mins = capacity.minutes % 60;
+    const asText = hours ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins} minutes`;
+    return {
+      title: "Not enough mountain",
+      headline: `There isn't enough terrain here to fill ${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)}.`,
+      body: `The longest day this resort supports from ${NODES[plan.start].name} at your grade is about ${asText}. Past that you would be skiing the same runs over and over.`,
+      fixes: ["shorterDay", ...(ability !== "black" ? ["harder"] : [])],
     };
   }
 

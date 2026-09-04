@@ -100,7 +100,11 @@ export function directRoute(opts) {
   if (node !== opts.start) return null;
 
   return {
-    ...measure({ segments, minutes: best[opts.finish] }),
+    // Same node set the search ran on. Without this, measure falls back to
+    // Monterosa: the route would be correct and every number attached to it —
+    // vertical, areas, difficulty mix — would be read off the wrong mountain,
+    // silently, because the keys happen to exist there too.
+    ...measure({ segments, minutes: best[opts.finish] }, { NODES }),
     label: "Straight there",
     title: `To ${NODES[opts.finish].name}`,
     direct: true,

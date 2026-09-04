@@ -9,6 +9,7 @@
  * chart.
  */
 import { altitudeSeries } from "../solver.js";
+import { NODES } from "../active-resort.js";
 import { PISTE_COLOUR, LIFT_COLOUR } from "../lib/geo.js";
 import { ACCENT } from "../lib/brand.js";
 
@@ -22,7 +23,12 @@ export default function ElevationProfile({
 }) {
   if (!route?.segments?.length) return null;
 
-  const alts = altitudeSeries(route);
+  // The node set has to be the active resort's. altitudeSeries falls back to
+  // Monterosa when it is not given one, so on any other mountain this read a
+  // key that is not there and crashed the render with "reading 'alt'" —
+  // leaving the app stuck on the solving screen. It only needs NODES, so this
+  // costs nothing.
+  const alts = altitudeSeries(route, { NODES });
   const lo = Math.min(...alts);
   const hi = Math.max(...alts);
   const span = hi - lo || 1;

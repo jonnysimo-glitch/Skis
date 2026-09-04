@@ -37,9 +37,23 @@ const FIXES = {
     title: "Include red runs",
     sub: "Opens the links between the valleys.",
   }),
+  /**
+   * For a mountain that cannot fill the day asked for. Finishing earlier is
+   * the fix, which is the opposite of every other one here — so it says what
+   * the new finish would be rather than leaving the reader to work it out.
+   */
+  shorterDay: (plan, resort, capacity) => {
+    if (!capacity?.minutes) return null;
+    const t1 = plan.t0 + capacity.minutes + (plan.lunch ? 45 : 0);
+    if (t1 >= plan.t1 - 5) return null; // not actually shorter
+    return {
+      title: `Plan to ${minutesToClock(t1)} instead`,
+      sub: "As long a day as this mountain supports.",
+    };
+  },
 };
 
-export default function EmptyScreen({ diagnosis, plan, resort, onFix, onBack }) {
+export default function EmptyScreen({ diagnosis, plan, resort, capacity, onFix, onBack }) {
   return (
     <>
       <SheetHead>
@@ -60,7 +74,7 @@ export default function EmptyScreen({ diagnosis, plan, resort, onFix, onBack }) 
               above has already said so and a list of dead ends adds nothing. */}
           <ul className="fixlist">
             {(diagnosis.fixes || []).map((id) => {
-              const fix = FIXES[id]?.(plan, resort);
+              const fix = FIXES[id]?.(plan, resort, capacity);
               if (!fix) return null;
               return (
                 <li key={id}>

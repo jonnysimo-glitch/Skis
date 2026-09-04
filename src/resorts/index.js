@@ -91,11 +91,22 @@ for (const entry of COMING) {
   if (!byId.has(entry.id)) byId.set(entry.id, entry);
 }
 
-// Live resorts first: the panel's job is to get you onto a mountain, and a
-// list that opens with things you cannot pick is a worse list.
+/**
+ * Live resorts first: the panel's job is to get you onto a mountain, and a list
+ * that opens with things you cannot pick is a worse list.
+ *
+ * Then Monterosa, then everything else by name. The order has to be declared
+ * rather than fall out of the map, because `defaultResort` is the first live
+ * entry and the map's order is whatever readdir gave the generator — which put
+ * Kronplatz ahead of Monterosa and would have opened a first-time user on the
+ * wrong mountain. Returning users are unaffected either way: the app restores
+ * the resort they last picked.
+ */
 export const RESORTS = [...byId.values()].sort((a, b) => {
   if (a.available !== b.available) return a.available ? -1 : 1;
-  return 0;
+  if (a.id === BUILT_IN.id) return -1;
+  if (b.id === BUILT_IN.id) return 1;
+  return (a.name || "").localeCompare(b.name || "");
 });
 
 export const getResort = (id) => RESORTS.find((r) => r.id === id) || null;
