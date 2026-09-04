@@ -14,6 +14,20 @@
  * Findings are grouped by screen so a regression points at one place.
  */
 import { serve, launch, newPage as makePage, openRoute } from "./harness.mjs";
+import { RESORTS } from "../src/resorts/index.js";
+import { graphFor } from "../src/resorts/graphs.js";
+
+/**
+ * The key of the place called `name` in the resort the app opens on.
+ *
+ * Keys are generated from OSM names, so naming them here — "salati",
+ * "champoluc" — went stale the moment the graphs came from real data, and
+ * selectOption waits for an option that will never appear until the whole
+ * audit times out. Looked up instead.
+ */
+const audited = graphFor(RESORTS.find((r) => r.available).id);
+const keyNamed = (name) =>
+  Object.keys(audited.NODES).find((k) => new RegExp(name, "i").test(audited.NODES[k].name)) ?? null;
 
 /** The audit itself, run inside the page against whatever is on screen. */
 const PROBE = `(() => {
@@ -247,8 +261,14 @@ for (const ability of ["Blue", "Anything"]) {
   await page.waitForSelector("#p-t1", { timeout: 15000 });
   await page.click('.segmented__opt:has-text("Straight there")');
   await audit(page, "plan (straight there)");
-  await page.selectOption("#p-start", "salati");
-  await page.selectOption("#p-finish", "champoluc");
+  // A cross-valley transfer, by name rather than by key.
+  const straightFrom = keyNamed("salati") ?? Object.keys(audited.NODES)[0];
+  const straightTo =
+    keyNamed("champoluc") ??
+    Object.keys(audited.NODES).find((k) => audited.NODES[k].base && k !== straightFrom) ??
+    Object.keys(audited.NODES)[1];
+  await page.selectOption("#p-start", straightFrom);
+  await page.selectOption("#p-finish", straightTo);
   await page.click("text=Take me there");
   await page.waitForSelector(".sheet__foot .btn, .empty", { timeout: 20000 });
   await audit(page, "detail (straight there)");
@@ -287,7 +307,12 @@ for (const ability of ["Blue", "Anything"]) {
   await page.waitForSelector(".sheet__foot .btn");
   await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 15000 });
-  for (let i = 0; i < 80; i++) {
+  // Walk the whole route to its end. The cap was 80, which was ample for the
+  // hand-typed graph and is not for a real one: OSM geometry has a decision
+  // point every half kilometre, so a Monterosa day runs to 84 legs. Falling
+  // short left the app on the navigate screen, where the tab bar is hidden,
+  // and the Stats click below waited until the audit timed out.
+  for (let i = 0; i < 400; i++) {
     const b = await page.$('.nav__foot .btn:has-text("Reached")');
     if (!b) break;
     await b.click();
@@ -298,6 +323,12 @@ for (const ability of ["Blue", "Anything"]) {
     await finish.click();
     await page.waitForTimeout(600);
     await audit(page, "summary");
+  }
+  // And if the walk did not finish for some other reason, get back to a screen
+  // that has a tab bar rather than hanging on one that does not.
+  if (!(await page.$('.tabbar__tab:has-text("Stats")'))) {
+    await go(page);
+    await page.waitForSelector('.tabbar__tab:has-text("Stats")', { timeout: 15000 });
   }
   await page.click('.tabbar__tab:has-text("Stats")');
   await page.waitForTimeout(500);
