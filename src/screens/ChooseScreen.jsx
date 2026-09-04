@@ -110,11 +110,17 @@ export default function ChooseScreen({
           </div>
         )}
 
+        {/* Why some of these look alike, without guessing at the cause.
+            This used to open "Not much {ability} terrain here", which was
+            true of a blue skier at Monterosa and wrong about the one case
+            that still reaches it — a red skier with two and a half hours
+            from Champoluc, where the terrain is not what is short. The two
+            things the reader can change are named instead. */}
         {similar > 0 && (
           <div className="info">
             <Info className="info__icon" width="17" height="17" />
             <span>
-              Not much {opts.ability} terrain here.{" "}
+              Not much choice from {NODES[plan.start].name} in {hours(opts.budget)}.{" "}
               {similar === routes.length ? "These are" : `${similar} of these are`}{" "}
               <b>variations on the same runs</b>.
             </span>

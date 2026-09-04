@@ -190,14 +190,31 @@ export default function App() {
   //      | {state:'insecure'} | {state:'unavailable'} | {state:'locating'}
   const [gps, setGps] = useState(null);
 
-  const setAbility = (value) => {
-    setAbilityState(value);
-    save("profile", { ability: value });
-  };
-
   // ---- solving ------------------------------------------------------------
   const { solve, solving } = useSolver();
   const [refine, setRefine] = useState(() => new Set());
+
+  /**
+   * Setting the grade is a statement about the grade, so it clears any
+   * easier/harder chip still on from the last plan.
+   *
+   * Without this they compound silently. Take the empty state's "Include red
+   * runs", go back to the form, set the chip to "Blue and red", and the
+   * refinement is still on top of it: the app plans a black day and nothing
+   * on screen says why.
+   */
+  const setAbility = (value) => {
+    setAbilityState(value);
+    save("profile", { ability: value });
+    setRefine((current) => {
+      if (!current.has("easier") && !current.has("harder")) return current;
+      const next = new Set(current);
+      next.delete("easier");
+      next.delete("harder");
+      return next;
+    });
+  };
+
   const [routes, setRoutes] = useState([]);
   const [opts, setOpts] = useState(null);
   const [pickIndex, setPickIndex] = useState(0);

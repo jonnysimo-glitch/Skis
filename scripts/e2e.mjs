@@ -507,7 +507,17 @@ try {
     const after = await chipsOn();
     check("opposites cancel rather than stack", !after.some((c) => /Shorter/.test(c)), after.join(", "));
 
-    // Every chip, in turn, from a clean state.
+    /*
+     * Every chip, in turn, from a clean state.
+     *
+     * The requirement is that a chip never sends you back to the form, so
+     * that is what is asserted: the chips are still under your thumb and the
+     * form is not on screen. A chip that empties the list is allowed — asking
+     * for easier at Monterosa, where no blue day exists, has no answer — but
+     * only if the page says so and the same chip can undo it. This used to
+     * test for the words "Pick a shape", which the page stops saying when it
+     * has nothing to offer, and read a correct ruled-out page as a failure.
+     */
     for (const chip of ["Easier", "Harder", "More vertical", "No drags", "Lunch"]) {
       const el = await page.$(`.sectionrule button.chip:text-is("${chip}")`);
       const disabled = await el.evaluate((n) => n.disabled);
@@ -517,13 +527,43 @@ try {
       }
       await el.click();
       await page.waitForTimeout(900);
-      const stillHere = await onChoose();
+      const onForm = (await page.$("#p-t1")) !== null;
+      const chipsHere = (await page.$$(".sectionrule button.chip")).length > 0;
       const count = await routeCount(page);
-      const empty = (await page.$(".empty")) !== null;
-      check(`"${chip}" re-solves without leaving the screen`, stillHere || empty, stillHere ? "on choose" : "empty state");
-      check(`"${chip}" leaves something on screen`, count > 0 || empty, `${count} routes`);
-      if (!stillHere) break;
+      check(`"${chip}" re-solves without going back to the form`, !onForm && chipsHere,
+        onForm ? "landed on the form" : chipsHere ? "chips still there" : "chips gone");
+      if (count === 0) {
+        const said = await page.$eval(".page__body", (b) => b.textContent);
+        check(`"${chip}" says so when it rules everything out`,
+          /rules everything out|no day fits/i.test(said),
+          said.replace(/\s+/g, " ").slice(0, 90));
+        // And is undoable from where you are, which is the whole point.
+        await page.click(`.sectionrule button.chip:text-is("${chip}")`);
+        await page.waitForTimeout(900);
+        check(`"${chip}" can be turned back off and the options return`,
+          (await routeCount(page)) > 0, `${await routeCount(page)} routes`);
+      } else {
+        check(`"${chip}" leaves something on screen`, count > 0, `${count} routes`);
+      }
     }
+
+    /*
+     * A grade chip on the form beats a grade chip on the options page.
+     *
+     * They used to compound: take "Include red runs" from an empty state, go
+     * back to the form, set the grade to "Blue and red", and the harder
+     * refinement was still on top of it — the app planned a black day and
+     * nothing on screen said why.
+     */
+    await page.click('[aria-label="Change the plan"], button:has-text("Change the plan")');
+    await page.waitForSelector("#p-t1", { timeout: 15000 });
+    await page.click('button.chip:text-is("Anything")');
+    await page.click('button.chip:text-is("Blue and red")');
+    await solve(page);
+    const gradeChips = await page.$$eval(
+      ".sectionrule button.chip[aria-pressed=true]", (n) => n.map((c) => c.textContent));
+    check("setting the grade on the form clears easier and harder",
+      !gradeChips.some((c) => /Easier|Harder/.test(c)), gradeChips.join(", ") || "none on");
 
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
@@ -829,26 +869,72 @@ try {
   if (section("K. When the mountain cannot offer real variety")) {
     const page = await newPage(browser);
     await toPlan(page, url);
+
+    /**
+     * Back to the form from wherever this leaves us — the options page, the
+     * route detail, or the empty state. Each has its own way back and none of
+     * them is the resort's Plan button.
+     */
+    const backToForm = async () => {
+      const change = await page.$('[aria-label="Change the plan"], button:has-text("Change the plan")');
+      if (change) await change.click();
+      else await toForm(page);
+      await page.waitForSelector("#p-t1", { timeout: 15000 });
+    };
+
+    /*
+     * Monterosa has 21 blue edges and they do not link up, so no blue day
+     * exists there at any length. This used to assert that one was offered
+     * anyway, and one was: five hours that skied 1.2 km and descended 166
+     * metres, the same cable car up and down. The requirement is the
+     * opposite of what the check said — say so plainly, and offer something
+     * that works.
+     */
     await page.click('button.chip:text-is("Blue")');
     await solve(page);
+    check("no blue day at Monterosa, and none is invented", (await routeCount(page)) === 0,
+      `${await routeCount(page)} routes`);
 
-    const n = await routeCount(page);
-    check("a blue-only skier still gets a day planned", n > 0, `${n} routes`);
+    const noBlue = await page.$eval(".sheet__body", (b) => b.textContent);
+    check("the reason given is the grade, not the clock",
+      /no day on blue|no blue day/i.test(noBlue) && !/back in time/i.test(noBlue),
+      noBlue.replace(/\s+/g, " ").slice(0, 110));
+    check("and it says the blue runs do not link up",
+      /do not link up|don't link up/i.test(noBlue));
 
-    // Choose is a full page rather than a sheet: too much to compare in a
-    // panel you have to drag. The notice lives in the page body now.
+    const blueFixes = await page.$$(".fixlist button");
+    check("a fix is offered", blueFixes.length > 0, `${blueFixes.length}`);
+    if (blueFixes.length) {
+      const label = (await blueFixes[0].evaluate((n) => n.innerText)).split("\n")[0];
+      await blueFixes[0].click();
+      await page.waitForSelector(".routecard, .empty", { timeout: 20000 });
+      // Taking it has to lead somewhere. A fix that re-solves to the same
+      // empty state is worse than no fix at all.
+      const after = await routeCount(page);
+      check(`and taking it plans a day ("${label}")`, after > 0 || Boolean(await page.$(".fixlist button")),
+        after > 0 ? `${after} routes` : "still empty, and still offering a way on");
+    }
+
+    /*
+     * Where the similar flag still fires: a red skier with two and a half
+     * hours from Champoluc. The notice must not blame the grade there —
+     * Monterosa has 41 km of red piste — so it names the start and the
+     * length, which are the two things the reader can change.
+     */
+    await backToForm();
+    await page.selectOption("#p-start", keyNamed("Champoluc"));
+    await page.selectOption("#p-finish", keyNamed("Champoluc"));
+    await page.click('button.chip:text-is("Blue and red")');
+    await page.fill("#p-t0", "09:05");
+    await page.fill("#p-t1", "12:05");
+    await solve(page);
     const notice = await page.$eval(".page__body", (b) => b.textContent);
-    check(
-      "and is told plainly these are variations on the same runs",
-      /variations on the same runs/i.test(notice)
-    );
-    check(
-      "and told why, naming the terrain that is short",
-      // Meaning, not wording: the notice has to say the ability level is the
-      // constraint. Asserting the exact sentence just breaks on a copy edit.
-      /blue terrain/i.test(notice) && /not much|isn't much|little/i.test(notice),
-      notice.replace(/\s+/g, " ").match(/[^.]*blue terrain[^.]*/i)?.[0]?.trim() ?? "no message found"
-    );
+    check("routes that cover the same runs are flagged as such",
+      /variations on the same runs/i.test(notice),
+      notice.replace(/\s+/g, " ").slice(0, 120));
+    check("and the notice names what to change, not a grade that is not short",
+      /Champoluc/.test(notice) && !/terrain here/i.test(notice),
+      notice.replace(/\s+/g, " ").match(/Not much[^.]*\./)?.[0] ?? "no notice found");
 
     // The whole mountain, by contrast, should offer real choice and hide the
     // extras behind an affordance rather than dumping six options.
@@ -856,8 +942,9 @@ try {
     // The window matters: a longer day forces routes to cover more of the same
     // terrain, so the overlap check rejects the extras and three is genuinely
     // all there is. 09:15-16:00 is where five distinct days exist.
-    await page.click("text=Change the plan");
-    await page.waitForSelector("#p-t1");
+    await backToForm();
+    await page.selectOption("#p-start", keyNamed("Stafal"));
+    await page.selectOption("#p-finish", keyNamed("Stafal"));
     await page.click('button.chip:text-is("Anything")');
     await page.fill("#p-t0", "09:15");
     await page.fill("#p-t1", "16:00");
@@ -1148,13 +1235,24 @@ try {
       return { shown, start, cards, titles, usedFix };
     };
 
-    /** Back to the resort list. */
+    /**
+     * Back to the resort list.
+     *
+     * Also the check that the options page is not sitting on top of it. It is
+     * a full page at the same layer as Home, and while it was rendered on
+     * `screen === "choose"` alone rather than on the tab as well, tapping Home
+     * from the options list left the resort list underneath a page of routes:
+     * the tab did nothing you could see, and the tap never even landed.
+     */
     const toHome = async () => {
       const tabs = await page.$$(".tabbar__tab");
       for (const tab of tabs) {
         if (/home/i.test(await tab.evaluate((n) => n.textContent))) { await tab.click(); break; }
       }
       await page.waitForSelector(".hero", { timeout: 15000 });
+      check("the Home tab shows the resort list, not the options page",
+        (await page.$$(".routecard")).length === 0,
+        `${(await page.$$(".routecard")).length} route cards still on screen`);
     };
 
     const first = await dayOn(0);

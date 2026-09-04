@@ -264,8 +264,25 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
     // down again.
     if (reverses(segments[segments.length - 1], edge)) return null;
     if (edge.kind === "lift" && opts.startClock + elapsed > edge.lastUp) return null;
+    /*
+     * The way home is not a lap, so the repeat cap does not get a vote on it.
+     *
+     * This was throwing away almost every walk. The cap exists to stop the
+     * sampler padding a day by lapping one run or one wire; the tail is not
+     * sampled at all, it is the shortest path back, and the last leg of it is
+     * usually the same base gondola the day has already used. So a walk that
+     * had used that wire up to its cap could not come home, and the cap was
+     * reached on nearly every walk long enough to matter: at Monterosa with a
+     * full-day window, 3500 samples and 3500 rejections, all of them here.
+     *
+     * Runs too, and for the same reason. On a real graph one piste is a dozen
+     * edges, so the way home rejoins something already skied almost every
+     * time: keeping the cap over the tail threw away 94-97% of the walks and
+     * cost Paganella a full day at every grade. pathHome follows the Dijkstra
+     * tree, so it visits each node once and uses each edge once — the most
+     * this can add is a single traversal, of the shortest way back.
+     */
     uses[useKey(edge)] = (uses[useKey(edge)] || 0) + 1;
-    if (uses[useKey(edge)] > repeatCap(edge)) return null;
     segments.push(edge);
     elapsed += edge.min;
   }
