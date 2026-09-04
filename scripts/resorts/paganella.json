@@ -4,26 +4,36 @@
   "region": "Trentino",
   "country": "Italy",
   "note": "Andalo and Fai della Paganella, one ridge above the Brenta valley.",
-
-  "bbox": [10.98, 46.11, 11.10, 46.20],
+  "bbox": [
+    10.98,
+    46.11,
+    11.1,
+    46.2
+  ],
   "tolerance": 45,
-
-  "bases": ["Andalo", "Fai della Paganella", "Santel"],
+  "bases": [
+    "Andalo",
+    "Fai della Paganella",
+    "Santel"
+  ],
   "areas": {
     "Andalo": "Andalo",
     "Fai della Paganella": "Fai",
     "Santel": "Fai"
   },
-
   "firstLift": 510,
   "lastDown": 1020,
   "lifts": {
-    "default": { "lastUp": 1000, "queue": 4 }
+    "default": {
+      "lastUp": 1000,
+      "queue": 4
+    }
   },
-
   "operationsProvenance": "PLACEHOLDER. lastUp and queue are not from OpenStreetMap and are not yet from the resort either. They must be replaced with published lift hours before this resort is marked available.",
   "sources": [
     "https://www.visittrentino.info/en/trentino/ski-areas/alpine-skiing/paganella-ski-andalo-fai-della-paganella_md_2191",
     "https://www.trentino.com/en/leisure-activities/winter-sports/skiing-areas-in-trentino/paganella-ski/"
-  ]
+  ],
+  "defaultBase": "Andalo",
+  "defaultBaseWhy": "The main village and the larger of the two lift bases."
 }

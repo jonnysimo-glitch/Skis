@@ -12,6 +12,90 @@
 const pad = (text, width) => String(text).padEnd(width);
 const quote = (text) => JSON.stringify(text);
 
+/**
+ * The registry entry for a resort, derived from its own graph.
+ *
+ * Everything the selection panel, the map camera and the offline tile warmer
+ * read has to come from somewhere, and hand-typing it per resort is the manual
+ * step this pipeline exists to remove. So it is computed here, at build time,
+ * from the graph and the config — and every number below says where it came
+ * from.
+ */
+function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
+  const nodes = Object.values(NODES);
+  const lats = nodes.map((n) => n.lat);
+  const lons = nodes.map((n) => n.lon);
+  const alts = nodes.map((n) => n.alt);
+  const lat0 = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const lon0 = (Math.min(...lons) + Math.max(...lons)) / 2;
+
+  // The governing span is the wider of the two once longitude is corrected for
+  // latitude, because that is the dimension that has to fit on screen.
+  const span = Math.max(
+    Math.max(...lats) - Math.min(...lats),
+    (Math.max(...lons) - Math.min(...lons)) * Math.cos((lat0 * Math.PI) / 180)
+  );
+  // Calibrated against Monterosa, whose 11.6 was set by eye to frame the
+  // mountain with a little room around it: this formula returns 11.61 for it.
+  // Clamped because a one-lift resort should not open zoomed into a lift
+  // station and a linked-valley giant should not open from orbit.
+  const zoom = Math.round(Math.min(13.5, Math.max(9.5, Math.log2(360 / span) + 0.35)) * 10) / 10;
+
+  const baseKeys = Object.keys(NODES).filter((k) => NODES[k].base);
+  const lowestBase = baseKeys.length
+    ? baseKeys.reduce((a, b) => (NODES[b].alt < NODES[a].alt ? b : a))
+    : null;
+  // The config names the base the app should open on, because which valley
+  // that is cannot be derived: it is the one a skier would drive to, not the
+  // lowest or the biggest. Matched on name so it survives a graph rebuild
+  // renumbering the keys, and falling back to the lowest base if the named one
+  // did not survive the connectivity prune.
+  const namedBase = config.defaultBase
+    ? baseKeys.find((k) => NODES[k].name === config.defaultBase)
+    : null;
+  const highest = Object.keys(NODES).reduce((a, b) => (NODES[b].alt > NODES[a].alt ? b : a));
+
+  // Look from the valley you would park in towards the high point, so the day
+  // opens facing up the mountain. This is NOT what Monterosa's hand-set -24
+  // does — the derivation gives -52 there — so that entry keeps its own value
+  // and a config may override this one. It is derived rather than invented,
+  // which is the rule that matters.
+  let bearing = 0;
+  if (lowestBase && lowestBase !== highest) {
+    const a = NODES[lowestBase];
+    const b = NODES[highest];
+    const dLon = (b.lon - a.lon) * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+    bearing = Math.round((Math.atan2(dLon, b.lat - a.lat) * 180) / Math.PI);
+  }
+
+  const areas = new Set(baseKeys.map((k) => NODES[k].area).filter(Boolean));
+
+  return {
+    id,
+    name: config.name,
+    region: config.region,
+    country: config.country,
+    available: true,
+    center: [Math.round(lon0 * 1e5) / 1e5, Math.round(lat0 * 1e5) / 1e5],
+    zoom,
+    pitch: config.camera?.pitch ?? 62,
+    bearing: config.camera?.bearing ?? bearing,
+    bbox: config.bbox,
+    bases: baseKeys,
+    defaultBase: namedBase ?? lowestBase ?? Object.keys(NODES)[0],
+    firstLift: config.firstLift,
+    lastDown: config.lastDown,
+    stats: {
+      lifts: LIFTS.length,
+      runs: RUNS.length,
+      top: Math.max(...alts),
+      bottom: Math.min(...alts),
+      valleys: areas.size || 1,
+    },
+    blurb: config.note ?? null,
+  };
+}
+
 export function emit({ id, meta, NODES, LIFTS, RUNS, report, fetchedAt }) {
   const nodeKeys = Object.keys(NODES);
   const keyWidth = Math.max(...nodeKeys.map((k) => k.length)) + 2;
@@ -98,6 +182,13 @@ ${runLines.join("\n")}
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 
 export const SHORT_NAMES = ${JSON.stringify(meta.shortNames || {}, null, 2)};
+
+/**
+ * How the app lists and frames this resort. Derived from the graph above and
+ * scripts/resorts/${id}.json at build time, so adding a resort does not mean
+ * hand-typing a camera position.
+ */
+export const META = ${JSON.stringify(registryEntry({ id, config: meta, NODES, LIFTS, RUNS }), null, 2)};
 
 export function buildEdges() {
   const edges = [];

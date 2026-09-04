@@ -4,11 +4,23 @@
   "region": "South Tyrol",
   "country": "Italy",
   "note": "Plan de Corones. One mountain, lifts up from three valleys.",
-
-  "bbox": [11.86, 46.71, 12.03, 46.81],
+  "bbox": [
+    11.86,
+    46.71,
+    12.03,
+    46.81
+  ],
   "tolerance": 45,
-
-  "bases": ["Reischach", "Riscone", "Olang", "Valdaora", "Percha", "Perca", "St. Vigil", "San Vigilio"],
+  "bases": [
+    "Reischach",
+    "Riscone",
+    "Olang",
+    "Valdaora",
+    "Percha",
+    "Perca",
+    "St. Vigil",
+    "San Vigilio"
+  ],
   "areas": {
     "Reischach": "Bruneck",
     "Riscone": "Bruneck",
@@ -19,16 +31,19 @@
     "St. Vigil": "St. Vigil",
     "San Vigilio": "St. Vigil"
   },
-
   "firstLift": 510,
   "lastDown": 1020,
   "lifts": {
-    "default": { "lastUp": 1000, "queue": 5 }
+    "default": {
+      "lastUp": 1000,
+      "queue": 5
+    }
   },
-
   "operationsProvenance": "PLACEHOLDER. lastUp and queue are not from OpenStreetMap and are not yet from the resort either. They must be replaced with published lift hours before this resort is marked available.",
   "sources": [
     "https://www.skiresort.info/ski-resort/kronplatz-plan-de-corones/",
     "https://en.wikipedia.org/wiki/Kronplatz_(Plan_de_Corones)"
-  ]
+  ],
+  "defaultBase": "Reischach",
+  "defaultBaseWhy": "The Bruneck side, where the main cable car up the Kronplatz summit starts."
 }
