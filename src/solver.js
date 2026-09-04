@@ -53,8 +53,25 @@ const MONTEROSA = asGraph({ NODES, SHORT_NAMES, buildEdges });
 
 /** Sampling effort. Higher finds better routes and costs linear time. */
 const SAMPLES = 3500;
-/** Max steps in one walk. Must be high enough to fill a full-day budget. */
-const WALK_LIMIT = 70;
+/**
+ * Max steps in one walk. Must be high enough to fill a full-day budget.
+ *
+ * Like TYPICAL_LAP_MINUTES below, this describes the data rather than the
+ * algorithm, and it moved when the data did. 70 was ample for the hand-typed
+ * graph, whose thirteen places made a four-hour day out of eighteen edges of
+ * about eleven minutes each. Real OpenStreetMap geometry has a decision point
+ * roughly every half kilometre, so the same day is forty-eight edges of two
+ * and a half minutes — and at 70 a walk ran out of steps rather than out of
+ * time. Every one of the three real graphs topped out near four hours and
+ * could not fill a six-hour day at all, while the hand-typed one managed it
+ * easily on the same solver.
+ *
+ * 200 covers a full lift-hours day at the observed rate with room to spare.
+ * It is a ceiling, not a target: a walk stops when it reaches the finish or
+ * cannot legally extend, so raising it costs nothing for the walks that end
+ * early. Measured with npm run bench after the change.
+ */
+const WALK_LIMIT = 200;
 /**
  * Rough minutes for one lap: ski a run, ride a lift back up.
  *

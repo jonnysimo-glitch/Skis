@@ -10,7 +10,7 @@
     7.96,
     45.92
   ],
-  "tolerance": 50,
+  "tolerance": 75,
   "bases": [
     "Staffal",
     "Stafal",
@@ -39,10 +39,12 @@
   },
   "operationsProvenance": "PLACEHOLDER, carried over from the hand-typed graph this replaces. Must be replaced with published lift hours.",
   "sources": [],
-  "defaultBase": "Staffal",
-  "defaultBaseWhy": "The centre of the three valleys: the one base from which both cols are a lift away.",
+  "defaultBase": "Stafal",
+  "defaultBaseWhy": "OSM writes it with one f. The config used to say Staffal, which matched nothing, so the app opened its default day at whichever base happened to be lowest.",
   "camera": {
     "bearing": -24
   },
-  "cameraWhy": "Set by eye to open looking up the Gressoney valley. The derivation from lowest base to high point gives -53, which looks up from Alagna instead."
+  "cameraWhy": "Set by eye to open looking up the Gressoney valley. The derivation from lowest base to high point gives -53, which looks up from Alagna instead.",
+  "toleranceWhy": "Measured with npm run resort:tune. 20 of 25 lifts and 62 km survive at 75; 60 loses six kilometres and 45 collapses to ten lifts.",
+  "publishedSource": "NOT RECORDED. The figures the app used before this resort had OSM data came from src/resort.js, which was hand-typed from memory and is not a source. Needs the resort's own published network figures or its PDF piste map."
 }

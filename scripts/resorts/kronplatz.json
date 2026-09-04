@@ -10,7 +10,7 @@
     12.03,
     46.81
   ],
-  "tolerance": 45,
+  "tolerance": 60,
   "bases": [
     "Reischach",
     "Riscone",
@@ -44,6 +44,13 @@
     "https://www.skiresort.info/ski-resort/kronplatz-plan-de-corones/",
     "https://en.wikipedia.org/wiki/Kronplatz_(Plan_de_Corones)"
   ],
-  "defaultBase": "Reischach",
-  "defaultBaseWhy": "The Bruneck side, where the main cable car up the Kronplatz summit starts."
+  "defaultBase": "Olang",
+  "defaultBaseWhy": "The only base OSM names on this mountain. Reischach and Percha are real valley stations but OSM names their nodes after the lifts, so they are not findable yet — see the note in this file.",
+  "toleranceWhy": "Measured with npm run resort:tune. 19 lifts and 58 km at 60; 110 buys a twentieth lift and costs five kilometres of piste.",
+  "published": {
+    "lifts": 32,
+    "top": 2275,
+    "bottom": 950
+  },
+  "publishedSource": "Kronplatz's own published network figures, as recorded in src/resorts/index.js before this resort had data."
 }

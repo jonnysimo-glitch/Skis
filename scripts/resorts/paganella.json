@@ -10,7 +10,7 @@
     11.1,
     46.2
   ],
-  "tolerance": 45,
+  "tolerance": 75,
   "bases": [
     "Andalo",
     "Fai della Paganella",
@@ -35,5 +35,13 @@
     "https://www.trentino.com/en/leisure-activities/winter-sports/skiing-areas-in-trentino/paganella-ski/"
   ],
   "defaultBase": "Andalo",
-  "defaultBaseWhy": "The main village and the larger of the two lift bases."
+  "defaultBaseWhy": "The main village and the larger of the two lift bases.",
+  "toleranceWhy": "Measured with npm run resort:tune. 75 is where the second valley connects: 14 of 15 lifts and 32 km against 7 lifts and 15 km at 60.",
+  "published": {
+    "lifts": 15,
+    "runs": 31,
+    "top": 2125,
+    "bottom": 1028
+  },
+  "publishedSource": "Paganella Ski's own published network figures, as recorded in src/resorts/index.js before this resort had data."
 }

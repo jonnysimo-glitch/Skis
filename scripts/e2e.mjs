@@ -23,6 +23,7 @@ import {
 } from "./harness.mjs";
 
 import { RESORTS } from "../src/resorts/index.js";
+import { graphFor } from "../src/resorts/graphs.js";
 
 const LIVE = RESORTS.filter((r) => r.available);
 const SOON = RESORTS.filter((r) => !r.available);
@@ -156,12 +157,22 @@ try {
     // exists for, and it is not servable from bases-only pickers.
     const page = await newPage(browser, { at: [14, 0] });
     await toPlan(page, url);
+    // Node keys are generated from OSM names, so they change whenever the
+    // graph is rebuilt. This used to name three of them — salati, bettaforca,
+    // champoluc — which existed in the hand-typed graph and do not in the
+    // built one, so the check failed and the selectOption below waited for an
+    // option that would never appear until the whole run timed out. What the
+    // requirement actually says is "more than just the bases", so that is
+    // what is asserted, against the graph rather than against a memory of it.
+    const liveGraph = graphFor(LIVE[0].id);
+    const allKeys = Object.keys(liveGraph.NODES);
+    const baseKeys = allKeys.filter((k) => liveGraph.NODES[k].base);
     for (const field of ["p-start", "p-finish"]) {
       const opts = await page.$$eval(`#${field} option`, (n) => n.map((o) => o.value));
       check(
         `${field === "p-start" ? "start" : "finish"} can be any point on the mountain`,
-        opts.includes("salati") && opts.includes("bettaforca") && opts.includes("champoluc"),
-        `${opts.length} options`
+        opts.length > baseKeys.length && opts.every((o) => allKeys.includes(o)),
+        `${opts.length} options for ${allKeys.length} places, ${baseKeys.length} of them bases`
       );
       const groups = await page.$$eval(`#${field} optgroup`, (n) => n.map((g) => g.label));
       check(
@@ -171,9 +182,14 @@ try {
       );
     }
 
-    // And a mid-mountain pair actually solves.
-    await page.selectOption("#p-start", "salati");
-    await page.selectOption("#p-finish", "bettaforca");
+    // And a mid-mountain pair actually solves. Picked from the graph: the two
+    // highest places that are not bases, which is the stranded-at-a-col case
+    // whichever resort is first.
+    const highNotBase = allKeys
+      .filter((k) => !liveGraph.NODES[k].base)
+      .sort((a, b) => liveGraph.NODES[b].alt - liveGraph.NODES[a].alt);
+    await page.selectOption("#p-start", highNotBase[0]);
+    await page.selectOption("#p-finish", highNotBase[1] ?? baseKeys[0]);
     await page.fill("#p-t1", "16:00");
     await solve(page);
     const n = await routeCount(page);

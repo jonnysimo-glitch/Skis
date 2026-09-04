@@ -103,7 +103,10 @@ export function routeToGeoJSON(route) {
 export function graphToGeoJSON(edges) {
   return {
     type: "FeatureCollection",
-    features: edges.map((edge) => ({
+    // A downloadable lift appears twice in the edge list, once each way, so
+    // the solver can ride it down. It is one cable on the mountain, so drawing
+    // both would lay an identical line over itself and double the geometry.
+    features: edges.filter((edge) => !edge.down).map((edge) => ({
       type: "Feature",
       properties: { kind: edge.kind, difficulty: edge.difficulty || null },
       geometry: { type: "LineString", coordinates: edgeCoords(edge) },

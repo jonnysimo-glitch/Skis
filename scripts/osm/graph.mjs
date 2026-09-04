@@ -202,6 +202,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     geometryHoles: 0,
     waysWithHoles: 0,
     junctions: 0,
+    noAltitude: 0,
   };
 
   if (!lifts.length) throw new Error("No aerialways in the data. Check the bounding box.");
@@ -305,7 +306,13 @@ export function build(osm, { tolerance = 45, elevation }) {
   for (const [root, points] of groups) {
     const lat = points.reduce((s, p) => s + p.lat, 0) / points.length;
     const lon = points.reduce((s, p) => s + p.lon, 0) / points.length;
-    const alt = Math.round(elevation(lat, lon));
+    // Not Math.round: the sampler answers null for a point it has no tile
+    // for, and Math.round(null) is zero. A silent sea-level node in the Alps
+    // poisons every gradient it takes part in, so it stays null and `check`
+    // refuses the graph rather than shipping an invented altitude.
+    const sampled = elevation(lat, lon);
+    const alt = sampled === null || !Number.isFinite(sampled) ? null : Math.round(sampled);
+    if (alt === null) report.noAltitude++;
 
     // The best name within tolerance: a mapped station or peak beats anything
     // we could invent, and it is what the mountain's signs say.

@@ -91,16 +91,48 @@ function checkGraph(id, mod) {
   if (!check(`${id}: has at least one base to start and finish at`, bases.length > 0,
     "no node matched the config's `bases`")) return;
 
-  // The real test: can the solver plan a day on this mountain? A graph can be
-  // structurally valid and still be two halves joined by a lift that shuts at
-  // noon. Red covers blue too, so it is the ability that should always work.
+  /**
+   * The real test: can the solver plan a day on this mountain, and for whom?
+   *
+   * A graph can be structurally valid and still be useless. Monterosa's OSM
+   * graph gives a black skier all 76 places from Stafal, a red skier 26, and a
+   * blue skier exactly one — nowhere at all — because the blue runs are real
+   * but do not form a round trip. A resort that silently offers a beginner
+   * nothing is the "looks authoritative and is not" failure this pipeline
+   * exists to prevent, so it is measured per grade and stated.
+   *
+   * Failing is reserved for a resort that serves nobody. A grade with nothing
+   * for it is reported, because the fix is a wider bbox or a look at the piste
+   * map, not something a build can decide.
+   */
   const graph = asGraph({ NODES, SHORT_NAMES, buildEdges });
+  const ABILITIES = ["blue", "red", "black"];
   for (const start of bases) {
-    const routes = solve({
-      graph, start, finish: start, ability: "red",
-      budget: 6 * 60, startClock: 9 * 60, count: 3,
-    });
-    check(`${id}: solves a six-hour day from ${NODES[start].name}`, routes.length > 0);
+    const served = [];
+    const longest = {};
+    for (const ability of ABILITIES) {
+      // The longest day each grade supports, rather than a pass/fail at six
+      // hours: a small mountain honestly cannot fill one and that is not a
+      // fault, whereas a grade that cannot fill ninety minutes is.
+      let best = 0;
+      for (const budget of [90, 150, 240, 360]) {
+        const routes = solve({
+          graph, start, finish: start, ability,
+          budget, startClock: 9 * 60, count: 1,
+        });
+        if (routes.length) best = Math.max(best, routes[0].minutes);
+      }
+      longest[ability] = best;
+      if (best >= 90) served.push(ability);
+    }
+    check(`${id}: ${NODES[start].name} works for somebody`, served.length > 0,
+      `blue ${longest.blue}min, red ${longest.red}min, black ${longest.black}min`);
+    const unserved = ABILITIES.filter((a) => !served.includes(a));
+    if (served.length && unserved.length) {
+      console.log(`  note  ${id}: nothing for ${unserved.join(" or ")} from ` +
+        `${NODES[start].name} — longest day: ` +
+        ABILITIES.map((a) => `${a} ${longest[a]}min`).join(", "));
+    }
   }
 
   const total = RUNS.reduce((sum, r) => sum + (r[4] || 0), 0);

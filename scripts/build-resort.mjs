@@ -20,6 +20,7 @@ import { elevationFor } from "./osm/elevation.mjs";
 import { emit } from "./osm/emit.mjs";
 import { writeRegistry } from "./osm/registry.mjs";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
+import { contractChains } from "./osm/simplify.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -79,9 +80,16 @@ async function buildOne(id) {
 
   graph = applyOperations(graph, config);
   graph = fillAreas(graph, config);
+  // After the bases are marked, because a base is never contracted away, and
+  // before the prune, so connectivity is judged on the graph the app will use.
+  graph = contractChains(graph);
   graph = prune(graph);
 
   const r = graph.report;
+  if (r.chainsMerged) {
+    console.log(`  simplified  ${r.chainsMerged} way-end joins contracted, ` +
+      `${r.nodesContracted} node(s) that were only a continuation removed`);
+  }
   console.log(`  connected   kept ${r.nodesKept} of ${r.nodesKept + r.nodesDropped} nodes ` +
     `(${r.components} components), dropped ${r.liftsDropped} lifts and ${r.runsDropped} runs`);
   // Two different faults, and the numbers tell them apart. Nodes outside the
@@ -97,6 +105,10 @@ async function buildOne(id) {
       `mountain, ${r.strandedOnly} more can be reached but not left`);
   }
   if (r.difficultyAssumed) console.log(`  assumed     ${r.difficultyAssumed} pistes had no difficulty, taken as red`);
+  // Loud, because an altitude-less node is a node the solver cannot rank and
+  // `check` will refuse the whole graph over. It means the DEM did not cover
+  // somewhere a piste reached, which is a bbox to widen rather than a mystery.
+  if (r.noAltitude) console.log(`  NO HEIGHT   ${r.noAltitude} node(s) fell outside the elevation tiles`);
   if (r.bases !== undefined) {
     console.log(`  bases       ${r.bases} matched from config` +
       (r.duplicateBases ? `, ${r.duplicateBases} same-named node(s) not marked` : ""));

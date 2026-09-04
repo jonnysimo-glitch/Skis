@@ -45,10 +45,19 @@ export const decode = (r, g, b) => r * 256 + g + b / 256 - 32768;
  */
 export async function elevationFor(bbox, { offline = false } = {}) {
   const [w, s, e, n] = bbox;
-  const x0 = Math.floor(lonToTile(w, ZOOM));
-  const x1 = Math.floor(lonToTile(e, ZOOM));
-  const y0 = Math.floor(latToTile(n, ZOOM));
-  const y1 = Math.floor(latToTile(s, ZOOM));
+  // One tile of margin on every side.
+  //
+  // Overpass returns the whole geometry of any way that merely touches the
+  // bounding box, so a piste that runs past the edge brings vertices with it
+  // that the box does not cover. Those points landed outside every fetched
+  // tile, the sampler returned null for them, and Math.round(null) is zero —
+  // so Kronplatz came out with nodes at sea level, in the Dolomites, and every
+  // gradient and vertical total involving one was nonsense.
+  const MARGIN = 1;
+  const x0 = Math.floor(lonToTile(w, ZOOM)) - MARGIN;
+  const x1 = Math.floor(lonToTile(e, ZOOM)) + MARGIN;
+  const y0 = Math.floor(latToTile(n, ZOOM)) - MARGIN;
+  const y1 = Math.floor(latToTile(s, ZOOM)) + MARGIN;
 
   const tiles = new Map();
   const missing = [];

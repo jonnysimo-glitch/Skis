@@ -10,10 +10,11 @@
  * something you can read.
  */
 
-  // The built-in hand-typed graph, until the pipeline has built this one.
-import * as monterosa from "../resort.js";
+import * as kronplatz from "./kronplatz.js";
+import * as monterosa from "./monterosa.js";
+import * as paganella from "./paganella.js";
 
-export const GRAPHS = { monterosa };
+export const GRAPHS = { kronplatz, monterosa, paganella };
 
 /** The graph module for a resort id, or null if there is no data for it. */
 export const graphFor = (id) => GRAPHS[id] ?? null;

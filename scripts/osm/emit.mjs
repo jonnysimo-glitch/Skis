@@ -50,8 +50,18 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
   // lowest or the biggest. Matched on name so it survives a graph rebuild
   // renumbering the keys, and falling back to the lowest base if the named one
   // did not survive the connectivity prune.
+  // Matched the way base names are matched, not by exact equality: the config
+  // asks for "Staffal" and OSM writes "Stafal", so an exact test found nothing
+  // and the app opened its default day at whichever base happened to be
+  // lowest — which was an unnamed way endpoint.
+  const fold = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const sameish = (a, b) => {
+    const x = fold(a);
+    const y = fold(b);
+    return Boolean(x && y) && (x === y || x.includes(y) || y.includes(x));
+  };
   const namedBase = config.defaultBase
-    ? baseKeys.find((k) => NODES[k].name === config.defaultBase)
+    ? baseKeys.find((k) => sameish(NODES[k].name, config.defaultBase))
     : null;
   const highest = Object.keys(NODES).reduce((a, b) => (NODES[b].alt > NODES[a].alt ? b : a));
 
@@ -190,6 +200,23 @@ export const SHORT_NAMES = ${JSON.stringify(meta.shortNames || {}, null, 2)};
  */
 export const META = ${JSON.stringify(registryEntry({ id, config: meta, NODES, LIFTS, RUNS }), null, 2)};
 
+/**
+ * Lift kinds a skier can also ride down.
+ *
+ * You board a gondola or a cable car in either direction; a drag lift or a
+ * chair you do not. Leaving this out was not a small omission: with lifts
+ * modelled as one-way up, any base whose valley descent is graded red was
+ * unreachable for a blue skier, so Monterosa offered a beginner exactly one
+ * place to stand and Kronplatz and Paganella offered none at all. Riding the
+ * gondola down is what a real skier does there. Adding it takes a blue skier
+ * at Stafal from 1 place to 10, and a red skier from 26 to 56.
+ *
+ * Conservative on purpose: only the kinds that certainly carry passengers
+ * downhill. Whether a particular chairlift allows it is the resort's own
+ * operating detail, and inventing it is how you strand someone at the top.
+ */
+const DOWNLOADABLE = new Set(["gondola", "cable car", "funicular"]);
+
 export function buildEdges() {
   const edges = [];
   LIFTS.forEach(([from, to, name, liftType, ride, lastUp, queue], i) => {
@@ -198,6 +225,17 @@ export function buildEdges() {
       min: ride + queue,
       gain: NODES[to].alt - NODES[from].alt,
     });
+    // The same ride, the other way. Still a lift, so the last-up time still
+    // applies — a gondola you cannot board at 16:20 cannot take you down at
+    // 16:20 either — and the route reads as a lift ride, which it is.
+    if (DOWNLOADABLE.has(liftType)) {
+      edges.push({
+        id: \`L\${i}d\`, kind: "lift", from: to, to: from, name, liftType, ride, lastUp, queue,
+        min: ride + queue,
+        gain: NODES[from].alt - NODES[to].alt,
+        down: true,
+      });
+    }
   });
   RUNS.forEach(([from, to, name, difficulty, km, min], i) => {
     edges.push({

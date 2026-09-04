@@ -63,7 +63,8 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
         const dotClass = edge.kind === "lift" ? "lift" : edge.difficulty;
         const sub =
           edge.kind === "lift"
-            ? `${edge.liftType} · ${edge.ride} min up${edge.queue ? ` · ${edge.queue} min queue` : ""}`
+            ? `${edge.liftType} · ${edge.ride} min ${edge.down ? "down" : "up"}` +
+              `${edge.queue ? ` · ${edge.queue} min queue` : ""}`
             : `${edge.difficulty} · ${edge.km} km · ${edge.drop} m down`;
         return (
           <li
