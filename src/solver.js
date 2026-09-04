@@ -211,6 +211,43 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
 }
 
 /** Derive the numbers the UI shows. */
+/**
+ * Merge consecutive segments that are the same piste or the same lift ride.
+ *
+ * Only consecutive ones, and only on an exact name match: two separate visits
+ * to the same run later in the day are two things to do, and a run whose name
+ * OSM does not know is never merged with another of the same non-name.
+ */
+/**
+ * What a skier steps through.
+ *
+ * `segments` is every graph edge, which is what the map draws. `legs` is the
+ * same day merged into things to do, which is what the navigate screen counts
+ * and what the leg lists show. Falling back keeps anything built before this
+ * existed — a route restored from an older offline commit, say — working.
+ */
+export const legsOf = (route) => route?.legs ?? route?.segments ?? [];
+
+function mergeLegs(segments) {
+  const legs = [];
+  for (const edge of segments) {
+    const last = legs[legs.length - 1];
+    const joinable =
+      last && last.kind === edge.kind && Boolean(edge.name) && last.name === edge.name;
+    if (joinable) {
+      last.min += edge.min;
+      last.km = Math.round(((last.km || 0) + (edge.km || 0)) * 10) / 10;
+      last.drop = (last.drop || 0) + (edge.drop || 0);
+      last.to = edge.to;
+      last.parts += 1;
+      last.ids.push(edge.id);
+      continue;
+    }
+    legs.push({ ...edge, parts: 1, ids: [edge.id] });
+  }
+  return legs;
+}
+
 export function measure(route, g = MONTEROSA) {
   let km = 0, vertical = 0, lifts = 0, dragLifts = 0;
   const runIds = new Set(), areas = new Set();
@@ -258,6 +295,20 @@ export function measure(route, g = MONTEROSA) {
     lifts, dragLifts,
     distinctRuns: runIds.size,
     distinctPistes: pisteNames.size || runIds.size,
+    /**
+     * The same day as a list of instructions rather than of edges.
+     *
+     * Consecutive edges of the same piste are one thing to do. Real OSM
+     * geometry splits a piste at every junction it passes, so a five-hour day
+     * came out as sixty-eight legs of two and a half minutes — and the app
+     * announces the next *junction*, which the brief is explicit is not the
+     * next turn. Merged, the same day is forty-six: one instruction every six
+     * minutes or so, which is what a navigation app gives you.
+     *
+     * Added alongside `segments` rather than replacing them, because the map
+     * draws the route from the segments and wants every vertex of it.
+     */
+    legs: mergeLegs(route.segments),
     areas: areas.size,
     highestAlt,
     longestDescent,

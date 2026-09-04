@@ -203,6 +203,26 @@ export const openRoute = async (page, i = 0) => {
   await buttons[n].click();
 };
 
+/**
+ * Advance a leg on the navigate screen.
+ *
+ * "Reached X" is held rather than tapped: it moves a skier's route on, and a
+ * pocket produces taps. So a test that clicks it does nothing, which is the
+ * button working.
+ */
+export async function reachNext(page, selector = '.nav__foot .btn:has-text("Reached")') {
+  const button = await page.$(selector);
+  if (!button) return false;
+  const box = await button.boundingBox();
+  if (!box) return false;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(420);
+  await page.mouse.up();
+  await page.waitForTimeout(90);
+  return true;
+}
+
 export const toMinutes = (hhmm) => {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;

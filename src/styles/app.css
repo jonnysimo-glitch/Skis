@@ -1223,8 +1223,19 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 /* Same height as every other primary; the shadow is what separates it from
    the terrain behind it. */
-.btn--nav { flex: 1; box-shadow: var(--e-2); }
-.btn--nav-quiet { background: rgba(255, 255, 255, 0.92); color: var(--ink); }
+/**
+ * The on-mountain action, taller than the rest.
+ *
+ * 44pt is Apple's floor and 48dp is Google's, and the accessibility guidance
+ * is explicit that context can ask for more — Google's own driving guidance
+ * goes to 76dp. A gloved thumb on a moving chairlift is at least as
+ * constrained as a driver, and this is the one button pressed while actually
+ * skiing, so it gets 64. Everything else in the app stays at 52.
+ */
+.btn--nav { flex: 1; min-height: 64px; box-shadow: var(--e-2); }
+/* Quiet means "on the map", so it is a light panel over terrain rather than a
+   light panel on the dark theme's own surface. */
+.btn--nav-quiet { background: rgba(233, 240, 246, 0.94); color: var(--n-95); }
 .btn--nav-quiet:active { background: #fff; }
 
 /* Stopping is the only control worth a button of its own, and it goes where a
@@ -1468,3 +1479,27 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   background: none;
 }
 .search__clear:active { background: var(--surface-3); color: var(--ink); }
+
+/* --------------------------------------------------------- hold to advance --
+   The guard on "Reached X". A tap is not enough for a control that moves a
+   skier's route on a leg, because a pocket produces taps. The fill shows the
+   hold landing, because a control that ignores a press has to say why or it
+   reads as broken. */
+.btn--hold { position: relative; overflow: hidden; }
+.btn__hold {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: rgba(255, 255, 255, 0.22);
+  transition: transform 60ms linear;
+  pointer-events: none;
+}
+.btn__holdlabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+/* A quiet variant sits on the map rather than on the accent, so the fill has
+   to be dark to show up at all. */
+.btn--nav-quiet .btn__hold { background: rgba(7, 20, 29, 0.16); }

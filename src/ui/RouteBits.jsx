@@ -1,7 +1,7 @@
 /**
  * Pieces shared between the choose, detail, navigate and summary screens.
  */
-import { minutesToClock } from "../solver.js";
+import { minutesToClock, legsOf } from "../solver.js";
 import { Clock, Ruler, Descend, Runs, Lift } from "./Icons.jsx";
 
 export const hours = (minutes) => {
@@ -57,7 +57,7 @@ export const detailStats = (route) => [
 export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
   return (
     <ul className="legs">
-      {route.segments.map((edge, i) => {
+      {legsOf(route).map((edge, i) => {
         const done = i < doneThrough;
         const now = i === current;
         const dotClass = edge.kind === "lift" ? "lift" : edge.difficulty;

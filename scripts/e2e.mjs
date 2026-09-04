@@ -19,6 +19,7 @@ import {
   openRoute,
   routeCount,
   toMinutes,
+  reachNext,
   toForm,
 } from "./harness.mjs";
 
@@ -573,17 +574,30 @@ try {
     const totalLegs = Number((await legCount()).match(/of (\d+)/)?.[1] || 0);
     check("it counts the legs", totalLegs > 0, await legCount());
     const firstInstruction = await page.$eval(".nav__do", (n) => n.textContent);
-    await page.click('.nav__foot .btn:has-text("Reached")');
+    // Held, not clicked: see reachNext. And prove the guard first, because a
+    // control that ignores a pocket press is the point of it.
+    {
+      const before = await page.$eval(".nav__foot .btn", (n) => n.textContent.trim());
+      const box = await (await page.$(".nav__foot .btn")).boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(60);
+      await page.mouse.up();
+      await page.waitForTimeout(350);
+      check("a stray tap does not advance a leg",
+        (await page.$eval(".nav__foot .btn", (n) => n.textContent.trim())) === before,
+        before);
+    }
+    await reachNext(page);
+    check("but holding it does", /Reached|Finish/.test(await page.$eval(".nav__foot .btn", (n) => n.textContent)));
     await page.waitForTimeout(350);
     check("advancing changes the instruction", (await page.$eval(".nav__do", (n) => n.textContent)) !== firstInstruction);
     check("and the counter moves with it", /leg 2 of/i.test(await legCount()), await legCount());
 
     // Walk to the end.
+    // Held, not clicked. See reachNext in harness.mjs.
     for (let i = 0; i < totalLegs + 4; i++) {
-      const next = await page.$('.nav__foot .btn:has-text("Reached")');
-      if (!next) break;
-      await next.click();
-      await page.waitForTimeout(45);
+      if (!(await reachNext(page))) break;
     }
     const finish = await page.$('.nav__foot .btn:has-text("Finish")');
     check("the last leg offers a finish", finish !== null);

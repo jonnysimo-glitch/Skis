@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { useGeolocation, kmh } from "../lib/useGeolocation.js";
 import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
 import { LUNCH_MINUTES } from "../lib/plan.js";
-import { minutesToClock } from "../solver.js";
+import { minutesToClock, legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
 import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Close, ChevronDown, ChevronUp } from "../ui/Icons.jsx";
 import { LegList } from "../ui/RouteBits.jsx";
@@ -48,6 +48,73 @@ const nowMinutes = () => {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
 };
+
+/**
+ * A button that has to be held, not tapped.
+ *
+ * This one advances the route, and a route that has advanced a leg on its own
+ * is a skier being told to go somewhere they are not. Strava's users complain
+ * loudly about exactly this: a big full-width button at the bottom of an
+ * activity screen gets pressed in a pocket, under a thumb resting on the
+ * phone, against a fingerprint reader. Nothing guarded this one.
+ *
+ * A hold rather than a confirmation dialogue, because the alternative on a
+ * mountain is two taps with gloves on in the cold, and because a hold is the
+ * one gesture a pocket cannot produce: fabric presses, it does not press
+ * steadily for a third of a second and then let go.
+ *
+ * The progress ring is not decoration — a control that ignores a tap has to
+ * say why, or it reads as broken.
+ */
+const HOLD_MS = 320;
+
+function HoldButton({ className, onHold, label, children }) {
+  const [held, setHeld] = useState(0);
+  const timer = useRef(null);
+  const started = useRef(0);
+
+  const stop = () => {
+    if (timer.current) cancelAnimationFrame(timer.current);
+    timer.current = null;
+    setHeld(0);
+  };
+
+  const begin = (event) => {
+    // Ignore a secondary click and anything that is not a primary press.
+    if (event.button != null && event.button !== 0) return;
+    started.current = performance.now();
+    const tick = () => {
+      const progress = Math.min(1, (performance.now() - started.current) / HOLD_MS);
+      setHeld(progress);
+      if (progress >= 1) {
+        stop();
+        onHold();
+        return;
+      }
+      timer.current = requestAnimationFrame(tick);
+    };
+    timer.current = requestAnimationFrame(tick);
+  };
+
+  useEffect(() => stop, []);
+
+  return (
+    <button
+      className={`${className} btn--hold`}
+      aria-label={`${label}. Press and hold.`}
+      onPointerDown={begin}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      // Keyboard and assistive technology get a plain activation: a hold is a
+      // guard against an accidental touch, and neither of those is one.
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onHold(); } }}
+    >
+      <span className="btn__hold" style={{ transform: `scaleX(${held})` }} aria-hidden="true" />
+      <span className="btn__holdlabel">{children}</span>
+    </button>
+  );
+}
 
 export default function NavigateScreen({
   route,
@@ -111,9 +178,14 @@ export default function NavigateScreen({
     return () => clearInterval(timer);
   }, [live]);
 
-  const leg = route.segments[step];
-  const next = route.segments[step + 1];
-  const last = step === route.segments.length - 1;
+  // Legs, not graph edges. Real OSM geometry splits a piste at every junction
+  // it passes, so a day was sixty-eight instructions of two and a half
+  // minutes each — and this screen announces the next junction, which the
+  // brief is explicit is not the next turn.
+  const legs = legsOf(route);
+  const leg = legs[step];
+  const next = legs[step + 1];
+  const last = step === legs.length - 1;
 
   // --- following along ----------------------------------------------------
   // The phone should notice you have reached the junction. Tapping through 43
@@ -152,10 +224,10 @@ export default function NavigateScreen({
   const following = gps.state === "live";
 
   // Planned vs actual, both in minutes of the day.
-  const plannedElapsed = route.segments
+  const plannedElapsed = legs
     .slice(0, step)
     .reduce((sum, e) => sum + e.min, 0);
-  const remaining = route.segments
+  const remaining = legs
     .slice(step)
     .reduce((sum, e) => sum + e.min, 0);
 
@@ -251,7 +323,7 @@ export default function NavigateScreen({
           </>
         )}
         <span className="nav__legcount">
-          Leg {step + 1} of {route.segments.length}
+          Leg {step + 1} of {legs.length}
         </span>
         {statusOpen && (
           <button
@@ -294,7 +366,7 @@ export default function NavigateScreen({
             ? "Back to the map"
             : last
               ? "The whole route"
-              : `The rest of the day · ${route.segments.length - step - 1} to go`}
+              : `The rest of the day · ${legs.length - step - 1} to go`}
         </button>
         {overrun > 0 && (overSeen === null || overrun >= overSeen + OVERRUN_RENAG) && (
           <div className="nav__over">
@@ -336,12 +408,13 @@ export default function NavigateScreen({
               <Check width="20" height="20" /> Finish
             </button>
           ) : (
-            <button
+            <HoldButton
               className={`btn btn--nav${following ? " btn--nav-quiet" : ""}`}
-              onClick={() => onStep(step + 1)}
+              onHold={() => onStep(step + 1)}
+              label={`Reached ${junction.name}`}
             >
               Reached {junction.name} <Arrow width="20" height="20" />
-            </button>
+            </HoldButton>
           )}
         </div>
       </footer>

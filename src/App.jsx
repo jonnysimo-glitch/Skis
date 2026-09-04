@@ -44,6 +44,7 @@ import { recordDay } from "./lib/history.js";
 import { NODES, buildEdges, activeGraph, setActiveResort, ensureActive } from "./active-resort.js";
 import { graphFor } from "./resorts/graphs.js";
 import { useSolver } from "./lib/useSolver.js";
+import { legsOf } from "./solver.js";
 import { directRoute } from "./lib/direct.js";
 import { load, save } from "./lib/persist.js";
 import {
@@ -287,7 +288,7 @@ export default function App() {
     const finishKey = shownRoute.segments[shownRoute.segments.length - 1].to;
     const keys = [startKey, finishKey];
     if (screen === "navigate") {
-      const here = shownRoute.segments[step]?.from;
+      const here = legsOf(shownRoute)[step]?.from;
       if (here && !keys.includes(here)) keys.push(here);
     }
     return nodesToGeoJSON(
@@ -297,7 +298,7 @@ export default function App() {
         // ends: the top of the lift you are riding, or the junction the run
         // finishes at. Passed as a position rather than a heading because the
         // direction on screen depends on where the camera is.
-        if (screen === "navigate" && key === shownRoute.segments[step]?.from) {
+        if (screen === "navigate" && key === legsOf(shownRoute)[step]?.from) {
           // Along the leg, not at the end of it.
           //
           // Aiming at the far node points through the mountain when a piste
@@ -318,7 +319,7 @@ export default function App() {
             }
             aim = aim || pts[pts.length - 1];
           } else {
-            const to = NODES[shownRoute.segments[step].to];
+            const to = NODES[legsOf(shownRoute)[step].to];
             if (to) aim = [to.lon, to.lat];
           }
           return { role: "now", ...(aim ? { aim } : {}) };
@@ -359,7 +360,7 @@ export default function App() {
       };
     }
     if (screen === "navigate" && shownRoute) {
-      const leg = shownRoute.segments[step];
+      const leg = legsOf(shownRoute)[step];
       const from = NODES[leg.from];
       const to = NODES[leg.to];
       return {

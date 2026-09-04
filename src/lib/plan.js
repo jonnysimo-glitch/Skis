@@ -6,7 +6,7 @@
  * "make it easier", "I want lunch" — is translated here.
  */
 
-import { minutesToClock, clockToMinutes } from "../solver.js";
+import { minutesToClock, clockToMinutes, legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
 
 export { minutesToClock, clockToMinutes };
@@ -231,7 +231,9 @@ export const backAt = (route, opts) =>
 export function legClocks(route, startClock) {
   const out = [];
   let t = startClock;
-  for (const edge of route.segments) {
+  // Over the legs a skier steps through, not the graph edges: these clocks are
+  // shown beside a leg list and have to line up with it.
+  for (const edge of legsOf(route)) {
     out.push(t);
     t += edge.min;
   }

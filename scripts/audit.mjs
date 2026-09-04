@@ -13,7 +13,7 @@
  *
  * Findings are grouped by screen so a regression points at one place.
  */
-import { serve, launch, newPage as makePage, openRoute } from "./harness.mjs";
+import { serve, launch, newPage as makePage, openRoute, reachNext } from "./harness.mjs";
 import { RESORTS } from "../src/resorts/index.js";
 import { graphFor } from "../src/resorts/graphs.js";
 
@@ -312,11 +312,10 @@ for (const ability of ["Blue", "Anything"]) {
   // point every half kilometre, so a Monterosa day runs to 84 legs. Falling
   // short left the app on the navigate screen, where the tab bar is hidden,
   // and the Stats click below waited until the audit timed out.
+  // Held, not clicked: "Reached X" is guarded against a pocket press, so a
+  // click does nothing. See reachNext in harness.mjs.
   for (let i = 0; i < 400; i++) {
-    const b = await page.$('.nav__foot .btn:has-text("Reached")');
-    if (!b) break;
-    await b.click();
-    await page.waitForTimeout(25);
+    if (!(await reachNext(page))) break;
   }
   const finish = await page.$('button:has-text("Finish")');
   if (finish) {
