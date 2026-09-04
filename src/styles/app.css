@@ -1424,3 +1424,47 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 /* The one that is a promise rather than a measurement. */
 .detail__stat--back { margin-left: auto; text-align: right; }
 .detail__stat--back b { color: var(--accent-ink); }
+
+/* ------------------------------------------------------------------ search --
+   Filtering the resort list. Only rendered once there is enough to filter —
+   with three resorts a search box is longer than the list it searches. The
+   field is the same height as every other control so the top of the screen
+   keeps its rhythm. */
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: var(--s-4) 0 var(--s-2);
+  padding: 0 var(--s-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  min-height: var(--tap);
+}
+.search:focus-within { border-color: var(--accent); }
+.search__icon { color: var(--ink-4); flex: none; }
+.search__input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: var(--t-body);
+  padding: var(--s-3) 0;
+  outline: none;
+}
+.search__input::placeholder { color: var(--ink-4); }
+/* Safari draws its own clear button on a search input, and it is grey on grey
+   here. The one below is ours, and matches every other dismiss in the app. */
+.search__input::-webkit-search-cancel-button { display: none; }
+.search__clear {
+  flex: none;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  color: var(--ink-3);
+  background: none;
+}
+.search__clear:active { background: var(--surface-3); color: var(--ink); }

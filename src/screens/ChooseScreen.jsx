@@ -76,7 +76,7 @@ export default function ChooseScreen({
   return (
     <div className="page">
       <header className="page__bar">
-        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label="Change the basics">
+        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label="Change the plan">
           <Back />
         </button>
         <div className="eyebrow">
@@ -125,8 +125,9 @@ export default function ChooseScreen({
           <div className="info">
             <Info className="info__icon" width="17" height="17" />
             <span>
-              Only <b>{routes.length === 1 ? "one" : routes.length}</b> genuinely
-              different {routes.length === 1 ? "day fits" : "days fit"} that window.
+              {routes.length === 1
+                ? "There is only one way to fill that time. Anything else would be a version of it."
+                : `There are only ${routes.length} ways to fill that time. Anything else would be a version of these.`}
             </span>
           </div>
         )}
@@ -228,7 +229,7 @@ export default function ChooseScreen({
 
       <div className="page__foot">
         <button className="btn btn--ghost" onClick={onBack}>
-          Change the basics
+          Change the plan
         </button>
       </div>
     </div>

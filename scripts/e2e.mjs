@@ -147,7 +147,7 @@ try {
       ["night before, 21:30", [21, 30], "Tomorrow", "Start", "Finish at", 13],
       ["first lift, 08:20", [8, 20], "First lift", "Start", "Finish at", 13],
       // Not "Car is at": both ends are free, so the field cannot presume a car.
-      ["mid-day reset, 14:00", [14, 0], "Mid-day reset", "You are at", "Finish at", 13],
+      ["mid-day reset, 14:00", [14, 0], "Already skiing", "You are at", "Finish at", 13],
     ];
     for (const [label, at, eyebrow, startLabel, finishLabel] of cases) {
       const page = await newPage(browser, { at });
@@ -163,7 +163,7 @@ try {
       };
       check(`${label}: names the context`, got.eyebrow.startsWith(eyebrow), got.eyebrow);
       check(`${label}: labels the fields for it`, got.start === startLabel && got.finish === finishLabel, `${got.start} / ${got.finish}`);
-      check(`${label}: it is still the plan screen`, /time for|where do you need to be/i.test(got.screen), got.screen);
+      check(`${label}: it is still the plan screen`, /need to be down|where are you/i.test(got.screen), got.screen);
       check(`${label}: finish time is before the last lift`, got.t1 <= "16:30", got.t1);
       check(`${label}: start is before finish`, got.t0 < got.t1, `${got.t0} → ${got.t1}`);
       check(`${label}: no page errors`, page.errors.length === 0, page.errors.join(" | "));
@@ -467,7 +467,7 @@ try {
 
     const backs = await page.$$eval(".routecard__back b", (x) => x.map((e) => e.textContent));
     const t1 = await (async () => {
-      await page.click("text=Change the basics");
+      await page.click("text=Change the plan");
       await page.waitForSelector("#p-t1");
       const v = await page.$eval("#p-t1", (e) => e.value);
       await solve(page);
@@ -840,7 +840,7 @@ try {
     // The window matters: a longer day forces routes to cover more of the same
     // terrain, so the overlap check rejects the extras and three is genuinely
     // all there is. 09:15-16:00 is where five distinct days exist.
-    await page.click("text=Change the basics");
+    await page.click("text=Change the plan");
     await page.waitForSelector("#p-t1");
     await page.click('button.chip:text-is("Anything")');
     await page.fill("#p-t0", "09:15");
@@ -1319,6 +1319,79 @@ try {
 
       check(`${resort.id}: no page errors across all five`, page.errors.length === 0,
         page.errors.slice(0, 2).join(" | "));
+      await page.context_.close();
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  if (section("T. Finding a resort in a long list")) {
+    const page = await newPage(browser);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+
+    const field = await page.$(".search__input");
+    // The field only appears once the list is long enough to need it, so with
+    // a short list its absence is the correct behaviour, not a failure.
+    if (!field) {
+      check(`search appears once there are enough resorts (${RESORTS.length})`,
+        RESORTS.length < 6, `${RESORTS.length} resorts and no field`);
+      check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+      await page.context_.close();
+    } else {
+      const shown = () => page.evaluate(() => ({
+        live: document.querySelectorAll(".hero").length,
+        soon: document.querySelectorAll(".resortcard").length,
+        nothing: /Nothing here matches/.test(document.body.innerText),
+      }));
+
+      const all = await shown();
+      check("everything is listed before anything is typed",
+        all.live === LIVE.length && all.soon === SOON.length,
+        `${all.live} live, ${all.soon} coming`);
+
+      // By name.
+      const first = LIVE[0].name.split(/\s+/)[0].slice(0, 5);
+      await page.fill(".search__input", first);
+      await page.waitForTimeout(220);
+      const byName = await shown();
+      check(`a name narrows it ("${first}")`, byName.live >= 1 && byName.live < LIVE.length,
+        `${byName.live} of ${LIVE.length} live`);
+
+      // By country, which is the other thing a skier would type.
+      const country = (LIVE[0].country || "").split(/[\s/]+/)[0];
+      if (country) {
+        await page.fill(".search__input", country);
+        await page.waitForTimeout(220);
+        const byCountry = await shown();
+        check(`a country works too ("${country}")`, byCountry.live + byCountry.soon > 0,
+          `${byCountry.live} live, ${byCountry.soon} coming`);
+      }
+
+      // Two words, in either order, and accents folded.
+      const region = (LIVE.find((r) => (r.region || "").includes(" ")) || LIVE[0]).region;
+      if (region && region.includes(" ")) {
+        await page.fill(".search__input", region.toLowerCase());
+        await page.waitForTimeout(220);
+        const byRegion = await shown();
+        check(`a two-word region works ("${region}")`, byRegion.live + byRegion.soon > 0,
+          `${byRegion.live} live, ${byRegion.soon} coming`);
+      }
+
+      // And says so when there is nothing, rather than showing an empty page.
+      await page.fill(".search__input", "zzzznotaresort");
+      await page.waitForTimeout(220);
+      const none = await shown();
+      check("nothing found says so", none.live === 0 && none.soon === 0 && none.nothing,
+        JSON.stringify(none));
+
+      await page.click(".search__clear");
+      await page.waitForTimeout(220);
+      const back = await shown();
+      check("clearing brings everything back",
+        back.live === LIVE.length && back.soon === SOON.length,
+        `${back.live} live, ${back.soon} coming`);
+
+      check("no page errors", page.errors.length === 0, page.errors.join(" | "));
       await page.context_.close();
     }
   }

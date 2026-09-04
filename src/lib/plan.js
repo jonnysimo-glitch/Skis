@@ -52,22 +52,22 @@ export function detectContext(nowMinutes, resort) {
 export const CONTEXT_COPY = {
   nightbefore: {
     eyebrow: "Tomorrow",
-    title: "What have you\ngot time for?",
+    title: "When do you need\nto be down?",
     hint: null,
   },
   firstlift: {
     eyebrow: "First lift",
-    title: "What have you\ngot time for?",
+    title: "When do you need\nto be down?",
     hint: {
-      t: "Times set from the clock",
+      t: "Times set from your clock",
       s: "Change them if you're not going up yet.",
     },
   },
   midday: {
-    eyebrow: "Mid-day reset",
-    title: "Where are you,\nwhere do you need to be?",
+    eyebrow: "Already skiing",
+    title: "Where are you\nright now?",
     hint: {
-      t: "Half the day is gone",
+      t: "Part of the day is gone",
       s: "Set both ends to anywhere on the mountain.",
     },
   },
@@ -292,7 +292,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null) {
     const mins = capacity.minutes % 60;
     const asText = hours ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins} minutes`;
     return {
-      title: "Not enough mountain",
+      title: "Longer than this resort",
       headline: `There isn't enough terrain here to fill ${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)}.`,
       body: `The longest day this resort supports from ${NODES[plan.start].name} at your grade is about ${asText}. Past that you would be skiing the same runs over and over.`,
       fixes: ["shorterDay", ...(ability !== "black" ? ["harder"] : [])],

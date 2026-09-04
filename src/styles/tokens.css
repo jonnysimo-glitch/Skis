@@ -109,18 +109,19 @@
   --note-ink: var(--ink-2);
 
   /* --- Type ---------------------------------------------------------------
-     Body resolves to SF Pro on iPhone, so text metrics match the OS. Inter is
-     the bundled fallback everywhere else. Display is Archivo: a sturdy sporty
-     grotesque that keeps numbers looking like instrument readings rather than
-     like a web dashboard. */
-  /* The system font, everywhere.
-   *
-   * This shipped with Archivo first in --display, so every heading was drawn
-   * in a geometric sans that iOS never uses, and the app read as a web page
-   * pretending to be an app. San Francisco is what an iPhone user's eye
-   * expects, it carries Apple's own optical sizing between Text and Display
-   * cuts, and it costs nothing to download.
-   */
+     The system font, everywhere. Nothing is bundled and nothing is fetched.
+
+     This shipped with Archivo first in --display, so every heading was drawn
+     in a geometric sans that iOS never uses and the app read as a web page
+     pretending to be one. San Francisco is what an iPhone user's eye expects,
+     it carries Apple's own optical sizing between the Text and Display cuts,
+     and it costs nothing to download. The two tokens differ only in which cut
+     they ask for first, which is how Apple intends them to be used: Text
+     below about 20px, Display above it.
+
+     (The paragraph that used to be here still described Inter and Archivo
+     long after both were removed. Kept in mind: a comment about what the
+     code used to do is worse than no comment.) */
   --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
         "Segoe UI", Roboto, sans-serif;
   --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,

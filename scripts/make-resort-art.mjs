@@ -34,6 +34,21 @@ const QUALITY = 0.82;
 
 const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
+/**
+ * Where to take the crop from, per photograph.
+ *
+ * 0 is the top of the frame, 1 the bottom. The default leans upward because
+ * the interesting half of most mountain photographs is the top and the card's
+ * scrim darkens the bottom for the title anyway.
+ *
+ * Kronplatz is the exception and had to be moved: it is a square photograph of
+ * a summit plateau, and taking a wide band from near the top gave sky and
+ * distant Dolomites with barely any piste in it. Lower down there is groomed
+ * snow, the lift buildings and the tracks, which is what the picture is for.
+ */
+const CROP = { kronplatz: 0.62 };
+const DEFAULT_CROP = 0.35;
+
 const browser = await launch();
 await mkdir(OUT_DIR, { recursive: true });
 
@@ -51,7 +66,7 @@ try {
     const dataUrl = `data:${MIME[ext]};base64,${bytes.toString("base64")}`;
 
     const out = await page.evaluate(
-      async ({ src, w, h, quality }) => {
+      async ({ src, w, h, quality, bias }) => {
         const img = new Image();
         img.src = src;
         await img.decode();
@@ -59,17 +74,15 @@ try {
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext("2d");
-        // Cover, centred, and biased upward: the interesting half of a
-        // mountain photograph is the top of it, and the card's own scrim
-        // darkens the bottom for the title anyway.
+        // Cover, centred horizontally, and vertically wherever CROP says.
         const scale = Math.max(w / img.width, h / img.height);
         const dw = img.width * scale;
         const dh = img.height * scale;
-        ctx.drawImage(img, (w - dw) / 2, (h - dh) * 0.35, dw, dh);
+        ctx.drawImage(img, (w - dw) / 2, (h - dh) * bias, dw, dh);
         const url = canvas.toDataURL("image/jpeg", quality);
         return { data: url.split(",")[1], from: `${img.width}x${img.height}` };
       },
-      { src: dataUrl, w: W, h: H, quality: QUALITY }
+      { src: dataUrl, w: W, h: H, quality: QUALITY, bias: CROP[id] ?? DEFAULT_CROP }
     );
 
     const buffer = Buffer.from(out.data, "base64");

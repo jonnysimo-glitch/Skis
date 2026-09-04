@@ -31,6 +31,13 @@ export const ChevronUp = (p) => (
 export const Close = (p) => (
   <svg {...base} {...p}><path d="M5 5l10 10M15 5 5 15" /></svg>
 );
+/** A magnifier, drawn at the same weight as the rest of the set. */
+export const Search = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="8.5" cy="8.5" r="5.5" />
+    <path d="M12.5 12.5 17 17" />
+  </svg>
+);
 /**
  * A needle, not a dial.
  *

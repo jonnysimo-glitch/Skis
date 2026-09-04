@@ -5,19 +5,54 @@
  * that resort's terrain is backwards — the map should be a consequence of the
  * choice, not the backdrop to it. The mountain arrives when you go skiing.
  */
+import { useMemo, useState } from "react";
 import { RESORTS } from "../resorts/index.js";
 import { listDays, totals, dayLabel } from "../lib/history.js";
-import { Arrow, Check, Gear, Mountain } from "../ui/Icons.jsx";
+import { Arrow, Check, Gear, Mountain, Search, Close } from "../ui/Icons.jsx";
 import Ridge from "../ui/Ridge.jsx";
 import { hours } from "../ui/RouteBits.jsx";
 import FriendsSection from "./FriendsSection.jsx";
 
+/**
+ * Does this resort answer what was typed?
+ *
+ * Name, region and country, because a skier looking for Kronplatz might type
+ * "kronplatz", "south tyrol" or "italy" and all three are reasonable. Folded
+ * for accents so "valle d'aosta" finds "Valle d'Aosta" and "gressoney" finds
+ * "Gressoney-La-Trinité".
+ */
+const fold = (text) =>
+  String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+const matches = (resort, query) => {
+  if (!query) return true;
+  const haystack = fold(`${resort.name} ${resort.region ?? ""} ${resort.country ?? ""}`);
+  // Every word has to appear somewhere, so "italy kron" works and the order
+  // does not matter.
+  return fold(query).split(/\s+/).filter(Boolean).every((word) => haystack.includes(word));
+};
+
 export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings, friends }) {
-  const live = RESORTS.filter((r) => r.available);
-  const soon = RESORTS.filter((r) => !r.available);
+  const allLive = RESORTS.filter((r) => r.available);
+  const allSoon = RESORTS.filter((r) => !r.available);
+
+  /**
+   * The search field appears once there is enough to search.
+   *
+   * With three resorts a field is furniture; the list is shorter than the
+   * search box. It earns its place when the list stops being scannable, and
+   * the threshold is deliberately low because the whole point of the OSM
+   * pipeline is that this list grows.
+   */
+  const [query, setQuery] = useState("");
+  const searchable = RESORTS.length >= 6;
+  const live = useMemo(() => allLive.filter((r) => matches(r, query)), [allLive, query]);
+  const soon = useMemo(() => allSoon.filter((r) => matches(r, query)), [allSoon, query]);
+  const nothing = query && !live.length && !soon.length;
+
   const days = listDays();
   const t = totals(days);
-  const resort = live.find((r) => r.id === selected);
+  const resort = allLive.find((r) => r.id === selected);
 
   return (
     <div className="page">
@@ -32,6 +67,40 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
 
       <div className="page__body">
         <h1 className="title">Where are you skiing?</h1>
+
+        {searchable && (
+          <div className="search">
+            <Search className="search__icon" width="18" height="18" />
+            <input
+              className="search__input"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search resorts"
+              aria-label="Search resorts"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck="false"
+              enterKeyHint="search"
+            />
+            {query && (
+              <button
+                className="search__clear"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+              >
+                <Close width="16" height="16" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {nothing && (
+          <p className="note" style={{ margin: "var(--s-4) 2px" }}>
+            Nothing here matches "{query}". Only resorts with mapped terrain can
+            be planned on, and the list below is everything there is so far.
+          </p>
+        )}
 
         {live.map((r) => (
           <button

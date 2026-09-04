@@ -214,6 +214,17 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
 export function measure(route, g = MONTEROSA) {
   let km = 0, vertical = 0, lifts = 0, dragLifts = 0;
   const runIds = new Set(), areas = new Set();
+  /**
+   * Distinct pistes by name, which is what a skier means by "runs".
+   *
+   * runIds counts graph edges, and on real OpenStreetMap geometry one piste
+   * arrives as several ways and is split again at every junction — so a
+   * five-hour day was being reported as "34 runs". That number also feeds the
+   * variety and cruisiness scoring below, where counting edges is arguably
+   * the right thing, so it is left alone and this is added alongside it purely
+   * for display.
+   */
+  const pisteNames = new Set();
   const counts = { blue: 0, red: 0, black: 0 };
 
   // A "descent" is a maximal run of consecutive runs with no lift between them.
@@ -229,6 +240,7 @@ export function measure(route, g = MONTEROSA) {
       km += edge.km;
       vertical += edge.drop;
       runIds.add(edge.id);
+      if (edge.name) pisteNames.add(edge.name);
       counts[edge.difficulty]++;
       currentDescent += edge.drop;
       longestDescent = Math.max(longestDescent, currentDescent);
@@ -245,6 +257,7 @@ export function measure(route, g = MONTEROSA) {
     vertical: Math.round(vertical),
     lifts, dragLifts,
     distinctRuns: runIds.size,
+    distinctPistes: pisteNames.size || runIds.size,
     areas: areas.size,
     highestAlt,
     longestDescent,

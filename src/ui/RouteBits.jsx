@@ -38,13 +38,13 @@ export const routeStats = (route) => [
   { icon: Clock, k: "time", v: hours(route.minutes) },
   { icon: Ruler, k: "distance", v: route.km, unit: " km" },
   { icon: Descend, k: "descent", v: route.vertical.toLocaleString(), unit: " m" },
-  { icon: Runs, k: "runs", v: route.distinctRuns },
+  { icon: Runs, k: "runs", v: route.distinctPistes ?? route.distinctRuns },
 ];
 
 export const detailStats = (route) => [
   { icon: Descend, k: "descent", v: route.vertical.toLocaleString(), unit: " m" },
   { icon: Ruler, k: "distance", v: route.km, unit: " km" },
-  { icon: Runs, k: "runs", v: route.distinctRuns },
+  { icon: Runs, k: "runs", v: route.distinctPistes ?? route.distinctRuns },
   { icon: Lift, k: "lifts", v: route.lifts },
 ];
 

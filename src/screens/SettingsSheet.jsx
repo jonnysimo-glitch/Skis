@@ -180,11 +180,12 @@ export default function SettingsSheet({ ability, setAbility, onClose, onProfileC
               </li>
               <li className="row">
                 <span>Resort data</span>
-                <span className="row__v">Provisional</span>
+                <span className="row__v">OpenStreetMap</span>
               </li>
             </ul>
             <p className="note" style={{ marginTop: "var(--s-3)" }}>
-              Run names and lift times are provisional and will change.
+              Run names and shapes come from OpenStreetMap. Lift times are
+              estimated until each resort provides its own.
             </p>
           </div>
         </div>

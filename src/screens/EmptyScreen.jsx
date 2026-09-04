@@ -95,7 +95,7 @@ export default function EmptyScreen({ diagnosis, plan, resort, capacity, onFix, 
 
       <SheetFoot>
         <button className="btn btn--ghost" onClick={onBack}>
-          Change the basics
+          Change the plan
         </button>
       </SheetFoot>
     </>

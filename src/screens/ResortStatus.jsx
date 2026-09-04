@@ -66,11 +66,23 @@ export default function ResortStatus({ resort, onClose }) {
     };
   }, []);
 
-  const byGrade = GRADES.map(([grade, label]) => ({
-    grade, label,
-    count: RUNS.filter((r) => r[3] === grade).length,
-    km: RUNS.filter((r) => r[3] === grade).reduce((sum, r) => sum + r[4], 0),
-  }));
+  /**
+   * How much of each grade there is.
+   *
+   * Kilometres, and a count of named pistes rather than of graph edges. OSM
+   * maps one piste as several ways and the graph splits again at every
+   * junction, so counting edges said Monterosa had 82 red runs — a number
+   * nobody could check against a piste map, in a panel whose whole job is
+   * saying what is actually out there.
+   */
+  const byGrade = GRADES.map(([grade, label]) => {
+    const of = RUNS.filter((r) => r[3] === grade);
+    return {
+      grade, label,
+      count: new Set(of.map((r) => r[2]).filter(Boolean)).size || of.length,
+      km: of.reduce((sum, r) => sum + r[4], 0),
+    };
+  });
   const totalKm = RUNS.reduce((sum, r) => sum + r[4], 0);
   // The mountain shuts from the top down: the earliest last-up is when your
   // options start disappearing, which is more use than the latest one.
@@ -131,7 +143,7 @@ export default function ResortStatus({ resort, onClose }) {
                     {g.label}
                   </span>
                   <span className="row__v">
-                    {g.count} runs, {g.km.toFixed(1)} km
+                    {g.km.toFixed(1)} km over {g.count} {g.count === 1 ? "piste" : "pistes"}
                   </span>
                 </li>
               ))}
@@ -149,7 +161,7 @@ export default function ResortStatus({ resort, onClose }) {
             <ul className="rows">
               <li className="row">
                 <span>Total pisted</span>
-                <span className="row__v">{totalKm.toFixed(0)} km over {RUNS.length} runs</span>
+<span className="row__v">{totalKm.toFixed(0)} km of piste</span>
               </li>
               <li className="row">
                 <span>First lift shuts</span>
@@ -163,7 +175,8 @@ export default function ResortStatus({ resort, onClose }) {
             <p className="note" style={{ marginTop: "var(--s-3)" }}>
               Routes are filtered against these times rather than warned about
               afterwards, so a plan will never leave you above a lift that has
-              closed. Run names and times are provisional.
+              closed. Run names come from OpenStreetMap; the lift times are
+              estimates until the resort provides its own.
             </p>
 
             {/* How much of the mountain this is.
