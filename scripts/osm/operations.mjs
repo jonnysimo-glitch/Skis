@@ -23,13 +23,37 @@ function applyOperations(graph, config) {
   const fallback = ops.default || { lastUp: config.lastDown ?? 16 * 60, queue: 5 };
   let matched = 0;
 
+  /**
+   * How long you wait, from the lift's throughput.
+   *
+   * Every lift used to get the same flat five minutes, which is wrong in the
+   * way that matters: a detachable six-seater moving 2800 people an hour and
+   * an old fixed-grip chair moving 800 do not queue alike, and "least
+   * queuing" is one of the characters the app offers a day by. OSM records
+   * `aerialway:capacity` in persons per hour on 54 of these 68 lifts.
+   *
+   * The model is a queue of QUEUE_PEOPLE divided by the throughput. That one
+   * number is the assumption, and it is an assumption — real demand varies by
+   * lift, by hour and by weather, and only the resort knows it. What this
+   * gets right is the ordering and the spread: 2 minutes for a modern
+   * gondola, 6 for a slow chair, rather than 5 for everything. A lift with no
+   * capacity tag keeps the config's figure.
+   */
+  const QUEUE_PEOPLE = 80;
+  const queueFor = (lift) => {
+    if (!lift.capacity || lift.capacity <= 0) return null;
+    return Math.max(1, Math.min(20, Math.round((QUEUE_PEOPLE / lift.capacity) * 60)));
+  };
+
   const LIFTS = graph.LIFTS.map((lift) => {
     const override = ops.byName?.[lift.name];
     if (override) matched++;
     return {
       ...lift,
       lastUp: override?.lastUp ?? fallback.lastUp,
-      queue: override?.queue ?? fallback.queue,
+      // The resort's own figure wins, then the throughput-derived one, then
+      // the config's blanket default.
+      queue: override?.queue ?? queueFor(lift) ?? fallback.queue,
     };
   });
 

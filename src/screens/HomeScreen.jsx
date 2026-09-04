@@ -52,7 +52,10 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
               <span className="hero__loc">{r.region}, {r.country}</span>
               <span className="hero__meta">
                 <span className="hero__stat"><b>{r.stats.lifts}</b><span>lifts</span></span>
-                <span className="hero__stat"><b>{r.stats.runs}</b><span>runs</span></span>
+                {/* Kilometres, not the run count: the count is however many
+                    pieces the pistes happen to be mapped in, which is not a
+                    number a skier can check against anything. */}
+                <span className="hero__stat"><b>{r.stats.km ?? r.stats.runs}</b><span>{r.stats.km ? "km piste" : "runs"}</span></span>
                 <span className="hero__stat"><b>{(r.stats.top / 1000).toFixed(1)}k</b><span>m top</span></span>
                 <span className="hero__stat"><b>{r.stats.valleys}</b><span>valleys</span></span>
               </span>

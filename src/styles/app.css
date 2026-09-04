@@ -315,6 +315,16 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 
 /* Primary action: one height, every screen. 52 clears the 44pt floor with
    room for a glove, and does not turn a six-control form into a wall. */
+/**
+ * The primary action.
+ *
+ * A large radius rather than a full pill. A full-width pill is the shape a web
+ * page uses; iOS, and Komoot and Strava with it, put a big rounded rectangle
+ * at the bottom of a screen, and against the sheet's own 28px corner a pill
+ * read as a separate object floating in the footer rather than part of it. It
+ * also takes one rung off a radius scale the design notes had already flagged
+ * as having more steps than it needs.
+ */
 .btn {
   width: 100%;
   min-height: 52px;
@@ -324,7 +334,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   letter-spacing: -0.005em;
   background: var(--accent);
   color: #fff;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-xl);
   padding: var(--s-3) var(--s-5);
   transition: transform 0.1s var(--ease-std), background 0.14s var(--ease-std);
   display: flex; align-items: center; justify-content: center; gap: var(--s-2);
@@ -469,7 +479,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .resortcard:last-of-type { border-bottom: 0; }
 .resortcard__thumb {
-  width: 44px; height: 44px; border-radius: var(--r-sm);
+  width: 44px; height: 44px; border-radius: 50%;
   flex: none; overflow: hidden; background: var(--surface-3);
   filter: saturate(0.3) opacity(0.75);
 }
@@ -676,6 +686,18 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   padding: var(--s-4);
 }
 .banner--warn p { font-size: var(--t-subhead); line-height: 1.4; }
+
+/* The same shape, without the alarm. For something true that the reader
+   should know and does not need to act on. */
+.banner--note {
+  background: var(--note-bg);
+  border: 1px solid var(--note-line);
+  color: var(--note-ink);
+  display: flex; gap: var(--s-3); align-items: flex-start;
+  padding: var(--s-4);
+}
+.banner--note p { font-size: var(--t-subhead); line-height: 1.4; }
+.banner--note svg { color: var(--ink-4); }
 
 
 .warn, .info {
@@ -1367,3 +1389,33 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   border-color: var(--warn);
   box-shadow: 0 0 0 3px rgba(154, 91, 18, 0.14);
 }
+
+/* ---------------------------------------------------- route detail glance --
+   The compact state of the detail sheet. Four figures on one line, sized to
+   be read at a glance over the map rather than studied: what the day is
+   worth, and the clock that decides whether to take it. */
+.detail__glance {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  margin-top: var(--s-3);
+  flex-wrap: wrap;
+}
+.detail__stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.detail__stat b {
+  font-family: var(--display);
+  font-size: var(--t-headline);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.detail__stat span {
+  font-size: var(--t-caption-2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+/* The one that is a promise rather than a measurement. */
+.detail__stat--back { margin-left: auto; text-align: right; }
+.detail__stat--back b { color: var(--accent-ink); }

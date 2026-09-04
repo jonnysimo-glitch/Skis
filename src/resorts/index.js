@@ -22,7 +22,7 @@
  */
 
 import { GRAPHS } from "./graphs.js";
-import { NODES } from "../resort.js";
+import { NODES, RUNS } from "../resort.js";
 
 const baseKeys = Object.keys(NODES).filter((k) => NODES[k].base);
 const alts = Object.values(NODES).map((n) => n.alt);
@@ -49,6 +49,7 @@ const BUILT_IN = {
   stats: {
     lifts: 12,
     runs: 17,
+    km: RUNS.reduce((sum, r) => sum + r[4], 0),
     top: Math.max(...alts),
     bottom: Math.min(...alts),
     valleys: 3,

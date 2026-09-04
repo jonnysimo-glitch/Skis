@@ -366,6 +366,9 @@ export function build(osm, { tolerance = 45, elevation }) {
       kind: LIFT_KIND[el.tags.aerialway],
       minutes: liftMinutes(el, length),
       metres: Math.round(length),
+      // Persons per hour, where a mapper has recorded it. Not decoration: it
+      // is the only thing in OSM that bears on how long you wait.
+      capacity: Number(el.tags["aerialway:capacity"]) || null,
       osmId: el.id,
     });
   }

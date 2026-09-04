@@ -116,25 +116,25 @@ export const NODES = {
 
 /** [from, to, name, type, rideMinutes, lastUpMinuteOfDay, typicalQueueMinutes] */
 export const LIFTS = [
-  ["sonne", "sonne2", "Sonne", "chair", 4, 1000, 5],
-  ["olangivaldaorai", "olangiii", "Olang I", "gondola", 10, 1000, 5],
-  ["olangiii", "olangii", "Olang II", "gondola", 4, 1000, 5],
-  ["arndt2", "arndt3", "Arndt", "chair", 7, 1000, 5],
-  ["kronplatzi", "kronplatziii", "Kronplatz I - Plan de Corones I", "gondola", 10, 1000, 5],
-  ["korer", "p13", "Korer", "gondola", 5, 1000, 5],
-  ["kronplatz2000", "kronplatzii", "Kronplatz 2000", "gondola", 13, 1000, 5],
-  ["plateau", "olangii", "Plateau", "chair", 5, 1000, 5],
-  ["ruis", "sonne2", "Ruis", "gondola", 7, 1000, 5],
-  ["riedgipfelbahn", "kronplatzii", "Gipfelbahn", "gondola", 6, 1000, 5],
-  ["costa", "predaperes", "Pré da Peres", "gondola", 4, 1000, 5],
-  ["p21", "miara", "Miara", "gondola", 6, 1000, 5],
-  ["miara", "coltoron", "Col Toron", "gondola", 6, 1000, 5],
-  ["costa", "costa2", "Costa", "chair", 4, 1000, 5],
-  ["marchner", "belvedere", "Marchner", "gondola", 6, 1000, 5],
-  ["belvedere", "sonne2", "Belvedere", "gondola", 5, 1000, 5],
-  ["rara", "coltoron", "Rara", "gondola", 3, 1000, 5],
-  ["kronplatziii", "kronplatzii", "Kronplatz II", "gondola", 5, 1000, 5],
-  ["alpenconnect", "alpenconnect2", "Alpen Connecting", "gondola", 8, 1000, 5],
+  ["sonne", "sonne2", "Sonne", "chair", 4, 1000, 2],
+  ["olangivaldaorai", "olangiii", "Olang I", "gondola", 10, 1000, 1],
+  ["olangiii", "olangii", "Olang II", "gondola", 4, 1000, 1],
+  ["arndt2", "arndt3", "Arndt", "chair", 7, 1000, 2],
+  ["kronplatzi", "kronplatziii", "Kronplatz I - Plan de Corones I", "gondola", 10, 1000, 2],
+  ["korer", "p13", "Korer", "gondola", 5, 1000, 2],
+  ["kronplatz2000", "kronplatzii", "Kronplatz 2000", "gondola", 13, 1000, 2],
+  ["plateau", "olangii", "Plateau", "chair", 5, 1000, 1],
+  ["ruis", "sonne2", "Ruis", "gondola", 7, 1000, 2],
+  ["riedgipfelbahn", "kronplatzii", "Gipfelbahn", "gondola", 6, 1000, 1],
+  ["costa", "predaperes", "Pré da Peres", "gondola", 4, 1000, 2],
+  ["p21", "miara", "Miara", "gondola", 6, 1000, 2],
+  ["miara", "coltoron", "Col Toron", "gondola", 6, 1000, 2],
+  ["costa", "costa2", "Costa", "chair", 4, 1000, 2],
+  ["marchner", "belvedere", "Marchner", "gondola", 6, 1000, 2],
+  ["belvedere", "sonne2", "Belvedere", "gondola", 5, 1000, 1],
+  ["rara", "coltoron", "Rara", "gondola", 3, 1000, 2],
+  ["kronplatziii", "kronplatzii", "Kronplatz II", "gondola", 5, 1000, 2],
+  ["alpenconnect", "alpenconnect2", "Alpen Connecting", "gondola", 8, 1000, 2],
 ];
 
 /** [from, to, name, difficulty, km, minutes] */
@@ -331,6 +331,7 @@ export const META = {
   "stats": {
     "lifts": 19,
     "runs": 153,
+    "km": 58,
     "top": 2264,
     "bottom": 942,
     "valleys": 1

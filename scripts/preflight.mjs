@@ -53,7 +53,12 @@ console.log("\nPRIVACY");
   for (const page of ["privacy.html", "support.html"]) {
     const html = await read(`public/${page}`).catch(() => null);
     if (!html) { fail(`public/${page} exists`); continue; }
-    check(!/CONTACT@EXAMPLE\.COM/.test(html), `${page} has a real contact address`, "still says CONTACT@EXAMPLE.COM");
+    // A published contact route, not specifically an address: Apple wants a
+    // way to reach someone, and a public issue tracker is one.
+    const hasRoute = /mailto:[^"@]+@[^"]+|github\.com\/[^"]+\/issues/.test(html);
+    check(hasRoute && !/CONTACT@EXAMPLE\.COM/.test(html),
+      `${page} publishes a way to get in touch`,
+      /CONTACT@EXAMPLE\.COM/.test(html) ? "still the placeholder" : "no mailto or issue tracker link");
     check(!/—/.test(html.replace(/<!--[\s\S]*?-->/g, "")), `${page} has no em dashes`);
   }
 }
@@ -85,9 +90,14 @@ console.log("\nDATA HONESTY");
     if (!built) warn(`${c.name}: no graph generated yet`, `npm run resort -- ${c.id}`);
   }
 
-  const resort = await read("src/resort.js");
-  if (/hand-typed from memory/.test(resort)) {
-    warn("Monterosa still ships the hand-typed graph",
+  // The question is not whether the hand-typed file still exists — it does, as
+  // the solver's fallback — but whether the app routes on it. graphs.js is the
+  // answer: it prefers a generated module for every id that has one, so a
+  // resort ships invented run names and lift times only if it has no graph.
+  const wired = await read("src/resorts/graphs.js");
+  const stillHandTyped = /import \* as (\w+) from "\.\.\/resort\.js"/.exec(wired);
+  if (stillHandTyped) {
+    warn(`${stillHandTyped[1]} still ships the hand-typed graph`,
       "run names, lift times and last lifts are invented; replace before a public listing");
   } else {
     ok("no hand-typed graph ships");

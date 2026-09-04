@@ -15,12 +15,12 @@
  * sent back to the form.
  */
 import { useEffect, useRef, useState } from "react";
-import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
+
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { REFINEMENTS, refinementApplies, backAt, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock } from "../solver.js";
-import { Info, Clock, Pin, Arrow } from "../ui/Icons.jsx";
+import { Info, Clock, Pin, Arrow, Back } from "../ui/Icons.jsx";
 import { NODES } from "../active-resort.js";
 
 /** Above roughly six a list stops being a choice and becomes homework. */
@@ -74,8 +74,11 @@ export default function ChooseScreen({
   const short = routes.length < SHOWN_BY_DEFAULT;
 
   return (
-    <>
-      <SheetHead>
+    <div className="page">
+      <header className="page__bar">
+        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label="Change the basics">
+          <Back />
+        </button>
         <div className="eyebrow">
           {ruledOut
             ? "Nothing left"
@@ -86,12 +89,13 @@ export default function ChooseScreen({
                 : `${routes.length} routes`}
           {opts.lunch && !ruledOut ? " · lunch included" : ""}
         </div>
-        <h1 className="title title--sm">
+        <span style={{ width: "var(--tap)" }} />
+      </header>
+
+      <div className="page__body">
+        <h1 className="title title--sm" style={{ marginTop: 0 }}>
           {ruledOut ? "That rules everything out" : "Pick a shape for the day"}
         </h1>
-      </SheetHead>
-
-      <SheetBody>
         {ruledOut && (
           <div className="warn">
             <Info className="warn__icon" width="17" height="17" />
@@ -122,7 +126,7 @@ export default function ChooseScreen({
             <Info className="info__icon" width="17" height="17" />
             <span>
               Only <b>{routes.length === 1 ? "one" : routes.length}</b> genuinely
-              different {routes.length === 1 ? "day" : "days"} fits that window.
+              different {routes.length === 1 ? "day fits" : "days fit"} that window.
             </span>
           </div>
         )}
@@ -220,13 +224,13 @@ export default function ChooseScreen({
             </p>
           )}
         </div>
-      </SheetBody>
+      </div>
 
-      <SheetFoot>
+      <div className="page__foot">
         <button className="btn btn--ghost" onClick={onBack}>
           Change the basics
         </button>
-      </SheetFoot>
-    </>
+      </div>
+    </div>
   );
 }

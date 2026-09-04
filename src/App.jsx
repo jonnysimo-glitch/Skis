@@ -83,7 +83,15 @@ const MAX_SNAP_METRES = 6000;
 const SNAP_FOR = {
   solving: "peek",
   choose: "half",
-  detail: "half",
+  // A bar over the map, not a panel covering it: the route has just been
+  // picked and the map is what there is to look at. The rest opens on the
+  // sheet's own expand.
+  //
+  // A shade taller than the standard peek, because this bar carries four
+  // figures and two buttons and the reassurance that the day is saved for a
+  // mountain with no signal. At 0.24 that last line was cut in half by the
+  // tab bar, which is worse than not saying it.
+  detail: 0.32,
   summary: "half",
   empty: "half",
 };
@@ -382,10 +390,21 @@ export default function App() {
   // at on the map while you are setting times, and a form wants its own scroll.
   const exploring = onMountain && screen === "explore";
   const planning = onMountain && screen === "plan";
-  const sheetScreen = onMountain && !navigating && !exploring && !planning;
-  // The map is only on screen on the skiing tab, and the plan form covers it.
+  /**
+   * Choosing is a page now, not a sheet.
+   *
+   * Five days' worth of shape, vertical, distance, areas, back-by and the
+   * refine chips is more than a peek can hold, so it was a sheet you had to
+   * drag and then scroll — reading a list through a letterbox while the map
+   * behind it showed a route you had not picked yet. The map earns its place
+   * one step later, at the route itself, where there is something to look at.
+   */
+  const choosing = onMountain && screen === "choose";
+  const fullPage = planning || choosing;
+  const sheetScreen = onMountain && !navigating && !exploring && !fullPage;
+  // The map is only on screen on the skiing tab, and a full page covers it.
   // Chrome for a map you cannot see is dead weight in the tab order.
-  const mapShowing = onMountain && !planning;
+  const mapShowing = onMountain && !fullPage;
   const tabBarShown = !(onMountain && (screen === "navigate" || screen === "solving"));
   const sheetFloor = tabBarShown ? TABBAR_H : 0;
   const chromeBottom = navigating
@@ -834,30 +853,30 @@ export default function App() {
         />
       )}
 
+        {screen === "choose" && opts && (
+        <ChooseScreen
+          routes={routes}
+          opts={opts}
+          plan={plan}
+          ability={ability}
+          refine={refine}
+          solving={solving}
+          activeIndex={previewIndex}
+          onHover={setPreviewIndex}
+          onPreview={setPreviewIndex}
+          onRefine={onRefine}
+          onPick={(i) => {
+            setPickIndex(i);
+            setPreviewIndex(i);
+            setScreen("detail");
+          }}
+          onBack={() => setScreen("plan")}
+        />
+      )}
+
       {sheetScreen && (
       <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
         {screen === "solving" && <SolvingScreen />}
-
-        {screen === "choose" && opts && (
-          <ChooseScreen
-            routes={routes}
-            opts={opts}
-            plan={plan}
-            ability={ability}
-            refine={refine}
-            solving={solving}
-            activeIndex={previewIndex}
-            onHover={setPreviewIndex}
-            onPreview={setPreviewIndex}
-            onRefine={onRefine}
-            onPick={(i) => {
-              setPickIndex(i);
-              setPreviewIndex(i);
-              setScreen("detail");
-            }}
-            onBack={() => setScreen("plan")}
-          />
-        )}
 
         {screen === "empty" && diagnosis && (
           <EmptyScreen

@@ -788,8 +788,30 @@ export default function FallbackTerrain({
       const pinned = new Set(
         (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
       );
+      /**
+       * Two kinds of label real data produced that should never be drawn.
+       *
+       * A generated name. The graph gives an unnamed junction "Point 74", and
+       * a mountain labelled Point 37, Point 53, Point 74, Point 75 tells a
+       * skier nothing while burying the names that mean something. If OSM has
+       * no name for a place, this has nothing to say about it.
+       *
+       * A repeat. One place is often several nodes — a lift station, the top
+       * of the piste beside it, a junction ten metres on — so "Passo dei
+       * Salati" and "Gabiet" each came out twice, side by side, which reads as
+       * a bug rather than as detail. The best-ranked one keeps the name.
+       */
+      const generated = (name) => /^Point \d+$/.test(String(name || ""));
+      const spoken = new Set();
+
       const candidates = list
-        .filter(([, n]) => !pinned.has(n.name))
+        .filter(([, n]) => !pinned.has(n.name) && !generated(n.name))
+        .sort((a, b) => rank(a[1]) - rank(b[1]))
+        .filter(([, n]) => {
+          if (spoken.has(n.name)) return false;
+          spoken.add(n.name);
+          return true;
+        })
         .map(([, n]) => {
           const { x, z } = field.proj.project(n.lat, n.lon);
           return { n, s: project(x, field.sample(x, z), z, v, cam) };

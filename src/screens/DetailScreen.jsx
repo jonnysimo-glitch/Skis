@@ -33,11 +33,35 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
     onStart();
   };
 
+  const stats = detailStats(route);
+
   return (
     <>
+      {/*
+        The compact state is the whole point of this screen.
+
+        It used to open at half height, which put an elevation profile, a
+        difficulty bar, four large stats, two notes and a list of every leg
+        between the skier and the map — the one thing they had just asked to
+        see. This opens as a bar: what the day is, the three numbers that
+        decide it, and the two things you can do. Everything else is behind
+        the sheet's own expand, so nothing is lost and nothing is in the way.
+      */}
       <SheetHead>
         <div className="eyebrow eyebrow--accent">{route.label}</div>
         <h1 className="title title--sm">{route.title}</h1>
+        <div className="detail__glance">
+          {stats.slice(0, 3).map((item) => (
+            <span key={item.k} className="detail__stat">
+              <b>{item.v}</b>
+              <span>{item.k}</span>
+            </span>
+          ))}
+          <span className="detail__stat detail__stat--back">
+            <b>{minutesToClock(back)}</b>
+            <span>back at {finishName}</span>
+          </span>
+        </div>
       </SheetHead>
 
       <SheetBody>
@@ -47,7 +71,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
 
         <div className="spacer" />
 
-        <StatRow items={detailStats(route)} large />
+        <StatRow items={stats} large />
 
         <div className="spacer" />
 

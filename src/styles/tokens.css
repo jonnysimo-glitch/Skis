@@ -31,19 +31,27 @@
   /* --- Neutrals -----------------------------------------------------------
      Snow and its shadow: a single ramp, cool throughout, so the whole surface
      reads as ice rather than as grey. Contrast against white is checked, not
-     assumed — --n-50 used to be too light to carry text. */
+     assumed — --n-50 used to be too light to carry text.
+
+     Deepened once, after a tester put it plainly: the colour suits the snow
+     and mountain theme but it was too light. The whole ramp came down by
+     roughly one step, which gives the tinted surfaces enough presence to read
+     as surfaces rather than as almost-white, and every rung more weight
+     against the map behind it. The piste signals below are untouched, because
+     they are safety signals rather than a mood. scripts/check-contrast.mjs is
+     what says whether this is still legible. */
   --n-00: #ffffff;
-  --n-05: #f2f7fb;
-  --n-10: #e6eef5;
-  --n-20: #d5e1ea;
-  --n-30: #b9cad8;
-  --n-40: #8ea5b6;
-  --n-50: #5c7385;   /* AA on the tinted card surface, not just on white */
-  --n-60: #4a6072;
-  --n-70: #35485a;
-  --n-80: #21323f;
-  --n-90: #132330;
-  --n-95: #0a1922;
+  --n-05: #e9f0f6;
+  --n-10: #dae4ee;
+  --n-20: #c4d3e0;
+  --n-30: #a4b9ca;
+  --n-40: #7d95a9;
+  --n-50: #52697b;   /* AA on the tinted card surface, not just on white */
+  --n-60: #3f5567;
+  --n-70: #2d4052;
+  --n-80: #1b2b38;
+  --n-90: #101f2b;
+  --n-95: #07141d;
 
   --ink: var(--n-95);
   --ink-2: var(--n-60);
@@ -62,9 +70,19 @@
   --piste-black: #101820;
   --lift: #7d95a5;
 
-  --warn: #9a5b12;
-  --warn-bg: #fdf4e6;
-  --warn-line: #ecd7a8;
+  --warn: #8a4f0c;
+  --warn-bg: #f7ecdb;
+  --warn-line: #e0c79a;
+
+  /* An informational note, which is not a warning.
+     A tester said the pale orange panel looked like the ones on a
+     flight-booking site, and they were right: amber says "caution", and
+     "sharing is not connected yet" is not a caution, it is a fact about the
+     build. Cool and quiet, so it belongs to the app rather than shouting at
+     someone about their booking. */
+  --note-bg: var(--n-05);
+  --note-line: var(--n-20);
+  --note-ink: var(--n-60);
 
   /* --- Type ---------------------------------------------------------------
      Body resolves to SF Pro on iPhone, so text metrics match the OS. Inter is

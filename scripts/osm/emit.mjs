@@ -98,6 +98,17 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
     stats: {
       lifts: LIFTS.length,
       runs: RUNS.length,
+      /**
+       * Kilometres of piste, which is the figure to show a skier.
+       *
+       * The run *count* is not comparable to anything: OSM maps one piste as
+       * several ways and the graph splits again at every junction, so
+       * Paganella came out as 80 "runs" against the 31 it publishes and the
+       * home screen was quoting a number nobody could check against a piste
+       * map. Length does not care how the same piste is cut up, and it is
+       * what resorts advertise.
+       */
+      km: Math.round(RUNS.reduce((sum, r) => sum + (r.km || 0), 0)),
       top: Math.max(...alts),
       bottom: Math.min(...alts),
       valleys: areas.size || 1,

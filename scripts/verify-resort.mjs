@@ -161,6 +161,41 @@ async function verify(id) {
     }
   }
 
+  // --- does the grade match the ground? ------------------------------------
+  //
+  // The best cross-check there is here, because the two sides come from
+  // different places: `piste:difficulty` is typed in by a person, and the
+  // gradient is measured off AWS terrain tiles. Where they disagree, one of
+  // them is wrong about the slope.
+  //
+  // European convention, roughly: a blue runs to about a quarter, a red to
+  // about two fifths, a black beyond that. The bands below are deliberately
+  // wide — a run's average gradient hides its steepest pitch, and a piste
+  // graded on its hardest hundred metres will read gentle across its length —
+  // so this only speaks up when a grade and the ground are a long way apart.
+  const BANDS = { blue: [0, 0.35], red: [0, 0.5], black: [0.12, MAX_GRADIENT] };
+  const mismatched = [];
+  for (const run of RUNS) {
+    const [from, to, name, difficulty, runKm] = run;
+    if (!runKm || runKm < 0.3) continue; // too short for an average to mean much
+    const drop = NODES[from].alt - NODES[to].alt;
+    const gradient = drop / (runKm * 1000);
+    const band = BANDS[difficulty];
+    if (!band) continue;
+    if (gradient > band[1]) mismatched.push({ name, difficulty, gradient, runKm, how: "steeper" });
+    else if (gradient < band[0]) mismatched.push({ name, difficulty, gradient, runKm, how: "gentler" });
+  }
+  mismatched.sort((a, b) => Math.abs(b.gradient - 0.3) - Math.abs(a.gradient - 0.3));
+  if (!mismatched.length) {
+    console.log(`  grades     every run's gradient fits its grade`);
+  } else {
+    console.log(`  grades     ${mismatched.length} of ${RUNS.length} run(s) are graded against the ground`);
+    for (const m of mismatched.slice(0, 4)) {
+      console.log(`    note  "${m.name}" is ${m.difficulty} but ${m.how} than that: ` +
+        `${Math.round(m.gradient * 100)}% over ${m.runKm} km — check the piste map`);
+    }
+  }
+
   // --- physical plausibility ----------------------------------------------
   const steep = RUNS.filter(([from, to, , , runKm]) => {
     const drop = NODES[from].alt - NODES[to].alt;

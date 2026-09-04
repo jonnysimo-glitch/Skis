@@ -23,7 +23,7 @@ export default function FriendsSection({ profile, friends, onAdd, onToggle, onRe
         </button>
       </div>
 
-      <div className="banner banner--warn" style={{ marginBottom: "var(--s-3)" }}>
+      <div className="banner banner--note" style={{ marginBottom: "var(--s-3)" }}>
         <Info width="18" height="18" style={{ flex: "none" }} />
         <p>
           Saved on this phone. Sharing is not connected yet, so nobody you

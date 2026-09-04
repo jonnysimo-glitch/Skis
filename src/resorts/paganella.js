@@ -82,20 +82,20 @@ export const NODES = {
 
 /** [from, to, name, type, rideMinutes, lastUpMinuteOfDay, typicalQueueMinutes] */
 export const LIFTS = [
-  ["rindoledosdeleva", "rindoledosdeleva2", "Rindole - Dos de Leva", "chair", 2, 1000, 4],
-  ["andalo", "p4", "Andalo - Doss Pelà", "gondola", 9, 1000, 4],
-  ["laselletta", "paganella", "La Selletta - Cima Paganella", "chair", 5, 1000, 4],
-  ["albidemez", "paganella", "Albi de Mez - Cima Paganella", "chair", 9, 1000, 4],
-  ["meriz", "laselletta", "Meriz - La Selletta", "chair", 14, 1000, 4],
-  ["meriz2", "meriz3", "Meriz", "chair", 5, 1000, 4],
+  ["rindoledosdeleva", "rindoledosdeleva2", "Rindole - Dos de Leva", "chair", 2, 1000, 3],
+  ["andalo", "p4", "Andalo - Doss Pelà", "gondola", 9, 1000, 2],
+  ["laselletta", "paganella", "La Selletta - Cima Paganella", "chair", 5, 1000, 3],
+  ["albidemez", "paganella", "Albi de Mez - Cima Paganella", "chair", 9, 1000, 2],
+  ["meriz", "laselletta", "Meriz - La Selletta", "chair", 14, 1000, 2],
+  ["meriz2", "meriz3", "Meriz", "chair", 5, 1000, 2],
   ["santel", "meriz2", "Santel - Meriz", "chair", 10, 1000, 4],
-  ["pratidigaggia", "teresat", "Teresat", "chair", 3, 1000, 4],
-  ["salareconca", "salareconca2", "Salare Conca", "chair", 7, 1000, 4],
-  ["pratidigaggia", "paganella2", "Prati di Gaggia - Paganella 2", "chair", 13, 1000, 4],
-  ["laghet", "pratidigaggia", "Laghet - Prati di Gaggia", "gondola", 5, 1000, 4],
-  ["laghetdoss", "laghetdoss2", "Laghet - Doss", "chair", 2, 1000, 4],
-  ["santantonio", "santantonio2", "Sant'Antonio", "chair", 9, 1000, 4],
-  ["piandosson", "laselletta", "Pian Dosson - Selletta", "gondola", 6, 1000, 4],
+  ["pratidigaggia", "teresat", "Teresat", "chair", 3, 1000, 3],
+  ["salareconca", "salareconca2", "Salare Conca", "chair", 7, 1000, 3],
+  ["pratidigaggia", "paganella2", "Prati di Gaggia - Paganella 2", "chair", 13, 1000, 3],
+  ["laghet", "pratidigaggia", "Laghet - Prati di Gaggia", "gondola", 5, 1000, 3],
+  ["laghetdoss", "laghetdoss2", "Laghet - Doss", "chair", 2, 1000, 5],
+  ["santantonio", "santantonio2", "Sant'Antonio", "chair", 9, 1000, 3],
+  ["piandosson", "laselletta", "Pian Dosson - Selletta", "gondola", 6, 1000, 2],
 ];
 
 /** [from, to, name, difficulty, km, minutes] */
@@ -220,6 +220,7 @@ export const META = {
   "stats": {
     "lifts": 14,
     "runs": 80,
+    "km": 32,
     "top": 2113,
     "bottom": 1028,
     "valleys": 2
