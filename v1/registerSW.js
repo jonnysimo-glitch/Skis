@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/Skis/v1/sw.js', { scope: '/Skis/v1/' })})}
