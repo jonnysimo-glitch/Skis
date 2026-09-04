@@ -192,6 +192,15 @@ export function check({ NODES, LIFTS, RUNS }) {
   // Every base has to be able to reach every other base and come home, or the
   // cross-valley planning the app is for silently does not work.
   const bases = keys.filter((k) => NODES[k].base);
+  // And there has to be one. With none, `defaultBase` falls back to whichever
+  // node happens to be first, so the app opens a day at some mid-mountain
+  // junction instead of a car park — and "your car is at Champoluc" is the
+  // problem this whole thing exists to solve. A stitching tolerance that
+  // fragments the valleys leaves exactly this: a plausible graph with no way
+  // in or out of it.
+  if (!bases.length) {
+    problems.push("no base survived pruning; there is nowhere to start or finish a day");
+  }
   if (bases.length) {
     const adj = new Map(keys.map((k) => [k, []]));
     for (const e of [...LIFTS, ...RUNS]) adj.get(e.from).push(e.to);

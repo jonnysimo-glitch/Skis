@@ -24,6 +24,7 @@
     "features": "npm run build && node scripts/features.mjs",
     "resort": "node scripts/build-resort.mjs",
     "resort:query": "node scripts/build-resort.mjs --query",
+    "resort:tune": "node scripts/tune-tolerance.mjs",
     "resort:page": "node scripts/make-fetch-page.mjs",
     "icons": "node scripts/make-icons.mjs",
     "preflight": "node scripts/preflight.mjs",

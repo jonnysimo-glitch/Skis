@@ -207,6 +207,24 @@ is("a lift that goes downhill is caught", caught.some((p) => /goes downhill/.tes
 is("a run that goes uphill is caught", caught.some((p) => /goes uphill/.test(p)));
 is("a difficulty that is not a piste colour is caught", caught.some((p) => /purple/.test(p)));
 is("a zero-minute run is caught", caught.some((p) => /takes no time/.test(p)));
+// A graph can pass every other check and still have nowhere to begin. The
+// tolerance sweep produced exactly this: nineteen nodes, two lifts, plausible
+// altitudes, and not one surviving base — so `defaultBase` would have fallen
+// back to whichever node came first and the app would have opened a day at a
+// mid-mountain junction instead of a car park.
+const baseless = check({
+  NODES: {
+    a: { name: "A", lat: 46, lon: 11, alt: 1000 },
+    b: { name: "B", lat: 46.1, lon: 11, alt: 2000 },
+    c: { name: "C", lat: 46.2, lon: 11, alt: 1500 },
+    d: { name: "D", lat: 46.3, lon: 11, alt: 1200 },
+  },
+  LIFTS: [{ from: "a", to: "b", name: "Up", minutes: 8 }],
+  RUNS: [{ from: "b", to: "a", name: "Down", difficulty: "red", minutes: 9 }],
+});
+is("a graph with no base at all is caught", baseless.some((p) => /no base survived/.test(p)),
+  baseless.join(" | ") || "nothing reported");
+
 const stranded = check({
   NODES: {
     a: { name: "A", lat: 46, lon: 11, alt: 1000, base: true },
