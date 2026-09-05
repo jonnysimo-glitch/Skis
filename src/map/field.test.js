@@ -74,8 +74,17 @@ for (const [name, f, s] of [["monterosa", mono, sMono], ["the other", other, sOt
   check(`${name}: the slab is entirely below the ground`, s.base < f.lo,
     `base ${s.base | 0}m, lowest ground ${f.lo | 0}m`);
   check(`${name}: thickness is the stated share of the relief`,
-    Math.abs(s.thickness - (f.hi - f.lo) * SKIRT) < 0.01,
-    `${s.thickness.toFixed(1)}m of ${(f.hi - f.lo) | 0}m relief`);
+    Math.abs(s.thickness - (f.hi - f.body) * SKIRT) < 0.01,
+    `${s.thickness.toFixed(1)}m of ${(f.hi - f.body) | 0}m relief`);
+  // Measured from `body`, the 10th percentile, not from `lo`. Monterosa gained
+  // Alagna at 1,220 m — 364 m of extra depth in one narrow valley and almost no
+  // extra surface — and measuring from `lo` turned the plinth into 43% of the
+  // model, a wall with a mountain on it. The share is of the mountain's body,
+  // and the base still hangs below the true low point so that valley does not
+  // poke through the underside.
+  check(`${name}: one deep valley does not thicken the plinth`,
+    s.thickness <= (f.hi - f.lo) * SKIRT + 0.01 && s.base < f.lo,
+    `${s.thickness.toFixed(1)}m, not ${((f.hi - f.lo) * SKIRT).toFixed(1)}m`);
   // The rim hangs a constant thickness below the ground rather than dropping to
   // the floor. Dropping to the floor is the wall that covers the mountain, so
   // this is the invariant worth pinning: no rim face is ever taller than the

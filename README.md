@@ -372,6 +372,30 @@ the setting in the repo silently decided which of two mechanisms was live —
 with a 404 as the only symptom when they disagreed. One mechanism, no CI, and
 the served bytes are the ones the test suite ran against.
 
+**What that costs: the deployed site has no MapTiler key.** A frontend map key
+is public by necessity — every browser that loads the map is handed it — but it
+must not be *committed*, because a key in git history outlives the deploy and
+is scraped from public repositories by people who do this for a living. A
+branch-served site is a committed build, so the two cannot both be true. The
+`gh-pages` copy is therefore built with the key absent: Terrain works, and
+Satellite and Winter map show their "needs a key" state.
+
+Getting satellite onto a public URL means picking one of two things, and both
+are a change to how this deploys:
+
+- **Actions artifact.** Add `VITE_MAPTILER_KEY` under Settings → Secrets and
+  variables → Actions, build in a workflow, upload the result. The key reaches
+  the site and never reaches a commit. Costs the simplicity above, and needs
+  Settings → Pages → Source switched to GitHub Actions — get that wrong and the
+  symptom is the 404 described above.
+- **A host that reads env vars at build time**, Vercel or Netlify. Same
+  property, no branch to keep in step, and it deploys a private repo on the
+  free tier.
+
+Either way, restrict the key to the origins the app is served from, at
+cloud.maptiler.com, before it is live. That is the protection that actually
+holds for a key a browser can read.
+
 **Locally**, which is the certain path:
 
 ```bash
