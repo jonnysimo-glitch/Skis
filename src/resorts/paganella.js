@@ -170,7 +170,9 @@ export const RUNS = [
  * Places on the mountain that are not junctions: where to eat, and where to
  * hire skis.
  *
- * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ * [name, kind, lat, lon, altitudeMetres] with kind one of hut, restaurant,
+ * cafe or rental. The altitude can be null where the terrain tiles did not
+ * reach, which is honest: a made-up height is worse than none.
  *
  * Narrowed to what is actually on the hill. A resort's bounding box holds
  * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
@@ -179,16 +181,16 @@ export const RUNS = [
  * skis has further to reach, because it is in the village you parked in.
  */
 export const PLACES = [
-  ["Albi de Mez", "restaurant", 46.14639, 11.02396],
-  ["Baita Lovara", "restaurant", 46.14718, 10.99762],
-  ["Chalet Forst", "restaurant", 46.15013, 10.99632],
-  ["Chalet Paganella 2", "restaurant", 46.14136, 11.015],
-  ["Malga Zambana", "restaurant", 46.15027, 11.02837],
-  ["Rifugio Dosson", "restaurant", 46.1535, 11.01597],
-  ["Rifugio La Roda", "hut", 46.14245, 11.03693],
-  ["Rifugio Meriz", "restaurant", 46.16381, 11.05063],
-  ["Ski Bar", "restaurant", 46.16021, 11.00135],
-  ["Tre3", "restaurant", 46.17551, 11.05251],
+  ["Albi de Mez", "restaurant", 46.14639, 11.02396, 1776],
+  ["Baita Lovara", "restaurant", 46.14718, 10.99762, 1401],
+  ["Chalet Forst", "restaurant", 46.15013, 10.99632, 1328],
+  ["Chalet Paganella 2", "restaurant", 46.14136, 11.015, 1744],
+  ["Malga Zambana", "restaurant", 46.15027, 11.02837, 1782],
+  ["Rifugio Dosson", "restaurant", 46.1535, 11.01597, 1448],
+  ["Rifugio La Roda", "hut", 46.14245, 11.03693, 2106],
+  ["Rifugio Meriz", "restaurant", 46.16381, 11.05063, 1427],
+  ["Ski Bar", "restaurant", 46.16021, 11.00135, 1028],
+  ["Tre3", "restaurant", 46.17551, 11.05251, 1047],
 ];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };

@@ -191,6 +191,11 @@ function applyOperations(graph, config) {
         ...node,
         name,
         base: true,
+        // `named` says whether this place has a name a skier would use, which
+        // is what decides whether the map labels it. A base renamed from the
+        // config does: Champoluc is a village, not a junction. Left false, one
+        // of Monterosa's two valley bases never got a label on the mountain.
+        named: name === node.name ? node.named : true,
         area: config.areas?.[name] ?? config.areas?.[node.name] ?? node.area,
       };
       bases++;

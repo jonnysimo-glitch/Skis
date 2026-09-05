@@ -1318,6 +1318,15 @@ try {
       // The one the whole product is meant to be known for.
       { name: "90 minutes and the car is elsewhere", t0: "14:00", t1: "15:30", ability: "Blue and red" },
       { name: "an expert with the whole mountain", t0: "09:00", t1: "16:00", ability: "Anything" },
+      // Five more, because five was not enough to catch what the other half of
+      // the form does. These exercise the morning, the last hour, a beginner
+      // with two hours, and both of the "also" toggles, none of which had ever
+      // been run against a real resort's data.
+      { name: "first lift to lunch", t0: "08:45", t1: "12:30", ability: "Blue and red" },
+      { name: "the last two hours", t0: "14:45", t1: "16:30", ability: "Anything" },
+      { name: "a beginner with a morning", t0: "10:00", t1: "12:00", ability: "Blue" },
+      { name: "no drag lifts", t0: "09:15", t1: "15:45", ability: "Anything", also: "No drag lifts" },
+      { name: "a sit-down lunch", t0: "09:30", t1: "16:00", ability: "Blue and red", also: "Sit-down lunch" },
     ];
 
     for (const [index, resort] of LIVE.entries()) {
@@ -1349,6 +1358,10 @@ try {
             break;
           }
         }
+        if (persona.also) {
+          const extra = await page.$(`.chip:text-is("${persona.also}")`);
+          if (extra) await extra.click();
+        }
 
         // Read it back before solving. A persona that did not apply is worse
         // than a failing one, because it passes.
@@ -1358,10 +1371,15 @@ try {
           ability: [...document.querySelectorAll('.chips[aria-label="Ability"] .chip')]
             .find((c) => c.getAttribute("aria-pressed") === "true")?.textContent.trim(),
         }));
+        const alsoOn = persona.also
+          ? await page.$eval(`.chip:text-is("${persona.also}")`,
+              (n) => n.getAttribute("aria-pressed") === "true").catch(() => false)
+          : true;
         check(`${resort.id}: ${persona.name} — the form took the settings`,
           applied.t0 === persona.t0 && applied.t1 === persona.t1 &&
-          applied.ability === persona.ability,
-          `${applied.t0}-${applied.t1} ${applied.ability}`);
+          applied.ability === persona.ability && alsoOn,
+          `${applied.t0}-${applied.t1} ${applied.ability}` +
+          (persona.also ? ` + ${persona.also}${alsoOn ? "" : " (NOT SET)"}` : ""));
 
         await page.click("text=Find routes");
         // Either answer is fine. Neither arriving is not: that is the stuck

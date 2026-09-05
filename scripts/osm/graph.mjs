@@ -214,7 +214,16 @@ export function build(osm, { tolerance = 45, elevation }) {
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
     }))
-    .filter((pl) => Number.isFinite(pl.lat) && Number.isFinite(pl.lon));
+    .filter((pl) => Number.isFinite(pl.lat) && Number.isFinite(pl.lon))
+    .map((pl) => {
+      // How high it is, from the same terrain the nodes use. "Rifugio, 2,275 m"
+      // tells a skier whether it is on their way down; the name alone does not.
+      const sampled = elevation(pl.lat, pl.lon);
+      return {
+        ...pl,
+        alt: sampled === null || !Number.isFinite(sampled) ? null : Math.round(sampled),
+      };
+    });
 
   const report = {
     lifts: lifts.length,

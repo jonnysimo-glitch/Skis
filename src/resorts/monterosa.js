@@ -46,7 +46,7 @@ export const NODES = {
   crest2:                { name: "Crest",                        lat: 45.83153, lon: 7.74590, alt: 1990, area: "Ayas" },
   cimalegna:             { name: "Cimalegna",                    lat: 45.87157, lon: 7.88727, alt: 2640, area: "Alagna" },
   collesalati:           { name: "Colle Salati",                 lat: 45.87834, lon: 7.86754, alt: 2994, area: "Gressoney" },
-  p30:                   { name: "Champoluc",                    lat: 45.83649, lon: 7.73148, alt: 1584, area: "Ayas", base: true, rifugio: true, named: false },
+  p30:                   { name: "Champoluc",                    lat: 45.83649, lon: 7.73148, alt: 1584, area: "Ayas", base: true, rifugio: true },
   stafal2:               { name: "Stafal",                       lat: 45.86055, lon: 7.81266, alt: 1838, area: "Gressoney" },
   moos:                  { name: "Moos",                         lat: 45.85982, lon: 7.80929, alt: 1912, area: "Gressoney" },
   belvedere:             { name: "Belvedere",                    lat: 45.84543, lon: 7.75200, alt: 2289, area: "Ayas", rifugio: true },
@@ -218,7 +218,9 @@ export const RUNS = [
  * Places on the mountain that are not junctions: where to eat, and where to
  * hire skis.
  *
- * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ * [name, kind, lat, lon, altitudeMetres] with kind one of hut, restaurant,
+ * cafe or rental. The altitude can be null where the terrain tiles did not
+ * reach, which is honest: a made-up height is worse than none.
  *
  * Narrowed to what is actually on the hill. A resort's bounding box holds
  * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
@@ -227,31 +229,31 @@ export const RUNS = [
  * skis has further to reach, because it is in the village you parked in.
  */
 export const PLACES = [
-  ["Alpen stop", "restaurant", 45.86485, 7.90495],
-  ["Alpenhutten Lys", "restaurant", 45.85626, 7.84532],
-  ["Baita Rifugio Belvedere", "restaurant", 45.84496, 7.75166],
-  ["Bar \"Passo da Mania'\"", "cafe", 45.87799, 7.86937],
-  ["Bar du Soleil", "restaurant", 45.85658, 7.74269],
-  ["Bar Ristorante Ostafa", "restaurant", 45.83432, 7.76165],
-  ["Bar Ristoro L'Aroula", "restaurant", 45.8285, 7.75145],
-  ["Bar Tavola Calda Del Crest", "restaurant", 45.83275, 7.7427],
-  ["Bedemi", "restaurant", 45.84471, 7.82186],
-  ["Campo Base", "restaurant", 45.85992, 7.75969],
-  ["Edelboden", "cafe", 45.83128, 7.8232],
-  ["Edelweiss", "restaurant", 45.83258, 7.7422],
-  ["FZRY", "restaurant", 45.85943, 7.81274],
-  ["Kondor", "restaurant", 45.83667, 7.7309],
-  ["L’Abri du ski", "restaurant", 45.8326, 7.76429],
-  ["La Mandria", "restaurant", 45.85961, 7.75351],
-  ["Le Sapin", "restaurant", 45.83703, 7.73123],
-  ["Novez Cafè Bar", "restaurant", 45.83048, 7.7484],
-  ["Osteria il Balivo", "restaurant", 45.83749, 7.7313],
-  ["Retsignon", "restaurant", 45.85559, 7.74218],
-  ["Rifugio Belvedere", "hut", 45.84494, 7.75156],
-  ["Rifugio Jutz", "hut", 45.85562, 7.80349],
-  ["Ristoro Colle Bettaforca", "restaurant", 45.87026, 7.78197],
-  ["Ristoro Sitten", "restaurant", 45.85776, 7.79949],
-  ["Wunderbar", "cafe", 45.85827, 7.81195],
+  ["Alpen stop", "restaurant", 45.86485, 7.90495, 2024],
+  ["Alpenhutten Lys", "restaurant", 45.85626, 7.84532, 2323],
+  ["Baita Rifugio Belvedere", "restaurant", 45.84496, 7.75166, 2285],
+  ["Bar \"Passo da Mania'\"", "cafe", 45.87799, 7.86937, 2947],
+  ["Bar du Soleil", "restaurant", 45.85658, 7.74269, 1985],
+  ["Bar Ristorante Ostafa", "restaurant", 45.83432, 7.76165, 2418],
+  ["Bar Ristoro L'Aroula", "restaurant", 45.8285, 7.75145, 2047],
+  ["Bar Tavola Calda Del Crest", "restaurant", 45.83275, 7.7427, 1978],
+  ["Bedemi", "restaurant", 45.84471, 7.82186, 1900],
+  ["Campo Base", "restaurant", 45.85992, 7.75969, 2432],
+  ["Edelboden", "cafe", 45.83128, 7.8232, 1638],
+  ["Edelweiss", "restaurant", 45.83258, 7.7422, 1967],
+  ["FZRY", "restaurant", 45.85943, 7.81274, 1826],
+  ["Kondor", "restaurant", 45.83667, 7.7309, 1578],
+  ["L’Abri du ski", "restaurant", 45.8326, 7.76429, 2396],
+  ["La Mandria", "restaurant", 45.85961, 7.75351, 2275],
+  ["Le Sapin", "restaurant", 45.83703, 7.73123, 1579],
+  ["Novez Cafè Bar", "restaurant", 45.83048, 7.7484, 2027],
+  ["Osteria il Balivo", "restaurant", 45.83749, 7.7313, 1575],
+  ["Retsignon", "restaurant", 45.85559, 7.74218, 1964],
+  ["Rifugio Belvedere", "hut", 45.84494, 7.75156, 2284],
+  ["Rifugio Jutz", "hut", 45.85562, 7.80349, 2164],
+  ["Ristoro Colle Bettaforca", "restaurant", 45.87026, 7.78197, 2722],
+  ["Ristoro Sitten", "restaurant", 45.85776, 7.79949, 2268],
+  ["Wunderbar", "cafe", 45.85827, 7.81195, 1820],
 ];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };

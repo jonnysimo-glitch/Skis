@@ -35,7 +35,7 @@ export const NODES = {
   costa:                  { name: "Costa",                             lat: 46.72333, lon: 11.96407, alt: 1750, area: "St. Vigil", rifugio: true },
   riedgipfelbahn:         { name: "Ried / Gipfelbahn",                 lat: 46.75417, lon: 11.95854, alt: 1730, area: "Bruneck", rifugio: true },
   predaperes:             { name: "Pré da Peres",                      lat: 46.71615, lon: 11.97043, alt: 2008, area: "St. Vigil" },
-  p14:                    { name: "Miara",                             lat: 46.70445, lon: 11.93047, alt: 1224, area: "St. Vigil", base: true, named: false },
+  p14:                    { name: "Miara",                             lat: 46.70445, lon: 11.93047, alt: 1224, area: "St. Vigil", base: true },
   miara:                  { name: "Miara",                             lat: 46.71121, lon: 11.95120, alt: 1478, area: "St. Vigil" },
   coltoron:               { name: "Col Toron",                         lat: 46.71918, lon: 11.96455, alt: 1812, area: "St. Vigil" },
   costa2:                 { name: "Costa",                             lat: 46.72776, lon: 11.96781, alt: 1854, area: "St. Vigil", rifugio: true },
@@ -214,7 +214,9 @@ export const RUNS = [
  * Places on the mountain that are not junctions: where to eat, and where to
  * hire skis.
  *
- * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ * [name, kind, lat, lon, altitudeMetres] with kind one of hut, restaurant,
+ * cafe or rental. The altitude can be null where the terrain tiles did not
+ * reach, which is honest: a made-up height is worse than none.
  *
  * Narrowed to what is actually on the hill. A resort's bounding box holds
  * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
@@ -223,29 +225,29 @@ export const RUNS = [
  * skis has further to reach, because it is in the village you parked in.
  */
 export const PLACES = [
-  ["AlpINN", "restaurant", 46.74074, 11.95565],
-  ["Alpres", "restaurant", 46.75173, 11.99306],
-  ["Bivacco", "restaurant", 46.72819, 11.96644],
-  ["Corones", "restaurant", 46.7382, 11.9579],
-  ["Furcia Center", "restaurant", 46.72294, 11.9646],
-  ["Geiselsberger Hütte", "restaurant", 46.74246, 11.97086],
-  ["Gipfel Restaurant Cima", "restaurant", 46.73907, 11.95891],
-  ["Graziani Lodge & Chalets", "restaurant", 46.73204, 11.9571],
-  ["Hardimitz‘n", "restaurant", 46.77156, 11.94316],
-  ["Herzlalm", "restaurant", 46.7545, 11.95859],
-  ["Huiba Hitte", "restaurant", 46.75136, 11.98283],
-  ["K1", "restaurant", 46.77221, 11.94143],
-  ["Kron-Restaurant", "restaurant", 46.73907, 11.96011],
-  ["Lorenzi Hütte", "restaurant", 46.74481, 11.99093],
-  ["Marchner Hütte", "restaurant", 46.73441, 11.99455],
-  ["P5 Mountain Club", "restaurant", 46.73209, 11.96264],
-  ["Panorama", "restaurant", 46.73126, 11.95994],
-  ["Pizzeria Dolasilla", "restaurant", 46.77105, 11.93893],
-  ["Prackenhütte - Rifugio Pracken", "restaurant", 46.75254, 11.98288],
-  ["Schnapskurve", "restaurant", 46.71255, 11.9498],
-  ["Treff Kronplatz", "cafe", 46.73926, 11.95819],
-  ["Treff Reischach", "cafe", 46.77243, 11.94196],
-  ["Ücia Picio Pré", "restaurant", 46.71783, 11.96978],
+  ["AlpINN", "restaurant", 46.74074, 11.95565, 2219],
+  ["Alpres", "restaurant", 46.75173, 11.99306, 1614],
+  ["Bivacco", "restaurant", 46.72819, 11.96644, 1866],
+  ["Corones", "restaurant", 46.7382, 11.9579, 2263],
+  ["Furcia Center", "restaurant", 46.72294, 11.9646, 1744],
+  ["Geiselsberger Hütte", "restaurant", 46.74246, 11.97086, 2088],
+  ["Gipfel Restaurant Cima", "restaurant", 46.73907, 11.95891, 2264],
+  ["Graziani Lodge & Chalets", "restaurant", 46.73204, 11.9571, 2098],
+  ["Hardimitz‘n", "restaurant", 46.77156, 11.94316, 963],
+  ["Herzlalm", "restaurant", 46.7545, 11.95859, 1726],
+  ["Huiba Hitte", "restaurant", 46.75136, 11.98283, 1802],
+  ["K1", "restaurant", 46.77221, 11.94143, 952],
+  ["Kron-Restaurant", "restaurant", 46.73907, 11.96011, 2261],
+  ["Lorenzi Hütte", "restaurant", 46.74481, 11.99093, 1660],
+  ["Marchner Hütte", "restaurant", 46.73441, 11.99455, 1560],
+  ["P5 Mountain Club", "restaurant", 46.73209, 11.96264, 2067],
+  ["Panorama", "restaurant", 46.73126, 11.95994, 2060],
+  ["Pizzeria Dolasilla", "restaurant", 46.77105, 11.93893, 952],
+  ["Prackenhütte - Rifugio Pracken", "restaurant", 46.75254, 11.98288, 1808],
+  ["Schnapskurve", "restaurant", 46.71255, 11.9498, 1497],
+  ["Treff Kronplatz", "cafe", 46.73926, 11.95819, 2261],
+  ["Treff Reischach", "cafe", 46.77243, 11.94196, 952],
+  ["Ücia Picio Pré", "restaurant", 46.71783, 11.96978, 1943],
 ];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };

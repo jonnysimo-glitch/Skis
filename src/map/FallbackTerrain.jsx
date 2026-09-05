@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef } from "react";
 import { NODES as ACTIVE_NODES, PLACES as ACTIVE_PLACES, activeProjector } from "../active-resort.js";
+import { shortName } from "../lib/places.js";
 import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
   SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
@@ -843,8 +844,9 @@ export default function FallbackTerrain({
       return boxes;
     };
 
-    const drawPlaces = (v, cam, placed) => {
-      const list = Object.entries(propsRef.current.nodes ?? {});
+    const drawPlaces = (v, cam, placed, { only = null } = {}) => {
+      const list = Object.entries(propsRef.current.nodes ?? {})
+        .filter(([, n]) => (only === "bases" ? n.base : only === "rest" ? !n.base : true));
       if (!list.length) return placed;
       ctx.font = "600 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -951,7 +953,11 @@ export default function FallbackTerrain({
       }
       // Canvas text leaves no DOM to assert against, so the placement is
       // published for the feature suite. Same gate as the camera hooks.
-      if (mapTest) window.__skisLabels = drawn;
+      if (mapTest) {
+        // Two passes now, so this accumulates rather than replaces: the bases
+        // are drawn before the hut markers and everything else after them.
+        window.__skisLabels = only === "rest" ? [...(window.__skisLabels ?? []), ...drawn] : drawn;
+      }
       return placed;
     };
 
@@ -969,6 +975,63 @@ export default function FallbackTerrain({
      * mountain to have any: at rest a resort has twenty-odd of these and
      * twenty-odd labels is a grey smear over the terrain.
      */
+    /**
+     * A map pin with a glyph in it, rather than a coloured blob.
+     *
+     * A square meant food and a circle meant hire, which is a legend nobody
+     * has. These are the shapes every map uses for the same things: cutlery
+     * for somewhere to eat, a cup for a bar, a roof for a hut, a pair of skis
+     * for hire. Thirteen pixels across with a white disc behind them, because
+     * a glyph drawn straight onto snow disappears into it.
+     */
+    const pin = (x, y, r, kind) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.fill();
+      ctx.lineWidth = 1.7;
+      ctx.strokeStyle = kind === "rental" ? "#2c8fb5" : "#c07a1e";
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.lineWidth = 1.25;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = kind === "rental" ? "#1d6f8f" : "#8a5510";
+      ctx.beginPath();
+      if (kind === "rental") {
+        // Two skis, tips up.
+        ctx.moveTo(-2.1, 2.6); ctx.lineTo(-1.1, -2.8);
+        ctx.moveTo(1.1, 2.6); ctx.lineTo(2.1, -2.8);
+        ctx.moveTo(-2.9, 2.6); ctx.lineTo(2.9, 2.6);
+      } else if (kind === "hut") {
+        // A roof and a wall: the shape of every mountain hut sign there is.
+        ctx.moveTo(-2.9, 0.2); ctx.lineTo(0, -2.9); ctx.lineTo(2.9, 0.2);
+        ctx.moveTo(-2.1, 0.2); ctx.lineTo(-2.1, 2.8);
+        ctx.lineTo(2.1, 2.8); ctx.lineTo(2.1, 0.2);
+      } else if (kind === "cafe") {
+        // A cup with a handle.
+        ctx.moveTo(-2.2, -1.8); ctx.lineTo(-2.2, 1.1);
+        ctx.quadraticCurveTo(-2.2, 2.7, -0.6, 2.7);
+        ctx.quadraticCurveTo(1.0, 2.7, 1.0, 1.1);
+        ctx.lineTo(1.0, -1.8);
+        ctx.moveTo(1.0, -0.9);
+        ctx.quadraticCurveTo(2.9, -0.9, 2.9, 0.3);
+        ctx.quadraticCurveTo(2.9, 1.5, 1.0, 1.5);
+      } else {
+        // Fork and knife.
+        ctx.moveTo(-1.9, -2.9); ctx.lineTo(-1.9, -0.6);
+        ctx.moveTo(-0.6, -2.9); ctx.lineTo(-0.6, -0.6);
+        ctx.moveTo(-1.25, -0.6); ctx.lineTo(-1.25, 2.9);
+        ctx.moveTo(1.7, 2.9); ctx.lineTo(1.7, -0.4);
+        ctx.quadraticCurveTo(1.7, -2.9, 0.7, -2.9);
+        ctx.quadraticCurveTo(0.7, -0.4, 1.7, -0.4);
+      }
+      ctx.stroke();
+      ctx.restore();
+    };
+
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false } = {}) => {
       const list = propsRef.current.places ?? [];
       if (!list.length) return placed;
@@ -981,12 +1044,13 @@ export default function FallbackTerrain({
         placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
 
       const drawn = [];
-      for (const [name, kind, lat, lon] of list) {
+      for (const [full, kind, lat, lon] of list) {
+        const name = shortName(full);
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
         if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
 
-        const r = 4.2;
+        const r = 6.4;
         const box = { l: s.x - r - 3, r: s.x + r + 3, t: s.y - r - 3, b: s.y + r + 3 };
         if (labelsOnly) {
           // The marker went down in the earlier pass; this one only has to
@@ -1008,17 +1072,7 @@ export default function FallbackTerrain({
         }
         if (hits(box)) continue;
         placed.push(box);
-
-        ctx.beginPath();
-        // Rounded square for food, circle for hire: two kinds, told apart
-        // without a legend and without a glyph nobody can read at this size.
-        if (kind === "rental") ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
-        else ctx.roundRect(s.x - r, s.y - r, r * 2, r * 2, 1.6);
-        ctx.fillStyle = kind === "rental" ? "#5cd3f5" : "#f0b45e";
-        ctx.fill();
-        ctx.lineWidth = 1.6;
-        ctx.strokeStyle = "rgba(255,255,255,0.95)";
-        ctx.stroke();
+        pin(s.x, s.y, r, kind);
 
         drawn.push({ name, kind, ...box });
       }
@@ -1227,16 +1281,19 @@ export default function FallbackTerrain({
         drawGraph(v, cam);
         drawRoute(v, cam);
         /*
-         * Markers first, then the station names, then the huts' own names.
+         * In the order a lost skier needs them: the valley bases, then the
+         * huts as markers, then the rest of the place names, then the huts'
+         * own names.
          *
-         * A name reserves a box six times the width of a marker, so running
-         * the huts last meant four of Monterosa's twenty-five got drawn at
-         * all: the names had taken the mountain. The markers are small enough
-         * to fit around anything, so they go down first and only their labels
-         * queue behind the places.
+         * A name reserves a box six times the width of a marker. Running the
+         * huts last meant four of Monterosa's twenty-five were drawn at all,
+         * because the names had taken the mountain; running them first cost
+         * Stafal and Champoluc their labels, which is worse, because those are
+         * the names you read when you are working out where you are.
          */
-        const boxes = drawHuts(v, cam, chromeBoxes(), { markersOnly: true });
-        drawPlaces(v, cam, boxes);
+        const boxes = drawPlaces(v, cam, chromeBoxes(), { only: "bases" });
+        drawHuts(v, cam, boxes, { markersOnly: true });
+        drawPlaces(v, cam, boxes, { only: "rest" });
         drawHuts(v, cam, boxes, { labelsOnly: true });
         drawPins(v, cam);
       }

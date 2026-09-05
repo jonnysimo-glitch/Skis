@@ -16,14 +16,9 @@ import { useEffect, useRef } from "react";
 import { Close, Info } from "../ui/Icons.jsx";
 import { LIFTS, RUNS, NODES, PLACES } from "../active-resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
+import { shortName, describe } from "../lib/places.js";
 
-/** What OSM calls it, said the way a skier would. */
-const PLACE_LABEL = {
-  hut: "mountain hut",
-  restaurant: "restaurant",
-  cafe: "bar",
-  rental: "ski hire",
-};
+
 
 const hhmm = (min) =>
   `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
@@ -173,10 +168,10 @@ export default function ResortStatus({ resort, onClose }) {
                 On the mountain
               </div>
               <ul className="rows">
-                {PLACES.map(([name, kind]) => (
+                {PLACES.map(([name, kind, , , alt]) => (
                   <li className="row" key={name}>
-                    <span>{name}</span>
-                    <span className="row__v">{PLACE_LABEL[kind] ?? kind}</span>
+                    <span>{shortName(name)}</span>
+                    <span className="row__v">{describe(name, kind, alt)}</span>
                   </li>
                 ))}
               </ul>

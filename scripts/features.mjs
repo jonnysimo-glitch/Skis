@@ -2050,8 +2050,21 @@ if (feature("26. Somewhere to eat")) {
   await page.waitForTimeout(600);
   const listed = await page.evaluate(() => document.body.innerText);
   check("and listed in the resort panel", /On the mountain/i.test(listed));
-  check("with what kind of place each one is",
-    /restaurant|mountain hut|ski hire|bar/i.test(listed));
+  check("with what kind of place each one is, and how high",
+    /(Mountain restaurant|Mountain hut|Summit restaurant|Restaurant|Bar|Ski hire), [\d,]+ m/.test(listed),
+    listed.match(/(Mountain restaurant|Mountain hut|Restaurant|Bar|Ski hire), [\d,]+ m/)?.[0] ?? "no description");
+
+  /*
+   * And named the way a signpost names them. OSM carries the category in the
+   * name — "Bar Ristorante Ostafa", "Gipfel Restaurant Cima" — which is the
+   * same three words on every marker and the one word a skier wants buried in
+   * the middle of them.
+   */
+  check("the names have their category words taken off",
+    !/Bar Ristorante|Gipfel Restaurant|Baita Rifugio|Tavola Calda/i.test(listed),
+    listed.match(/Bar Ristorante[^\n]*|Gipfel Restaurant[^\n]*|Baita Rifugio[^\n]*/i)?.[0] ?? "clean");
+  check("and none of them came out blank",
+    !/\n\s*\n\s*(Mountain|Restaurant|Bar|Ski hire)/.test(listed));
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }
