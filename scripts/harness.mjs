@@ -210,6 +210,22 @@ export const openRoute = async (page, i = 0) => {
  * pocket produces taps. So a test that clicks it does nothing, which is the
  * button working.
  */
+/**
+ * From the route bar to the list of legs.
+ *
+ * The detail screen is a fixed bar over a full map now, not a sheet you drag
+ * up: everything past the three headline figures lives on a page of its own,
+ * one tap away. A suite that looked for `.leg` on the detail screen waited out
+ * the clock instead of failing.
+ */
+export async function openLegs(page) {
+  const more = await page.$(".detail__legs");
+  if (!more) return false;
+  await more.click();
+  await page.waitForSelector(".leg__nm", { timeout: 10000 });
+  return true;
+}
+
 export async function reachNext(page, selector = '.nav__foot .btn:has-text("Reached")') {
   const button = await page.$(selector);
   if (!button) return false;

@@ -49,15 +49,23 @@ export function detectContext(nowMinutes, resort) {
   return "midday";
 }
 
+/*
+ * The heading names the screen; the fields ask the questions.
+ *
+ * It used to be the question — "When do you need to be down?" — which reads
+ * as an interview rather than as a product, and the field below it is already
+ * labelled "Down by". The eyebrow carries which of the three contexts this is,
+ * so the heading does not have to.
+ */
 export const CONTEXT_COPY = {
   nightbefore: {
     eyebrow: "Tomorrow",
-    title: "When do you need\nto be down?",
+    title: "Plan the day",
     hint: null,
   },
   firstlift: {
     eyebrow: "First lift",
-    title: "When do you need\nto be down?",
+    title: "Plan the day",
     hint: {
       t: "Times set from your clock",
       s: "Change them if you're not going up yet.",
@@ -65,7 +73,7 @@ export const CONTEXT_COPY = {
   },
   midday: {
     eyebrow: "Already skiing",
-    title: "Where are you\nright now?",
+    title: "Plan from here",
     hint: {
       t: "Part of the day is gone",
       s: "Set both ends to anywhere on the mountain.",
@@ -295,8 +303,11 @@ export function diagnose(plan, ability, opts, resort, capacity = null) {
     const asText = hours ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins} minutes`;
     return {
       title: "Longer than this resort",
-      headline: `There isn't enough terrain here to fill ${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)}.`,
-      body: `The longest day this resort supports from ${NODES[plan.start].name} at your grade is about ${asText}. Past that you would be skiing the same runs over and over.`,
+      headline: `There isn't enough here to fill ${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)}.`,
+      // No lecture about lapping. Skiing a good run three times is a normal
+      // day out, and the solver will now plan one; this only fires when even
+      // that does not reach the finish time.
+      body: `The longest day this resort supports from ${NODES[plan.start].name} at your grade is about ${asText}.`,
       fixes: ["shorterDay", ...(ability !== "black" ? ["harder"] : [])],
     };
   }

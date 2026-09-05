@@ -55,10 +55,14 @@ console.log("\nPRIVACY");
     if (!html) { fail(`public/${page} exists`); continue; }
     // A published contact route, not specifically an address: Apple wants a
     // way to reach someone, and a public issue tracker is one.
-    const hasRoute = /mailto:[^"@]+@[^"]+|github\.com\/[^"]+\/issues/.test(html);
-    check(hasRoute && !/CONTACT@EXAMPLE\.COM/.test(html),
+    const route = html.match(/mailto:[^"@]+@[^"]+|github\.com\/[^"]+\/issues/)?.[0] ?? null;
+    const placeholder = /CONTACT@EXAMPLE\.COM/.test(html);
+    // The detail said "no mailto or issue tracker link" even when it had
+    // found one, because the failure text was handed to both outcomes.
+    check(Boolean(route) && !placeholder,
       `${page} publishes a way to get in touch`,
-      /CONTACT@EXAMPLE\.COM/.test(html) ? "still the placeholder" : "no mailto or issue tracker link");
+      route && !placeholder ? route
+        : placeholder ? "still the placeholder" : "no mailto or issue tracker link");
     check(!/—/.test(html.replace(/<!--[\s\S]*?-->/g, "")), `${page} has no em dashes`);
   }
 }

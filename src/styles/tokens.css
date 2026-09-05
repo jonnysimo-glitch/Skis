@@ -24,7 +24,10 @@
      scripts/check-contrast.mjs rather than eyeballed. */
   --accent: #0077a3;        /* primary action; white text passes AA on it */
   --accent-press: #005f84;
-  --accent-tint: #e8f5fb;
+  /* A tinted *dark* surface, not a wash of the accent over white. Left at
+     #e8f5fb from the light palette it put cyan text on near-white: the "Now"
+     badge on the leg you are skiing came out at 1.6:1. */
+  --accent-tint: #0d2c3a;
   --accent-line: #2ac4ee;   /* over terrain: brightness beats text contrast */
   --accent-ink: #5cd3f5;    /* accent-coloured text, on the dark surface */
 
@@ -81,6 +84,11 @@
      across the audit, every one of them the same pair. */
   --ink-3: var(--n-30);
   --ink-4: var(--n-40);
+  /* The band carrying the next instruction while navigating. Deeper than a
+     sheet so it reads as the active thing, and its own token because it used
+     to be `var(--ink)` — which was near-black under the light palette and is
+     a cool white under this one, so the header turned white on white. */
+  --surface-deep: #081019;
   --surface: #0e1c28;      /* panels and sheets */
   --surface-2: #162836;    /* controls and tinted cards */
   --surface-3: #1f3647;    /* pressed states */

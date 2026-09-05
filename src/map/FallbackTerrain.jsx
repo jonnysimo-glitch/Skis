@@ -880,6 +880,7 @@ export default function FallbackTerrain({
     const drawPins = (v, cam) => {
       const p = propsRef.current.pins;
       if (!p?.features?.length) return;
+      const drawn = [];
       for (const feature of p.features) {
         const [lon, lat] = feature.geometry.coordinates;
         const { x, z } = field.proj.project(lat, lon);
@@ -933,11 +934,24 @@ export default function FallbackTerrain({
         ctx.textAlign = "center";
         ctx.lineWidth = 3.5;
         ctx.lineJoin = "round";
+        // Pulled inside the frame, the same as a place name. A pin sits where
+        // the route starts and finishes, which at Kronplatz is a node near the
+        // left edge called "Olang I - Valdaora I": the label ran off and the
+        // map said "I - Valdaora I". The dot stays where the place is; only
+        // the words move.
+        const name = feature.properties.name;
+        const w = ctx.measureText(name).width;
+        const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
+        const ty = s.y + r + 15;
         ctx.strokeStyle = "rgba(255,255,255,0.92)";
-        ctx.strokeText(feature.properties.name, s.x, s.y + r + 15);
+        ctx.strokeText(name, tx, ty);
         ctx.fillStyle = "#0b1a24";
-        ctx.fillText(feature.properties.name, s.x, s.y + r + 15);
+        ctx.fillText(name, tx, ty);
+        drawn.push({ name, l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 12, b: ty + 4 });
       }
+      // Same gate as the place names: canvas text leaves nothing to assert
+      // against, so where it landed is published for the feature suite.
+      if (mapTest) window.__skisPinLabels = drawn;
     };
 
     // Motion carried between a gesture and the render loop. Declared here, above

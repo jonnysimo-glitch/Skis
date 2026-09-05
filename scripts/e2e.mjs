@@ -17,6 +17,7 @@ import {
   toPlan,
   solve,
   openRoute,
+  openLegs,
   routeCount,
   toMinutes,
   reachNext,
@@ -164,7 +165,7 @@ try {
       };
       check(`${label}: names the context`, got.eyebrow.startsWith(eyebrow), got.eyebrow);
       check(`${label}: labels the fields for it`, got.start === startLabel && got.finish === finishLabel, `${got.start} / ${got.finish}`);
-      check(`${label}: it is still the plan screen`, /need to be down|where are you/i.test(got.screen), got.screen);
+      check(`${label}: it is still the plan screen`, /^Plan /i.test(got.screen), got.screen);
       check(`${label}: finish time is before the last lift`, got.t1 <= "16:30", got.t1);
       check(`${label}: start is before finish`, got.t0 < got.t1, `${got.t0} → ${got.t1}`);
       check(`${label}: no page errors`, page.errors.length === 0, page.errors.join(" | "));
@@ -272,7 +273,7 @@ try {
       await solve(page);
       if (!(await routeCount(page))) return null;
       await openRoute(page);
-      await page.waitForSelector(".leg__nm", { timeout: 10000 });
+      await openLegs(page);
       const legs = await page.$$eval(".leg", (n) => n.length);
       return { firstLeg: await page.$eval(".leg__nm", (n) => n.textContent.trim()), legs };
     }
@@ -578,9 +579,20 @@ try {
     await page.waitForSelector(".sheet__foot .btn");
 
     check("detail shows a labelled route", (await page.$(".eyebrow--accent")) !== null);
-    check("detail shows the profile with a scale", (await page.$(".profile__scale")) !== null);
-    check("detail shows the difficulty mix with percentages", (await page.$(".mixbar__key")) !== null);
-    check("detail lists every leg", (await page.$$eval(".leg", (n) => n.length)) > 0);
+    // The bar carries the headline figures and the two actions, and nothing
+    // else: the map is what the skier just asked to see. Everything below is
+    // a page behind it.
+    check("the route bar does not cover the map",
+      await page.evaluate(() => {
+        const s = document.querySelector(".sheet");
+        return s.getBoundingClientRect().height < window.innerHeight * 0.6;
+      }));
+    check("and there is nothing to drag", (await page.$(".sheet__grab")) === null);
+
+    await openLegs(page);
+    check("the legs page shows the profile with a scale", (await page.$(".profile__scale")) !== null);
+    check("and the difficulty mix with percentages", (await page.$(".mixbar__key")) !== null);
+    check("and lists every leg", (await page.$$eval(".leg", (n) => n.length)) > 0);
     check(
       "leg times run forward",
       await page.$$eval(".leg__t", (n) => {
@@ -588,6 +600,10 @@ try {
         return t.every((v, i) => i === 0 || v >= t[i - 1]);
       })
     );
+    await page.click('[aria-label="Back to the map"]');
+    await page.waitForSelector(".sheet__foot .btn", { timeout: 10000 });
+    check("and it comes back to the route, not to the options",
+      (await page.$(".detail__legs")) !== null);
 
     await page.click("text=/Save and start|Save offline and start|^Start$/");
     await page.waitForSelector(".nav", { timeout: 10000 });
@@ -748,82 +764,44 @@ try {
     await page.context_.close();
   }
 
-  // ============================================================ I. SHEET ==
-  if (section("I. The sheet and the map")) {
-    // The sheet is for the route screens. Explore is a fixed card and the plan
-    // form is a full page, so this has to solve first to have a sheet to drag.
+  // ============================================================= I. DOCK ==
+  if (section("I. The dock and the map")) {
+    /*
+     * The panel over the map does not move any more.
+     *
+     * It used to be a sheet with three snap points and an expand button, and
+     * this section dragged it around. A surface that slides under your thumb
+     * competes with the map's own gestures for the same pixels, and every
+     * screen using it has one job and one height, so it is fixed. What has to
+     * hold now is that it is short, that there is nothing to grab, and that
+     * the map controls beside it stay usable.
+     */
     const page = await newPage(browser);
     await toPlan(page, url);
     await solve(page);
-    // On the route detail rather than the options list: the options list is
-    // wall-to-wall buttons, so a drag across its body is a tap on a route and
-    // the sheet resizes because the screen changed, not because it was dragged.
     await openRoute(page);
-    await page.waitForSelector(".legs", { timeout: 15000 });
+    await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+    await page.waitForTimeout(600);
 
     const height = () => page.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
     const rest = await height();
-    check("the map is never fully covered", rest < 900 * 0.92, `sheet is ${rest} of 900`);
+    check("the route bar leaves most of the mountain showing", rest < 900 * 0.34,
+      `bar is ${rest} of 900`);
+    check("there is no drag handle", (await page.$(".sheet__grab")) === null);
+    check("and no expand button", (await page.$(".sheet__expand")) === null);
 
-    // All the way to the top, not a fixed 220 px. The detail sheet opens as a
-    // bar now rather than at half height, so a fixed distance no longer
-    // reaches the point where the sheet covers the map controls — which is the
-    // condition the checks below are about.
+    // Dragging it does nothing, which is the point: the gesture belongs to
+    // the map.
     const head = await (await page.$(".sheet__head")).boundingBox();
     await page.mouse.move(head.x + head.width / 2, head.y + 8);
     await page.mouse.down();
     await page.mouse.move(head.x + head.width / 2, 40, { steps: 16 });
     await page.mouse.up();
-    await page.waitForTimeout(700);
-    const dragged = await height();
-    check("the sheet drags up from its header", dragged > rest, `${rest} → ${dragged}`);
-    check("even dragged up, terrain is still visible", dragged < 900, `${dragged} of 900`);
+    await page.waitForTimeout(500);
+    check("dragging it does not move it", (await height()) === rest, `${rest} → ${await height()}`);
 
-    await page.evaluate(() => { document.querySelector(".sheet__body").scrollTop = 200; });
-    const beforeScroll = await height();
-    // The leg list is a plain list, so a drag over it is a scroll and nothing
-    // else. Prove that first, or this asserts about the wrong gesture.
-    const over = await page.evaluate(() => {
-      const legs = document.querySelector(".legs").getBoundingClientRect();
-      const at = document.elementFromPoint(legs.x + legs.width / 2, legs.y + 20);
-      return { tag: at?.tagName.toLowerCase(), interactive: !!at?.closest("button, a") };
-    });
-    check("the drag lands on something that is not a control", !over.interactive, over.tag);
-    const body = await (await page.$(".legs")).boundingBox();
-    await page.mouse.move(body.x + body.width / 2, body.y + 20);
-    await page.mouse.down();
-    await page.mouse.move(body.x + body.width / 2, body.y + 300, { steps: 10 });
-    await page.mouse.up();
-    await page.waitForTimeout(400);
-    check("scrolling the body does not resize the sheet", (await height()) === beforeScroll, `${beforeScroll} → ${await height()}`);
-
-    check(
-      "map controls get out of the way when the sheet covers them",
-      await page.$eval(".maptools", (n) => getComputedStyle(n).visibility === "hidden")
-    );
-    check(
-      "and while hidden they cannot take focus",
-      // Not just aria-hidden: focusable buttons inside an aria-hidden subtree
-      // are worse than not hiding them. Prove focus genuinely bounces off.
-      await page.$eval(".maptools", (n) => {
-        const btn = n.querySelector(".iconbtn");
-        btn.focus();
-        return document.activeElement !== btn;
-      })
-    );
-
-    // Settle the sheet back down and use them for real. The header has moved,
-    // so measure it again rather than pressing where it used to be.
-    const head2 = await (await page.$(".sheet__head")).boundingBox();
-    await page.mouse.move(head2.x + head2.width / 2, head2.y + 8);
-    await page.mouse.down();
-    await page.mouse.move(head2.x + head2.width / 2, head2.y + 300, { steps: 12 });
-    await page.mouse.up();
-    await page.waitForTimeout(700);
-    check(
-      "and they come back when it is dragged away",
-      await page.$eval(".maptools", (n) => getComputedStyle(n).visibility === "visible")
-    );
+    check("the map controls are reachable, not hidden behind it",
+      await page.$eval(".maptools", (n) => getComputedStyle(n).visibility === "visible"));
 
     const tools = await page.$$(".maptools .iconbtn");
     check("the map has orbit and zoom controls", tools.length >= 4, `${tools.length} controls`);
@@ -833,6 +811,18 @@ try {
     }
     await page.waitForTimeout(700);
     check("using them does not break anything", page.errors.length === 0, page.errors.join(" | "));
+
+    // The longest panel in the app is the empty state, and it is capped too.
+    const tall = await newPage(browser);
+    await toPlan(tall, url);
+    await tall.fill("#p-t0", "09:05");
+    await tall.fill("#p-t1", "09:25");
+    await solve(tall);
+    if (await tall.$(".empty")) {
+      const h = await tall.$eval(".sheet", (n) => Math.round(n.getBoundingClientRect().height));
+      check("even the longest panel keeps a band of mountain", h < 900 * 0.74, `${h} of 900`);
+    }
+    await tall.context_.close();
     await page.context_.close();
   }
 
@@ -1030,12 +1020,14 @@ try {
       `earliest back ${withoutLunch.join(",")} → ${withLunch.join(",")}`
     );
 
-    // And the route has to actually pass somewhere to eat.
+    // And the route has to actually pass somewhere to eat. The bar carries
+    // the figures; the notes are on the legs page with everything else.
     await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn", { timeout: 10000 });
+    await openLegs(page);
     check(
-      "the route detail confirms it passes a rifugio",
-      /rifugio/i.test(await page.$eval(".sheet__body", (b) => b.textContent))
+      "the legs page confirms it passes a rifugio",
+      /rifugio/i.test(await page.$eval(".page__body", (b) => b.textContent))
     );
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();

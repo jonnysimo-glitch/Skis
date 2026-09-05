@@ -41,12 +41,14 @@ const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "i
  * the interesting half of most mountain photographs is the top and the card's
  * scrim darkens the bottom for the title anyway.
  *
- * Kronplatz is the exception and had to be moved: it is a square photograph of
- * a summit plateau, and taking a wide band from near the top gave sky and
- * distant Dolomites with barely any piste in it. Lower down there is groomed
- * snow, the lift buildings and the tracks, which is what the picture is for.
+ * Kronplatz needed no bias once the photograph was replaced. The first one
+ * was square, of a summit plateau, and a wide band from near the top was sky
+ * and distant Dolomites with barely any piste in it; it was pulled down to
+ * 0.62 to find the snow. The frame in use now is already landscape and already
+ * shows what it should — the summit, the tower and the pistes running off it —
+ * so cropping it anywhere but the middle would throw away the picture.
  */
-const CROP = { kronplatz: 0.62 };
+const CROP = { kronplatz: 0.5 };
 const DEFAULT_CROP = 0.35;
 
 const browser = await launch();

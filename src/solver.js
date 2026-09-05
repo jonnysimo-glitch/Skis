@@ -515,23 +515,43 @@ export function solve(opts) {
   const g = opts.graph ?? MONTEROSA;
   const adj = buildAdjacency(g, opts);
   const home = timesHome(g, adj, opts.finish);
-  const caps = repeatCaps(adj, opts);
 
-  let seed = 20260829;
-  const rng = () => {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    return seed / 0x7fffffff;
-  };
-
-  const found = new Map();
-  for (let i = 0; i < SAMPLES; i++) {
-    const walk = sampleWalk(g, opts, adj, home, rng, caps);
-    if (!walk) continue;
-    const key = walk.segments.map(e => e.id).join(">");
-    if (!found.has(key)) found.set(key, measure(walk, g));
+  /*
+   * Try for the least repetitive day the mountain can give, and take a more
+   * repetitive one over none at all.
+   *
+   * The cap is a preference, not a rule. It exists so a big mountain is not
+   * padded out by lapping one run, and on a big mountain the first pass is the
+   * only pass. A small one is a different case: Paganella is 31 km, and at a
+   * cap of two edge-uses it could not fill a 09:05 to 17:00 window, so the app
+   * told a skier there was not enough terrain and offered to cut their day
+   * short. Skiing a good run three times is a normal day out. Refusing to plan
+   * one is not an answer.
+   *
+   * Each pass is a fresh deterministic run, so the same options come back for
+   * the same question.
+   */
+  const base = repeatCaps(adj, opts);
+  let all = [];
+  let laps = 0;
+  for (const extra of [0, 1, 2, 4]) {
+    laps = extra;
+    const caps = { run: base.run + extra, lift: base.lift + extra };
+    let seed = 20260829;
+    const rng = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const found = new Map();
+    for (let i = 0; i < SAMPLES; i++) {
+      const walk = sampleWalk(g, opts, adj, home, rng, caps);
+      if (!walk) continue;
+      const key = walk.segments.map(e => e.id).join(">");
+      if (!found.has(key)) found.set(key, measure(walk, g));
+    }
+    all = [...found.values()];
+    if (all.length) break;
   }
-
-  const all = [...found.values()];
   if (!all.length) return [];
 
   // Take the best route for each objective, but skip any that would just be a
@@ -569,7 +589,11 @@ export function solve(opts) {
   // the mountain only has one real day on it, the answer is three at most.
   if (chosen.length < Math.min(3, count)) fill(1, true, Math.min(3, count));
 
-  return chosen;
+  // `laps` says how many extra passes over the same terrain it took to fill
+  // the day: 0 on a mountain with room, more on a small one where a good run
+  // gets skied three or four times. The UI says so rather than hiding it,
+  // because a skier reading their plan will notice either way.
+  return chosen.map((route) => ({ ...route, laps }));
 }
 
 /** Altitude at each vertex of a route, including the start. Used by the 3D layer and the profile. */

@@ -9,7 +9,8 @@
  *
  * Pass --only=<word> to run one feature.
  */
-import { NODES } from "../src/resort.js";
+import { RESORTS } from "../src/resorts/index.js";
+import { graphFor } from "../src/resorts/graphs.js";
 import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR } from "../src/map/field.js";
 import { DWELL_MS as DWELL } from "../src/lib/progress.js";
 import { PNG } from "pngjs";
@@ -24,7 +25,23 @@ import {
   openRoute,
   routeCount,
   toMinutes,
+  reachNext,
+  openLegs,
 } from "./harness.mjs";
+
+/*
+ * The graph the app is actually running, not the hand-typed one.
+ *
+ * This file used to read `src/resort.js` and name its keys directly —
+ * "salati", "champoluc", "gabiet". None of them exists in a graph built from
+ * OpenStreetMap: Champoluc is a node keyed p30 that carries the name. A
+ * selectOption for a value with no option does not fail, it waits, so the
+ * whole suite timed out on the first one.
+ */
+const NODES = graphFor(RESORTS.find((r) => r.available).id).NODES;
+/** The key of the place called `name`, or null. */
+const keyNamed = (name) =>
+  Object.keys(NODES).find((k) => new RegExp(name, "i").test(NODES[k].name)) ?? null;
 
 const HEADED = process.argv.includes("--headed");
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).toLowerCase();
@@ -63,8 +80,11 @@ const where = (page) =>
     if (document.querySelector("#p-t1")) return "plan";
     // Route cards do not make it the choose screen: a refinement can rule
     // every one of them out and the screen stays put. The chips do.
-    if (document.querySelector(".routecard, .sheet .chips .chip")) return "choose";
-    if (document.querySelector(".legs")) return "detail";
+    if (document.querySelector(".routecard, .sectionrule .chips .chip")) return "choose";
+    // The route bar, which no longer carries the legs themselves: they moved
+    // to a page of their own so the map underneath stays uncovered.
+    if (document.querySelector(".detail__legs")) return "detail";
+    if (document.querySelector(".legs")) return "legs";
     if (document.querySelector(".sheet")) return "summary";
     return "?";
   });
@@ -122,20 +142,23 @@ if (feature("1. Straight there: getting to one place, now")) {
   );
 
   // A real transfer.
-  await page.selectOption("#p-start", "salati");
-  await page.selectOption("#p-finish", "champoluc");
+  await page.selectOption("#p-start", keyNamed("Colle Salati"));
+  await page.selectOption("#p-finish", keyNamed("Champoluc"));
   check("picking two different ends re-enables it", !(await page.$eval(".page__foot .btn", (n) => n.disabled)));
 
   await page.click("text=Take me there");
-  await page.waitForSelector(".legs, .empty", { timeout: 20000 });
+  await page.waitForSelector(".detail__legs, .empty", { timeout: 20000 });
   check("it goes straight to the route, with nothing to choose between", (await where(page)) === "detail");
 
   const body = await text(page);
   check("the route is named for where it is going", /To Champoluc/.test(body), body.split("\n")[1] || "");
   check("it is not dressed up as one of several options", !body.includes("Most vertical"));
 
+  await openLegs(page);
   const legs = await page.$$eval(".leg", (n) => n.length);
   check("it has legs to follow", legs > 0, `${legs} legs`);
+  await page.click('[aria-label="Back to the map"]');
+  await page.waitForSelector(".detail__legs", { timeout: 10000 });
 
   // Back from a transfer goes to the form, not to a route list that never existed.
   await page.click('.iconbtn[aria-label="Back"]');
@@ -179,15 +202,18 @@ if (feature("2. A transfer is not a refined day")) {
   const refined = await page.$$eval('.chip[aria-pressed="true"]', (n) => n.map((b) => b.textContent.trim()));
   check("two refinements are on", refined.length === 2, refined.join(", "));
 
-  await page.click('.iconbtn[aria-label="Back"]');
+  // The options page is a page now, and its way back says what it does:
+  // "Change the plan", not "Back". Asking for Back here matched a button on
+  // a sheet underneath and waited out the clock trying to reach it.
+  await page.click('[aria-label="Change the plan"]');
   await page.waitForSelector("#p-t1", { timeout: 10000 });
   await page.click('.segmented__opt:has-text("Straight there")');
-  await page.selectOption("#p-start", "salati");
-  await page.selectOption("#p-finish", "champoluc");
+  await page.selectOption("#p-start", keyNamed("Colle Salati"));
+  await page.selectOption("#p-finish", keyNamed("Champoluc"));
   await page.fill("#p-t0", "11:00");
   await page.fill("#p-t1", "12:45");
   await page.click("text=Take me there");
-  await page.waitForSelector(".legs, .empty", { timeout: 20000 });
+  await page.waitForSelector(".detail__legs, .empty", { timeout: 20000 });
 
   check(
     "the transfer is found on the ability you actually set",
@@ -200,10 +226,14 @@ if (feature("2. A transfer is not a refined day")) {
     "the window is not quietly cut to 60% of itself by a stale Shorter",
     !/further than that/.test(body)
   );
+  check("it is one answer, not a shortlist", (await routeCount(page)) === 0, `${await routeCount(page)} cards`);
+
+  await openLegs(page);
   const legs = await page.$$eval(".leg", (n) => n.map((l) => l.textContent.trim()));
   check("it uses red terrain, which blue-only would have ruled out", legs.length > 0, `${legs.length} legs`);
   check("the legs are real named runs and lifts", legs.every((l) => l.length > 3));
-  check("it is one answer, not a shortlist", (await routeCount(page)) === 0, `${await routeCount(page)} cards`);
+  await page.click('[aria-label="Back to the map"]');
+  await page.waitForSelector(".detail__legs", { timeout: 10000 });
 
   // And the plan screen shows no refinement state for a transfer.
   await page.click('.iconbtn[aria-label="Back"]');
@@ -238,8 +268,8 @@ if (feature("3. Route between any two points")) {
   // A day that starts and ends at two different mid-mountain points.
   const page = await newPage(browser, { at: [11, 30] });
   await toPlan(page, url);
-  await page.selectOption("#p-start", "salati");
-  await page.selectOption("#p-finish", "gabiet");
+  await page.selectOption("#p-start", keyNamed("Colle Salati"));
+  await page.selectOption("#p-finish", keyNamed("Gabiet"));
   await page.fill("#p-t0", "11:30");
   await page.fill("#p-t1", "16:00");
   await solve(page);
@@ -248,7 +278,7 @@ if (feature("3. Route between any two points")) {
 
   if (n > 0) {
     await openRoute(page);
-    await page.waitForSelector(".legs", { timeout: 15000 });
+    await openLegs(page);
     const ends = await page.evaluate(() => {
       const legs = [...document.querySelectorAll(".leg")];
       return legs.length ? document.body.innerText : "";
@@ -268,7 +298,10 @@ if (feature("4. Refine never sends you back to the form")) {
   const before = await page.$$eval(".routecard", (n) => n.map((c) => c.textContent.trim().slice(0, 40)));
   check("there are routes to refine", before.length > 0, `${before.length}`);
 
-  const chips = await page.$$eval(".sheet .chip", (n) => n.map((b) => b.textContent.trim()));
+  // Scoped to the refine group, not to a sheet: the options screen is a full
+  // page now, so `.sheet .chip` matched nothing and every chip check failed
+  // as "not offered" rather than as "not found".
+  const chips = await page.$$eval(".sectionrule .chip", (n) => n.map((b) => b.textContent.trim()));
   check("the refine chips are one tap away", chips.length >= 6, chips.join(", "));
   for (const want of ["Shorter", "Longer", "Easier", "Harder", "More vertical", "No drags", "Lunch"]) {
     check(`"${want}" is offered`, chips.includes(want));
@@ -276,7 +309,7 @@ if (feature("4. Refine never sends you back to the form")) {
 
   // Each chip re-solves in place.
   for (const chip of ["Shorter", "More vertical", "No drags"]) {
-    const btn = await page.$(`.sheet .chip:text-is("${chip}")`);
+    const btn = await page.$(`.sectionrule .chip:text-is("${chip}")`);
     if (!btn || (await btn.isDisabled())) { check(`"${chip}" is tappable`, false, "disabled"); continue; }
     await btn.click();
     await page.waitForTimeout(700);
@@ -285,20 +318,20 @@ if (feature("4. Refine never sends you back to the form")) {
   }
 
   // Opposites cancel rather than stacking.
-  const longer = await page.$('.sheet .chip:text-is("Longer")');
+  const longer = await page.$('.sectionrule .chip:text-is("Longer")');
   await longer.click();
   await page.waitForTimeout(700);
-  const shorterOn = await page.$eval('.sheet .chip:text-is("Shorter")', (b) => b.getAttribute("aria-pressed"));
+  const shorterOn = await page.$eval('.sectionrule .chip:text-is("Shorter")', (b) => b.getAttribute("aria-pressed"));
   check("turning on Longer turns Shorter off rather than stacking", shorterOn !== "true", `shorter=${shorterOn}`);
 
   // Tapping twice in quick succession must not leave a stale answer on screen.
   // Selectors rather than handles: a re-solve re-renders the row underneath.
   const routesBefore = await routeCount(page);
-  await page.click('.sheet .chip:text-is("Easier")');
-  await page.click('.sheet .chip:text-is("Harder")', { timeout: 5000 }).catch(() => {});
+  await page.click('.sectionrule .chip:text-is("Easier")');
+  await page.click('.sectionrule .chip:text-is("Harder")', { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(1500);
-  const easierOn = await page.$eval('.sheet .chip:text-is("Easier")', (x) => x.getAttribute("aria-pressed"));
-  const harderOn = await page.$eval('.sheet .chip:text-is("Harder")', (x) => x.getAttribute("aria-pressed"));
+  const easierOn = await page.$eval('.sectionrule .chip:text-is("Easier")', (x) => x.getAttribute("aria-pressed"));
+  const harderOn = await page.$eval('.sectionrule .chip:text-is("Harder")', (x) => x.getAttribute("aria-pressed"));
   check(
     "opposites never end up both on",
     !(easierOn === "true" && harderOn === "true"),
@@ -328,7 +361,7 @@ if (feature("4. Refine never sends you back to the form")) {
   check("the tight window offers something to begin with", (await routeCount(tight)) > 0,
     `${await routeCount(tight)} routes`);
   for (const chip of ["Shorter", "Lunch"]) {
-    const el = await tight.$(`.sheet .chip:text-is("${chip}")`);
+    const el = await tight.$(`.sectionrule .chip:text-is("${chip}")`);
     if (el && !(await el.isDisabled()) && (await el.getAttribute("aria-pressed")) !== "true") {
       await el.click();
       await tight.waitForTimeout(900);
@@ -340,10 +373,10 @@ if (feature("4. Refine never sends you back to the form")) {
   if (emptied) {
     check("and it says so rather than showing an empty list", /rules everything out/i.test(await text(tight)));
     check("it is not the dead-end empty screen", (await where(tight)) === "choose", await where(tight));
-    check("the chips are still there to undo it", (await tight.$$(".sheet .chip")).length > 0);
-    check("the offending chip is still tappable", !(await tight.$eval('.sheet .chip:text-is("Lunch")', (b) => b.disabled)));
+    check("the chips are still there to undo it", (await tight.$$(".sectionrule .chip")).length > 0);
+    check("the offending chip is still tappable", !(await tight.$eval('.sectionrule .chip:text-is("Lunch")', (b) => b.disabled)));
     check("the budget is stated as time, not raw minutes", !/\b\d{3,} minutes\b/.test(await text(tight)));
-    await tight.click('.sheet .chip:text-is("Lunch")');
+    await tight.click('.sectionrule .chip:text-is("Lunch")');
     await tight.waitForTimeout(1200);
     check("undoing it brings the options straight back", (await routeCount(tight)) > 0, `${await routeCount(tight)} routes`);
     check("without ever passing through the form", (await tight.$("#p-t1")) === null);
@@ -434,9 +467,11 @@ if (feature("5. Navigation follows the GPS")) {
   const before = await legNumber();
   const manual = await page.$('.nav__foot .btn:has-text("Reached")');
   if (manual) {
-    await manual.click();
+    // Held, not tapped. The button guards against a pocket brush, so a bare
+    // click is ignored on purpose and this read as "advancing is broken".
+    await reachNext(page);
     await page.waitForTimeout(400);
-    check("tapping Reached advances a leg", (await legNumber()) === before + 1, `${before} to ${await legNumber()}`);
+    check("holding Reached advances a leg", (await legNumber()) === before + 1, `${before} to ${await legNumber()}`);
   }
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
@@ -543,11 +578,10 @@ if (feature("7. Finishing a day writes it down, once")) {
   await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
 
-  for (let i = 0; i < 120; i++) {
-    const b = await page.$('.nav__foot .btn:has-text("Reached")');
-    if (!b) break;
-    await b.click();
-    await page.waitForTimeout(20);
+  // 120 was enough when a day was 39 legs; a full day on the real graph runs
+  // to 65 and more, and the loop has to hold each one rather than tap it.
+  for (let i = 0; i < 200; i++) {
+    if (!(await reachNext(page))) break;
   }
   const finish = await page.$('button:has-text("Finish")');
   check("the last leg offers a finish", finish !== null);
@@ -846,8 +880,12 @@ if (feature("11. It works without a mouse or a screen")) {
   await solve(page);
   await record("choose");
   await openRoute(page);
-  await page.waitForSelector(".legs", { timeout: 15000 });
+  await page.waitForSelector(".detail__legs", { timeout: 15000 });
   await record("detail");
+  await openLegs(page);
+  await record("legs");
+  await page.click('[aria-label="Back to the map"]');
+  await page.waitForSelector(".detail__legs", { timeout: 10000 });
   await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 20000 });
   await record("navigate");
@@ -1726,20 +1764,22 @@ if (feature("19. Navigate keeps its map controls")) {
     };
   });
 
-  // Read the numbers, which means dragging the sheet up over the map.
-  const b = await page.$eval(".sheet", (n) => {
-    const r = n.getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width };
+  /*
+   * The controls stay. This used to drag the sheet up over them and check
+   * they got out of the way, which was the right behaviour for a panel that
+   * moved. The panel does not move any more and is short enough that they
+   * never collide, so what has to hold is that they are there and usable
+   * while the route is on screen.
+   */
+  const onRoute = await read();
+  check("the map controls are there on the route", onRoute.shown === true, JSON.stringify(onRoute));
+  check("and on screen, not under the bar", onRoute.onScreen === true);
+  const gap = await page.evaluate(() => {
+    const t = document.querySelector(".maptools").getBoundingClientRect();
+    const s = document.querySelector(".sheet").getBoundingClientRect();
+    return Math.round(s.y - t.bottom);
   });
-  await page.mouse.move(b.x + b.w / 2, b.y + 12);
-  await page.mouse.down();
-  for (let i = 1; i <= 12; i++) await page.mouse.move(b.x + b.w / 2, b.y + 12 - (420 * i) / 12);
-  await page.mouse.up();
-  await page.waitForTimeout(800);
-
-  const covered = await read();
-  check("a sheet dragged over the map does hide the controls", covered.shown === false,
-    JSON.stringify(covered));
+  check("clear of the route bar", gap >= 0, `${gap}px above it`);
 
   await page.click("text=/Save and start|Save offline and start|^Start$/");
   await page.waitForSelector(".nav", { timeout: 10000 });
@@ -1779,8 +1819,9 @@ if (feature("18. The rest of the day, without leaving navigation")) {
   await page.waitForTimeout(1200);
 
   // Three legs in, so there is a past, a present and a future to show.
+  // Held rather than clicked: the button ignores a tap on purpose.
   for (let i = 0; i < 3; i++) {
-    await page.click(".nav__foot .btn--nav");
+    await reachNext(page, ".nav__foot .btn--nav");
     await page.waitForTimeout(400);
   }
   await page.waitForTimeout(600);
@@ -1904,8 +1945,19 @@ if (feature("20. The mountain is labelled")) {
   const first = await labels();
   check("places are named without being asked", first.length >= 5, `${first.length} names`);
   const names = first.map((l) => l.name);
-  check("the valley bases among them", ["Alagna", "Champoluc", "Staffal", "Frachey"]
-    .filter((n) => names.includes(n)).length >= 3, names.join(", "));
+  /*
+   * The bases this graph actually has, not four remembered from the
+   * hand-typed one. Monterosa's OSM data spells it Stafal, and Alagna and
+   * Frachey are not named nodes at all, so a fixed list of four could only
+   * ever match one and the check was asserting a memory.
+   */
+  const bases = Object.values(NODES).filter((n) => n.base).map((n) => n.name);
+  const shown = bases.filter((n) => names.includes(n));
+  // At least one, not all of them: a base at the far end of the resort can be
+  // outside the frame at rest, and a name that is off screen is not a name
+  // that was dropped. What matters is that the ones in view are labelled.
+  check("a valley base among them", shown.length >= 1,
+    `${shown.join(", ") || "none"} of ${bases.join(", ")}`);
 
   // Overlapping names show fewer names than showing some of them.
   const clash = first.find((a, i) =>
@@ -1950,60 +2002,74 @@ if (feature("20. The mountain is labelled")) {
   check("a place that is already a pin is not named twice",
     new Set(withRoute.map((l) => l.name)).size === withRoute.length,
     withRoute.map((l) => l.name).join(", "));
+
+  /*
+   * And nothing runs off the edge. Place names were pulled inside the frame
+   * and route pins were not, so the route's own start and finish — the two
+   * names that matter most on that screen — were the ones getting sliced:
+   * Kronplatz drew "I - Valdaora I" against the left edge.
+   */
+  const pinned = (await routed.evaluate(() => window.__skisPinLabels)) ?? [];
+  const vw = await routed.evaluate(() => innerWidth);
+  const offscreen = [...withRoute, ...pinned].filter((l) => l.l < 0 || l.r > vw);
+  check("every name on the map is inside the frame, pins included",
+    offscreen.length === 0 && pinned.length > 0,
+    offscreen.length ? offscreen.map((l) => `${l.name} ${Math.round(l.l)}..${Math.round(l.r)}`).join("; ")
+      : `${withRoute.length} places, ${pinned.length} pins, frame ${vw}px`);
   check("no page errors on the routed map", routed.errors.length === 0, routed.errors.join(" | "));
   await routed.context_.close();
 }
 
-// ===================== 21. THE PANEL OPENS WITHOUT A DRAG ==
-// Dragging the sheet is the nice way to do this and used to be the only way,
-// which is a problem in a glove: it needs a deliberate, accurate swipe.
-if (feature("21. The panel opens without a drag")) {
+// ===================== 21. THE PANEL DOES NOT MOVE ==
+// It used to be a sheet with three snap points, a drag handle and an expand
+// button, and this feature checked that one tap reached the top. None of that
+// exists now: over a map, a surface that slides under your thumb competes with
+// the map's own gestures, so the panel is fixed and everything past the
+// headline figures is a page of its own. What has to hold is that it stays put
+// and stays short.
+if (feature("21. The panel does not move")) {
   const page = await newPage(browser, { at: [9, 30] });
   await toPlan(page, url);
   await solve(page);
-  await page.waitForTimeout(1200);
+  await openRoute(page);
+  await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+  await page.waitForTimeout(700);
 
   const read = () => page.evaluate(() => {
     const s = document.querySelector(".sheet");
-    const b = document.querySelector(".sheet__expand");
-    const r = b?.getBoundingClientRect();
     return {
       h: Math.round(s.getBoundingClientRect().height),
       vh: window.innerHeight,
-      label: b?.getAttribute("aria-label"),
-      tap: r ? Math.round(Math.min(r.width, r.height)) : 0,
+      grab: !!document.querySelector(".sheet__grab"),
+      expand: !!document.querySelector(".sheet__expand"),
     };
   });
 
-  const opened = await read();
-  check("there is a button for it", opened.label === "Expand the panel", opened.label);
-  check("big enough for a gloved thumb", opened.tap >= 44, `${opened.tap}px`);
+  const at = await read();
+  check("there is nothing to drag", at.grab === false);
+  check("and nothing to expand", at.expand === false);
+  check("it takes a quarter of the screen, not half", at.h < at.vh * 0.3, `${at.h} of ${at.vh}`);
 
-  await page.click(".sheet__expand");
-  await page.waitForTimeout(700);
-  const tall = await read();
-  check("one tap fills the screen", tall.h > opened.h + 100, `${opened.h} to ${tall.h}`);
-  check("and the map is still there", tall.h < tall.vh, `${tall.h} of ${tall.vh}`);
-  check("the button now offers the way back", tall.label === "Shrink the panel", tall.label);
-
-  await page.click(".sheet__expand");
-  await page.waitForTimeout(700);
-  const back = await read();
-  check("which returns it to where the screen opened", Math.abs(back.h - opened.h) < 6,
-    `${back.h} against ${opened.h}`);
-
-  // The drag has to survive the button: they share the same strip.
-  const b = await page.$eval(".sheet", (n) => {
+  // A drag over it is a drag over the map behind it, or nothing at all.
+  const box = await page.$eval(".sheet", (n) => {
     const r = n.getBoundingClientRect();
     return { x: r.x, y: r.y, w: r.width };
   });
-  await page.mouse.move(b.x + b.w / 2, b.y + 12);
+  await page.mouse.move(box.x + box.w / 2, box.y + 12);
   await page.mouse.down();
-  for (let i = 1; i <= 10; i++) await page.mouse.move(b.x + b.w / 2, b.y + 12 - (300 * i) / 10);
+  for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + box.w / 2, box.y + 12 - (300 * i) / 10);
   await page.mouse.up();
-  await page.waitForTimeout(700);
-  const dragged = await read();
-  check("and dragging it still works", dragged.h > opened.h + 50, `${opened.h} to ${dragged.h}`);
+  await page.waitForTimeout(600);
+  const after = await read();
+  check("and dragging it changes nothing", after.h === at.h, `${at.h} to ${after.h}`);
+
+  // The rest of the route is a tap away, and comes back.
+  await openLegs(page);
+  check("the legs are one tap away", (await page.$$(".leg")).length > 0,
+    `${(await page.$$(".leg")).length} legs`);
+  await page.click('[aria-label="Back to the map"]');
+  await page.waitForSelector(".detail__legs", { timeout: 10000 });
+  check("and the map comes back", (await page.$(".sheet")) !== null);
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }
@@ -2092,7 +2158,8 @@ if (feature("22. Browse the options before committing to one")) {
   // and the button under the footer's fade.
   const framed = await page.evaluate(() => {
     const card = document.querySelector(".routecard--active");
-    const body = document.querySelector(".sheet__body").getBoundingClientRect();
+    // The options are a full page, not a sheet body.
+    const body = document.querySelector(".page__body").getBoundingClientRect();
     const lab = card.querySelector(".routecard__lab").getBoundingClientRect();
     const act = card.querySelector(".routecard__act .btn").getBoundingClientRect();
     return {
@@ -2158,7 +2225,9 @@ if (feature("23. The people you ski with")) {
   // On the substance, not the sentence: this line has been reworded twice and
   // an exact-phrase match broke both times without anything being wrong.
   const warned = await page.evaluate(() =>
-    [...document.querySelectorAll(".banner--warn p")].some((n) => {
+    // Either weight of callout. What is asserted here is the substance, and
+    // pinning the class as well made a quieter banner read as a missing one.
+    [...document.querySelectorAll(".banner--warn p, .banner--note p")].some((n) => {
       const t = n.textContent.toLowerCase();
       return /not connected|nothing is sent|no(body|t) .*see you/.test(t)
         && /this phone|sent anywhere|connected/.test(t);

@@ -34,6 +34,7 @@ import PlanScreen from "./screens/PlanScreen.jsx";
 import SolvingScreen from "./screens/SolvingScreen.jsx";
 import ChooseScreen from "./screens/ChooseScreen.jsx";
 import DetailScreen from "./screens/DetailScreen.jsx";
+import LegsScreen from "./screens/LegsScreen.jsx";
 import NavigateScreen from "./screens/NavigateScreen.jsx";
 import SummaryScreen from "./screens/SummaryScreen.jsx";
 import EmptyScreen from "./screens/EmptyScreen.jsx";
@@ -76,26 +77,6 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 const MAX_SNAP_METRES = 6000;
 
 /** How tall the sheet opens for each screen. */
-/**
- * Every screen opens on one of the three named stops rather than a fraction of
- * its own. A bespoke target gets added to the snap list, so it used to put two
- * stops a tenth apart and the drag lost its snap.
- */
-const SNAP_FOR = {
-  solving: "peek",
-  choose: "half",
-  // A bar over the map, not a panel covering it: the route has just been
-  // picked and the map is what there is to look at. The rest opens on the
-  // sheet's own expand.
-  //
-  // A shade taller than the standard peek, because this bar carries four
-  // figures and two buttons and the reassurance that the day is saved for a
-  // mountain with no signal. At 0.24 that last line was cut in half by the
-  // tab bar, which is worse than not saying it.
-  detail: 0.32,
-  summary: "half",
-  empty: "half",
-};
 
 /** Tab bar height in CSS pixels; keep in step with --tabbar. */
 const TABBAR_H = 56;
@@ -418,7 +399,8 @@ export default function App() {
    * one step later, at the route itself, where there is something to look at.
    */
   const choosing = onMountain && screen === "choose";
-  const fullPage = planning || choosing;
+  const readingLegs = onMountain && screen === "legs";
+  const fullPage = planning || choosing || readingLegs;
   const sheetScreen = onMountain && !navigating && !exploring && !fullPage;
   // The map is only on screen on the skiing tab, and a full page covers it.
   // Chrome for a map you cannot see is dead weight in the tab order.
@@ -911,6 +893,15 @@ export default function App() {
           same layer as Home and Stats, and without the tab check it stayed
           mounted over them. Tapping Home from the options list left the
           resort list underneath an unrelated page of routes. */}
+      {readingLegs && chosen && opts && (
+        <LegsScreen
+          route={chosen}
+          opts={opts}
+          plan={plan}
+          onBack={() => setScreen("detail")}
+        />
+      )}
+
       {choosing && opts && (
         <ChooseScreen
           routes={routes}
@@ -933,7 +924,7 @@ export default function App() {
       )}
 
       {sheetScreen && (
-      <Sheet snap={SNAP_FOR[screen]} onSnapChange={setSheetHeight}>
+      <Sheet onSnapChange={setSheetHeight}>
         {screen === "solving" && <SolvingScreen />}
 
         {screen === "empty" && diagnosis && (
@@ -942,6 +933,7 @@ export default function App() {
             plan={plan}
             resort={resort}
             capacity={capacity}
+            ability={opts?.ability ?? ability}
             onFix={onFix}
             onBack={() => setScreen("plan")}
           />
@@ -958,6 +950,7 @@ export default function App() {
               setScreen("navigate");
             }}
             onBack={() => setScreen(plan.mode === "direct" ? "plan" : "choose")}
+            onLegs={() => setScreen("legs")}
           />
         )}
 

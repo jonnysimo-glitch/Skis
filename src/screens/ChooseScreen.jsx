@@ -54,9 +54,29 @@ export default function ChooseScreen({
   useEffect(() => {
     const node = cards.current[activeIndex];
     if (!node) return;
-    const frame = requestAnimationFrame(() =>
-      node.scrollIntoView({ block: "nearest", behavior: "smooth" })
-    );
+    /*
+     * Move only as far as it has to, and only when it has to.
+     *
+     * scrollIntoView is the wrong tool here. "nearest" does nothing for a card
+     * that is technically on screen, which left the selected day's own button
+     * dissolving into the twenty-pixel fade at the bottom of the list. And
+     * "center" scrolls even when nothing is wrong, so tapping the second card
+     * moved the list under the finger and the third one got selected.
+     *
+     * So it measures. If the card runs under the fade, or above the top edge,
+     * the list scrolls by exactly that much. Otherwise nothing moves.
+     */
+    const frame = requestAnimationFrame(() => {
+      const list = node.closest(".page__body");
+      if (!list) return;
+      const view = list.getBoundingClientRect();
+      const card = node.getBoundingClientRect();
+      const FADE = 20;
+      const under = card.bottom + 8 - (view.bottom - FADE);
+      const over = view.top + 8 - card.top;
+      const by = under > 0 ? under : over > 0 ? -over : 0;
+      if (by) list.scrollBy({ top: by, behavior: "smooth" });
+    });
     return () => cancelAnimationFrame(frame);
   }, [activeIndex]);
   const visible = expanded ? routes : routes.slice(0, SHOWN_BY_DEFAULT);
@@ -116,6 +136,19 @@ export default function ChooseScreen({
             that still reaches it — a red skier with two and a half hours
             from Champoluc, where the terrain is not what is short. The two
             things the reader can change are named instead. */}
+        {/* A long day on a small mountain skis some runs more than once, which
+            is a normal day out and not something to hide. It only says so
+            when the solver actually had to loosen the cap to fill the time. */}
+        {!ruledOut && routes[0]?.laps > 0 && (
+          <div className="info">
+            <Info className="info__icon" width="17" height="17" />
+            <span>
+              {NODES[plan.start].name} is a small mountain for {hours(opts.budget)}, so
+              these ski the best runs <b>more than once</b>.
+            </span>
+          </div>
+        )}
+
         {similar > 0 && (
           <div className="info">
             <Info className="info__icon" width="17" height="17" />

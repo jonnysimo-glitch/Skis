@@ -33,10 +33,21 @@ const FIXES = {
     title: `Finish at ${NODES[plan.start].name} instead`,
     sub: "Ends where you started, no cross-valley crossing.",
   }),
-  harder: () => ({
-    title: "Include red runs",
-    sub: "Opens the links between the valleys.",
-  }),
+  /*
+   * Named for the grade it would actually add. It said "Include red runs" to
+   * everybody, which is right for a blue skier and wrong for the red skier at
+   * Paganella who was being offered the black ones.
+   */
+  harder: (plan, resort, capacity, ability) => {
+    const next = { blue: "red", red: "black" }[ability];
+    if (!next) return null;
+    return {
+      title: `Include ${next} runs`,
+      sub: next === "red"
+        ? "Reds link the valleys, so it opens most of the mountain."
+        : "The steep ones, and the places only they reach.",
+    };
+  },
   /**
    * For a mountain that cannot fill the day asked for. Finishing earlier is
    * the fix, which is the opposite of every other one here — so it says what
@@ -55,7 +66,7 @@ const FIXES = {
   },
 };
 
-export default function EmptyScreen({ diagnosis, plan, resort, capacity, onFix, onBack }) {
+export default function EmptyScreen({ diagnosis, plan, resort, capacity, ability, onFix, onBack }) {
   return (
     <>
       <SheetHead>
@@ -76,7 +87,7 @@ export default function EmptyScreen({ diagnosis, plan, resort, capacity, onFix, 
               above has already said so and a list of dead ends adds nothing. */}
           <ul className="fixlist">
             {(diagnosis.fixes || []).map((id) => {
-              const fix = FIXES[id]?.(plan, resort, capacity);
+              const fix = FIXES[id]?.(plan, resort, capacity, ability);
               if (!fix) return null;
               return (
                 <li key={id}>

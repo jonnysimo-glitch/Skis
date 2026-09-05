@@ -90,6 +90,58 @@ for (const [name, fg, bg, min] of pairs) {
   check(name, c >= min, `${c.toFixed(2)}:1 (needs ${min})`);
 }
 
+/*
+ * The pairings the stylesheet actually makes, not just the ones the tokens
+ * suggest.
+ *
+ * The list above checks tokens against tokens, which says nothing about a rule
+ * that pairs two of them badly. `.nav__head` set `background: var(--ink)` with
+ * white text — correct while --ink was near-black, and white on white the
+ * moment the palette flipped. Every token pair still passed; the navigate
+ * header was unreadable.
+ *
+ * Only rules that set both colours and resolve to flat hex are judged. An
+ * rgba over an unknown backdrop is not something this can decide, and a rule
+ * that inherits its background is somebody else's pairing.
+ */
+console.log("\nWHAT THE STYLESHEET ACTUALLY PAIRS");
+{
+  const css = readFileSync(new URL("../src/styles/app.css", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const flat = (value) => {
+    const v = String(value || "").trim();
+    const varName = v.match(/^var\(\s*--([a-z0-9-]+)\s*\)$/i);
+    if (varName) { try { return token(varName[1]); } catch { return null; } }
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return "#" + v.slice(1).split("").map((c) => c + c).join("");
+    if (/^white$/i.test(v)) return "#ffffff";
+    if (/^black$/i.test(v)) return "#000000";
+    return null;
+  };
+
+  let judged = 0, skipped = 0;
+  const bad = [];
+  for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (selector.trim().startsWith("@")) continue;
+    const decls = Object.fromEntries(
+      body.split(";").map((d) => d.split(":")).filter((d) => d.length >= 2)
+        .map(([k, ...rest]) => [k.trim(), rest.join(":").trim()]));
+    const bgRaw = decls["background"] ?? decls["background-color"];
+    if (!bgRaw || !decls["color"]) continue;
+    // A shorthand can carry a gradient or an image; only a bare colour counts.
+    const bg = flat(bgRaw.split(/\s+/)[0]);
+    const fg = flat(decls["color"]);
+    if (!bg || !fg) { skipped++; continue; }
+    judged++;
+    // 3:1, not 4.5 — many of these are large type, icons or pressed states,
+    // and the point here is catching invisible, not grading body copy.
+    const c = contrast(fg, bg);
+    if (c < 3) bad.push(`${selector.trim().split("\n").pop().trim()} — ${c.toFixed(2)}:1`);
+  }
+  check(`every rule that sets both colours can be read (${judged} judged, ${skipped} not flat)`,
+    bad.length === 0, bad.slice(0, 4).join("; "));
+}
+
 console.log("\nACCENT vs PISTE SIGNALS");
 // 25 is roughly where two colours stop being confusable at a glance.
 const MIN_DELTA = 25;

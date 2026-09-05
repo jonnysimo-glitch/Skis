@@ -144,6 +144,8 @@ input, select { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- sheet -- */
 /* The primary surface. Drags up over the map; the map is never fully hidden. */
 
+/* Fixed, not dragged. Height comes from the content; the cap is inline, so
+   the map keeps a band of mountain whatever a screen puts in here. */
 .sheet {
   position: absolute;
   left: 0; right: 0;
@@ -153,45 +155,11 @@ input, select { font: inherit; color: inherit; }
   border-radius: var(--r-sheet) var(--r-sheet) 0 0;
   box-shadow: var(--e-sheet);
   display: flex; flex-direction: column;
-  touch-action: none;
-  will-change: height;
 }
 
-.sheet__grab {
-  flex: none;
-  padding: var(--s-2) 0 var(--s-1);
-  display: grid; place-items: center;
-  cursor: grab;
-}
-/* The same two states the drag reaches, without needing an accurate swipe.
-   Absolute so it does not push the handle off centre; the handle stays the
-   affordance for the in-between stops. */
-.sheet__expand {
-  position: absolute;
-  top: 0; right: 4px;
-  width: var(--tap); height: var(--tap);
-  display: grid; place-items: center;
-  color: var(--ink-3);
-  border-radius: 50%;
-  z-index: 1;
-}
-.sheet__expand:active { background: var(--surface-2); color: var(--ink); }
-/* Set for the duration of a drag; see the pointerdown handler in Sheet.jsx. */
-.sheet--dragging, .sheet--dragging * {
-  user-select: none;
-  -webkit-user-select: none;
-}
-.sheet__grab:active { cursor: grabbing; }
-.sheet__grab i {
-  display: block;
-  width: 36px; height: 5px;
-  border-radius: 2.5px;
-  background: var(--n-30);
-}
-
-.sheet__head { flex: none; padding: var(--s-1) var(--gutter) var(--s-3); }
+.sheet__head { flex: none; padding: var(--s-4) var(--gutter) var(--s-3); }
 .sheet__body {
-  flex: 1;
+  flex: 0 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -213,6 +181,22 @@ input, select { font: inherit; color: inherit; }
   display: grid; gap: var(--s-2);
 }
 .sheet__foot--bare { border-top: 0; }
+
+/* The one thing in the route bar that is not a number or an action: the way
+   to the rest of it. It shares the eyebrow's line rather than taking one of
+   its own, because a line here is a line of mountain covered. */
+.detail__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.detail__legs {
+  display: inline-flex; align-items: center; gap: 4px;
+  /* A full tap target, not the height of its own type. The row it shares with
+     the eyebrow is taller than the text anyway, so this costs nothing. */
+  min-height: var(--tap);
+  padding: 0 2px 0 var(--s-3);
+  margin: calc(var(--s-2) * -1) 0;
+  color: var(--accent-ink);
+  font-size: var(--t-footnote); font-weight: 600;
+}
+.detail__legs:active { opacity: 0.6; }
 
 /* ------------------------------------------------------------ typography -- */
 
@@ -533,7 +517,10 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
    stopped with the card's own label above the clip and its button below the
    fold. The bottom margin reserves the action row the scroll does not know
    about; it is derived from the row's height rather than guessed. */
-.routecard { scroll-margin: var(--s-3) 0 var(--s-5); }
+/* The bottom margin has to clear the scroll fade as well as the edge, or the
+   selected card's own button ends up dissolving into it. --s-5 left it six
+   pixels short once the options moved from a sheet to a page. */
+.routecard { scroll-margin: var(--s-3) 0 calc(var(--s-5) + 20px); }
 .routecard__body { scroll-margin: var(--s-3) 0 calc(var(--tap) + var(--s-3)); }
 .routecard__act { padding: var(--s-1) var(--s-4) var(--s-2); }
 .routecard__act .btn { width: 100%; }
@@ -1089,15 +1076,15 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .nav > * { pointer-events: auto; }
 
 .nav__head {
-  background: var(--ink);
-  color: #fff;
+  background: var(--surface-deep);
+  color: var(--ink);
   padding: calc(var(--safe-top) + var(--s-4)) var(--gutter) var(--s-4);
   display: flex; align-items: center; gap: var(--s-3);
 }
 .nav__badge {
   width: 52px; height: 52px; flex: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.13);
+  background: var(--surface-2);
   display: grid; place-items: center;
 }
 .nav__what { flex: 1; min-width: 0; }
@@ -1109,7 +1096,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .nav__then {
   font-size: var(--t-footnote);
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--ink-2);
   margin-top: var(--s-1);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1124,7 +1111,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .nav__grade--blue { background: var(--piste-blue); }
 .nav__grade--red { background: var(--piste-red); }
 .nav__grade--black { background: #38424b; }
-.nav__grade--lift { background: rgba(255, 255, 255, 0.16); }
+.nav__grade--lift { background: var(--surface-3); }
 
 .nav__metrics {
   display: flex;
