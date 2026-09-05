@@ -745,6 +745,29 @@ export default function FallbackTerrain({
     let depthData = null;
     let depthNear = 0;
     let depthSpan = 1;
+    /*
+     * The camera the terrain in `blur` was drawn with, and how far the current
+     * one has slid from it.
+     *
+     * Panning is a pure translation of this projection. `fit` derives the
+     * focal length and the centring from the projected bounding box, which
+     * depends on bearing, pitch and zoom and on nothing else — the pan is
+     * added at the very end, in screen space. So a frame that differs only in
+     * pan is the previous frame, shifted, and can be blitted rather than
+     * rasterised. On a measured drag that is 33ms a frame against 63.
+     *
+     * Declared up here, with the canvases, because it belongs to them: it is
+     * only valid while the pixels it describes are still there, and `resize`
+     * throws those away. That is not a hypothetical — setting canvas.width
+     * clears the canvas, a ResizeObserver fires once on observe and again on
+     * any layout change, and the size it reports is often the same one. Same
+     * size means the same shape key, which means the slide is zero, which
+     * means reuse: the map blitted a canvas that had just been wiped and drew
+     * a mountain made entirely of sky.
+     */
+    let cachedAt = null;
+    let depthShiftX = 0;
+    let depthShiftY = 0;
     const depthBias = (fieldRef.current?.span ?? 0) * DEPTH_BIAS_FRAC;
     let dpr = 1;
 
@@ -772,6 +795,9 @@ export default function FallbackTerrain({
       offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
       depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
       depthData = null;
+      // The pixels the cache describes have just been thrown away with the
+      // canvases. See the note where it is declared.
+      cachedAt = null;
       dirty.current = true;
     };
     resize();
@@ -2234,10 +2260,6 @@ export default function FallbackTerrain({
      * where the pixel WAS. And a slide far enough to expose ground the cached
      * picture never contained forces a real redraw.
      */
-    let cachedAt = null;
-    let depthShiftX = 0;
-    let depthShiftY = 0;
-
     // The frame time the draw pass should ease by. Set once at the top of a
     // frame rather than threaded through six functions.
     let frameDt = 16.7;
