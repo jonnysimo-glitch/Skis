@@ -314,16 +314,21 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
  * also takes one rung off a radius scale the design notes had already flagged
  * as having more steps than it needs.
  */
+/* 56, and a pill.
+   A primary action over a map is the one thing on the screen that has to be
+   hittable without looking, and 52 was the smallest of the apps measured. The
+   full radius is what the neighbours use for the same button over terrain: a
+   rounded rectangle reads as a panel, a pill reads as a thing to press. */
 .btn {
   width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   font-family: var(--display);
   font-size: var(--t-headline);
   font-weight: 700;
   letter-spacing: -0.005em;
   background: var(--accent);
   color: #fff;
-  border-radius: var(--r-xl);
+  border-radius: var(--r-pill);
   padding: var(--s-3) var(--s-5);
   transition: transform 0.1s var(--ease-std), background 0.14s var(--ease-std);
   display: flex; align-items: center; justify-content: center; gap: var(--s-2);
@@ -334,7 +339,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .btn--ghost:active { background: var(--surface-3); }
 .btn--quiet {
   background: transparent; color: var(--ink-2);
-  min-height: 48px;
+  min-height: 52px;
   font-family: var(--ui); font-size: var(--t-callout); font-weight: 600;
 }
 .btn--quiet:active { background: var(--surface-2); }

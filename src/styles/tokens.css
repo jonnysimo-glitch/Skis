@@ -161,8 +161,17 @@
 
   /** Apple's standard screen margin. Everything aligns to this. */
   --gutter: 16px;
-  /** Minimum comfortable touch target. */
-  --tap: 44px;
+  /**
+   * Minimum comfortable touch target.
+   *
+   * 48, not 44. 44pt is Apple's floor and 48dp is Google's, and the
+   * accessibility guidance on both is explicit that context can ask for more —
+   * Google's own driving guidance goes to 76dp. Every chip, map control,
+   * compass and dismiss cross in this app used to sit exactly on the lower of
+   * the two floors, and a gloved thumb on a moving chairlift is at least as
+   * constrained as a driver.
+   */
+  --tap: 48px;
   /** Tab bar height, excluding the home indicator. */
   --tabbar: 56px;
 
