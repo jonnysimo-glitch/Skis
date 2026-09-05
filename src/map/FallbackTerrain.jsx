@@ -171,6 +171,21 @@ const DETAIL_SETTLE_MS = 420;
 const PLACE_FADE_MS = 220;
 
 /**
+ * How far the map may slide before the terrain has to be drawn again rather
+ * than moved, in CSS pixels.
+ *
+ * The cached picture is the size of the canvas, so sliding it exposes an
+ * unpainted strip at the trailing edge — ground that was off screen when it
+ * was drawn. In practice the mountain is centred and the pan is bounded, so
+ * that strip is nearly always sky; this is the wall for when it is not.
+ *
+ * A redraw every hundred and forty pixels of drag, instead of one every frame,
+ * is the whole saving. Lower and the saving goes; much higher and a fast flick
+ * shows the strip.
+ */
+const PAN_REUSE_MAX = 140;
+
+/**
  * How many mountain places to show, as `count = base * zoom ** power`.
  *
  * Three at the framing the app opens on, ten by the time a valley fills the
@@ -1441,8 +1456,8 @@ export default function FallbackTerrain({
      */
     const visible = (p) => {
       if (!depthData) return true;
-      const px = Math.round(p.x * DEPTH_SCALE);
-      const py = Math.round(p.y * DEPTH_SCALE);
+      const px = Math.round((p.x - depthShiftX) * DEPTH_SCALE);
+      const py = Math.round((p.y - depthShiftY) * DEPTH_SCALE);
       if (px < 0 || py < 0 || px >= depthData.width || py >= depthData.height) return true;
       const i = (py * depthData.width + px) * 4;
       if (depthData.data[i + 3] === 0) return true; // sky
@@ -2197,6 +2212,32 @@ export default function FallbackTerrain({
     // When the camera last moved, so the detail request can wait for it to
     // stop. Zero once the request for that resting place has gone out.
     let settleAt = 0;
+    /*
+     * The camera the terrain in `blur` was drawn with, and how far the current
+     * one has slid from it.
+     *
+     * Panning is a pure translation of this projection. `fit` derives the
+     * focal length and the centring from the projected bounding box, which
+     * depends on bearing, pitch and zoom and on nothing else — the pan is
+     * added at the very end, in screen space. So a frame that differs only in
+     * pan is the previous frame, shifted, and can be blitted rather than
+     * rasterised.
+     *
+     * That matters because it is the common gesture and the expensive one.
+     * Painting the ground from the photograph rather than a flat colour a quad
+     * costs eighteen milliseconds a frame, every frame of a drag; reusing the
+     * picture costs one drawImage. Turning, pitching and zooming still redraw,
+     * and they should — those change what the mountain looks like, not just
+     * where it is.
+     *
+     * The depth buffer slides with it, so the occlusion test has to look up
+     * where the pixel WAS. And a slide far enough to expose ground the cached
+     * picture never contained forces a real redraw.
+     */
+    let cachedAt = null;
+    let depthShiftX = 0;
+    let depthShiftY = 0;
+
     // The frame time the draw pass should ease by. Set once at the top of a
     // frame rather than threaded through six functions.
     let frameDt = 16.7;
@@ -2319,19 +2360,45 @@ export default function FallbackTerrain({
         // through a small blur, which costs one drawImage and dissolves the
         // steps. The route and the pistes go on afterwards, on the real
         // canvas, and stay sharp.
-        offCtx.setTransform(1, 0, 0, 1, 0, 0);
-        offCtx.clearRect(0, 0, off.width, off.height);
-        offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        depthCtx.setTransform(1, 0, 0, 1, 0, 0);
-        depthCtx.clearRect(0, 0, depth.width, depth.height);
-        depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
-        drawTerrain(v, cam, offCtx, depthCtx);
-        // One readback for the frame. Per-point getImageData is the obvious
-        // way to write this and is orders of magnitude slower: every call
-        // synchronises with the compositor, and there are thousands of points.
-        depthData = depth.width && depth.height
-          ? depthCtx.getImageData(0, 0, depth.width, depth.height)
-          : null;
+        /*
+         * Is this frame the last one, slid sideways?
+         *
+         * Everything the picture depends on other than the pan: the focal
+         * length and centring `fit` derived, and the view angles behind them.
+         * `f` alone would nearly do, but two different bearings can fit the
+         * bbox to the same width, and drawing one mountain with another's
+         * terrain is not a mistake that announces itself.
+         */
+        const shape = `${cam.f}|${v.bearing}|${v.pitch}|${v.zoom}|${width}x${height}|${propsRef.current.imagery ? 1 : 0}|${propsRef.current.block ? 1 : 0}`;
+        const slidX = cachedAt && cachedAt.shape === shape ? cam.ox - cachedAt.ox : null;
+        const slidY = cachedAt && cachedAt.shape === shape ? cam.oy - cachedAt.oy : null;
+        // Far enough and the cached picture no longer contains the ground that
+        // has slid into frame, so it has to be drawn rather than moved.
+        const reuse = slidX !== null && Math.abs(slidX) <= PAN_REUSE_MAX &&
+          Math.abs(slidY) <= PAN_REUSE_MAX;
+
+        if (reuse) {
+          depthShiftX = slidX;
+          depthShiftY = slidY;
+        } else {
+          depthShiftX = 0;
+          depthShiftY = 0;
+          offCtx.setTransform(1, 0, 0, 1, 0, 0);
+          offCtx.clearRect(0, 0, off.width, off.height);
+          offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          depthCtx.setTransform(1, 0, 0, 1, 0, 0);
+          depthCtx.clearRect(0, 0, depth.width, depth.height);
+          depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
+          drawTerrain(v, cam, offCtx, depthCtx);
+          // One readback for the frame. Per-point getImageData is the obvious
+          // way to write this and is orders of magnitude slower: every call
+          // synchronises with the compositor, and there are thousands of
+          // points.
+          depthData = depth.width && depth.height
+            ? depthCtx.getImageData(0, 0, depth.width, depth.height)
+            : null;
+          cachedAt = { shape, ox: cam.ox, oy: cam.oy };
+        }
 
         // Blur it, then cut the blur back to the sharp shape.
         //
@@ -2342,18 +2409,21 @@ export default function FallbackTerrain({
         // terrain covers, so the silhouette and the slab's edges stay crisp
         // while the facets inside them dissolve. That buys a blur wide enough
         // to actually work.
-        blurCtx.setTransform(1, 0, 0, 1, 0, 0);
-        blurCtx.clearRect(0, 0, blur.width, blur.height);
-        blurCtx.filter = `blur(${blurFor(v.zoom) * dpr}px)`;
-        blurCtx.drawImage(off, 0, 0);
-        blurCtx.filter = "none";
-        blurCtx.globalCompositeOperation = "destination-in";
-        blurCtx.drawImage(off, 0, 0);
-        blurCtx.globalCompositeOperation = "source-over";
+        if (!reuse) {
+          blurCtx.setTransform(1, 0, 0, 1, 0, 0);
+          blurCtx.clearRect(0, 0, blur.width, blur.height);
+          blurCtx.filter = `blur(${blurFor(v.zoom) * dpr}px)`;
+          blurCtx.drawImage(off, 0, 0);
+          blurCtx.filter = "none";
+          blurCtx.globalCompositeOperation = "destination-in";
+          blurCtx.drawImage(off, 0, 0);
+          blurCtx.globalCompositeOperation = "source-over";
+        }
 
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.drawImage(blur, 0, 0);
+        // Offset in device pixels, because that is what the offscreen is in.
+        ctx.drawImage(blur, depthShiftX * dpr, depthShiftY * dpr);
         ctx.restore();
         drawGraph(v, cam);
         drawRoute(v, cam);

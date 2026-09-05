@@ -1884,21 +1884,50 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   check("standing still, the far view is painted from the imagery too",
     far && far.textured > far.flat, `${far?.textured} of ${far?.textured + far?.flat} quads subdivided`);
 
-  // And moving, it is not — or a drag is paying for detail nobody can study
-  // while throwing the mountain around.
-  const moving = await page.evaluate(async () => {
+  /*
+   * And a drag does not repaint it, because a drag does not change it.
+   *
+   * Painting the ground from the photograph rather than a flat colour a quad
+   * costs eighteen milliseconds a frame. The first answer was to do it only
+   * when the camera stopped, which is worse than it sounds: the switch is
+   * visible, and ground that goes soft the moment you touch it reads as a map
+   * failing to load.
+   *
+   * Panning is a pure translation of this projection — `fit` derives the focal
+   * length and centring from the projected bbox, which does not depend on the
+   * pan — so a frame that differs only in pan is the last frame, moved. It is
+   * blitted rather than rasterised, which took a measured drag from 63ms a
+   * frame to 33 at the same quality.
+   *
+   * Counted by identity: __skisSurface is a fresh object every time the
+   * terrain is actually drawn, so counting how often it changes during a drag
+   * counts the redraws.
+   */
+  const redraws = await page.evaluate(async () => {
     const c = document.querySelector("canvas[aria-label*='Terrain view']");
     const r = c.getBoundingClientRect();
-    // Turn the mountain and read the surface on the very next frame, before
-    // anything has had time to settle.
-    window.__skisSetBearing(40);
-    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
-    void r;
-    return window.__skisSurface;
+    const wait = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const send = (x, y, type) => c.dispatchEvent(new PointerEvent(type, {
+      pointerId: 1, clientX: x, clientY: y, bubbles: true, pointerType: "touch", isPrimary: true,
+    }));
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height * 0.55;
+    send(cx, cy, "pointerdown");
+    let seen = window.__skisSurface;
+    let n = 0;
+    let frames = 0;
+    for (let i = 1; i <= 24; i++) {
+      send(cx + i * 2, cy + i, "pointermove");
+      await wait();
+      frames++;
+      if (window.__skisSurface !== seen) { n++; seen = window.__skisSurface; }
+    }
+    send(cx, cy, "pointerup");
+    return { n, frames };
   });
-  check("but moving, it falls back to one colour a quad",
-    moving && moving.textured < far.textured / 4,
-    `${moving?.textured} subdivided mid-turn against ${far?.textured} at rest`);
+  check("and a drag moves the picture rather than repainting it every frame",
+    redraws.n <= redraws.frames / 3,
+    `${redraws.n} terrain redraws over ${redraws.frames} frames of drag`);
   await page.waitForTimeout(1200);
 
   // One notch per frame: the wheel handler accumulates within a frame and its
