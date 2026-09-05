@@ -89,6 +89,12 @@
       <button type="button">Fetch Paganella Ski</button>
       <p class="status"></p>
     </li>
+    <li data-id="latemar">
+      <h2>Ski Center Latemar<small>Trentino / South Tyrol, Italy</small></h2>
+      <p class="note">Obereggen, Pampeago and Predazzo, three villages linked around the Latemar.</p>
+      <button type="button">Fetch Ski Center Latemar</button>
+      <p class="status"></p>
+    </li>
   </ol>
 
   <div class="after">
@@ -114,6 +120,10 @@ const RESORTS = {
   "paganella": {
     "name": "Paganella Ski",
     "query": "[out:json][timeout:180];\n(\n  way[\"piste:type\"=\"downhill\"](46.1,10.98,46.24,11.13);\n  way[\"aerialway\"~\"^(cable_car|gondola|mixed_lift|chair_lift|drag_lift|t-bar|j-bar|platter|rope_tow|magic_carpet|funicular)$\"](46.1,10.98,46.24,11.13);\n);\nout geom;\n(\n  node[\"aerialway\"~\"^(station|pylon)$\"](46.1,10.98,46.24,11.13);\n  node[\"natural\"=\"peak\"](46.1,10.98,46.24,11.13);\n  node[\"mountain_pass\"=\"yes\"](46.1,10.98,46.24,11.13);\n);\nout body;\n// Somewhere to have lunch. The solver can be asked to route past one, so this\n// is a feature of the graph rather than decoration.\n(\n  nwr[\"tourism\"=\"alpine_hut\"](46.1,10.98,46.24,11.13);\n  nwr[\"tourism\"=\"wilderness_hut\"](46.1,10.98,46.24,11.13);\n  nwr[\"amenity\"=\"restaurant\"](46.1,10.98,46.24,11.13);\n  nwr[\"amenity\"=\"cafe\"](46.1,10.98,46.24,11.13);\n);\nout center tags;\n// Where to hire skis. Not part of the routing, but it is the first thing\n// somebody who flew in needs and the last thing they can find on a piste map.\n// shop=rental with ski in the offer covers the Italian noleggio; shop=ski and\n// a sports shop that hires are the other two ways OSM writes it. No backticks\n// in here: these lines are inside the query's own template literal.\n(\n  nwr[\"shop\"=\"ski\"](46.1,10.98,46.24,11.13);\n  nwr[\"shop\"=\"rental\"][\"rental\"~\"ski\"](46.1,10.98,46.24,11.13);\n  nwr[\"shop\"=\"sports\"][\"service:bicycle:rental\"!~\".\"][\"ski\"=\"yes\"](46.1,10.98,46.24,11.13);\n  nwr[\"amenity\"=\"ski_rental\"](46.1,10.98,46.24,11.13);\n);\nout center tags;"
+  },
+  "latemar": {
+    "name": "Ski Center Latemar",
+    "query": "[out:json][timeout:180];\n(\n  way[\"piste:type\"=\"downhill\"](46.27,11.4,46.42,11.65);\n  way[\"aerialway\"~\"^(cable_car|gondola|mixed_lift|chair_lift|drag_lift|t-bar|j-bar|platter|rope_tow|magic_carpet|funicular)$\"](46.27,11.4,46.42,11.65);\n);\nout geom;\n(\n  node[\"aerialway\"~\"^(station|pylon)$\"](46.27,11.4,46.42,11.65);\n  node[\"natural\"=\"peak\"](46.27,11.4,46.42,11.65);\n  node[\"mountain_pass\"=\"yes\"](46.27,11.4,46.42,11.65);\n);\nout body;\n// Somewhere to have lunch. The solver can be asked to route past one, so this\n// is a feature of the graph rather than decoration.\n(\n  nwr[\"tourism\"=\"alpine_hut\"](46.27,11.4,46.42,11.65);\n  nwr[\"tourism\"=\"wilderness_hut\"](46.27,11.4,46.42,11.65);\n  nwr[\"amenity\"=\"restaurant\"](46.27,11.4,46.42,11.65);\n  nwr[\"amenity\"=\"cafe\"](46.27,11.4,46.42,11.65);\n);\nout center tags;\n// Where to hire skis. Not part of the routing, but it is the first thing\n// somebody who flew in needs and the last thing they can find on a piste map.\n// shop=rental with ski in the offer covers the Italian noleggio; shop=ski and\n// a sports shop that hires are the other two ways OSM writes it. No backticks\n// in here: these lines are inside the query's own template literal.\n(\n  nwr[\"shop\"=\"ski\"](46.27,11.4,46.42,11.65);\n  nwr[\"shop\"=\"rental\"][\"rental\"~\"ski\"](46.27,11.4,46.42,11.65);\n  nwr[\"shop\"=\"sports\"][\"service:bicycle:rental\"!~\".\"][\"ski\"=\"yes\"](46.27,11.4,46.42,11.65);\n  nwr[\"amenity\"=\"ski_rental\"](46.27,11.4,46.42,11.65);\n);\nout center tags;"
   }
 };
 

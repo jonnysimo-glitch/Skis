@@ -1,0 +1,61 @@
+{
+  "id": "latemar",
+  "name": "Ski Center Latemar",
+  "region": "Trentino / South Tyrol",
+  "country": "Italy",
+  "note": "Obereggen, Pampeago and Predazzo, three villages linked around the Latemar.",
+  "bbox": [
+    11.4,
+    46.27,
+    11.65,
+    46.42
+  ],
+  "tolerance": 100,
+  "bases": [
+    "Obereggen",
+    "San Floriano",
+    "Oberholz",
+    "Pampeago",
+    "Predazzo",
+    "Gardone",
+    "Latemar",
+    "Agnello",
+    "Feudo"
+  ],
+  "basesWhy": "The three villages, plus the lift names OSM tends to use where it does not name the station after the village. Obereggen and Pampeago are the two big car parks; Predazzo is the third way in, up the Gardone gondola.",
+  "areas": {
+    "Obereggen": "Obereggen",
+    "San Floriano": "Obereggen",
+    "Oberholz": "Obereggen",
+    "Pampeago": "Val di Fiemme",
+    "Predazzo": "Val di Fiemme",
+    "Gardone": "Val di Fiemme",
+    "Latemar": "Latemar",
+    "Agnello": "Latemar",
+    "Feudo": "Latemar"
+  },
+  "firstLift": 510,
+  "lastDown": 1020,
+  "lifts": {
+    "default": {
+      "lastUp": 990,
+      "queue": 4
+    }
+  },
+  "operationsProvenance": "PLACEHOLDER. lastUp and queue are not from OpenStreetMap and are not yet from the resort either. They must be replaced with published lift hours before this resort is marked available.",
+  "sources": [
+    "https://www.obereggen.com/en/",
+    "https://www.visitfiemme.it/en/ski/ski-center-latemar"
+  ],
+  "defaultBase": "Obereggen",
+  "defaultBaseWhy": "The largest of the three bases and the one most people drive to.",
+  "toleranceWhy": "100 to start with, matching Paganella, which is the closest of the built resorts in size. Re-measure with npm run resort:tune once the OSM export lands: the right value is the one that stitches the most of the published lift network without merging two car parks into one.",
+  "published": {
+    "lifts": 18,
+    "runs": 48,
+    "top": 2400,
+    "bottom": 1000
+  },
+  "publishedSource": "Ski Center Latemar's own published network figures. Recorded from general knowledge rather than fetched, because no site is reachable from this machine; npm run resort:verify will hold the graph against them and say plainly where they disagree.",
+  "bboxWhy": "Covers all three villages and the Latemar ridge between them: Obereggen at 11.47/46.37, Pampeago at 11.51/46.34 and Predazzo at 11.60/46.31, with a margin so no piste runs off an edge."
+}

@@ -16,9 +16,13 @@ import { useState } from "react";
 
 export default function Ridge({ resort, hero }) {
   const [artFailed, setArtFailed] = useState(false);
-  const art = resort.available && !artFailed
-    ? `${import.meta.env.BASE_URL}resorts/${resort.id}.jpg`
-    : null;
+  // Not gated on `available`. A resort that is still on the way is exactly the
+  // one worth showing a photograph of, and the fallback below already handles
+  // the ones with no picture: the image's own error is what decides, so a
+  // missing file degrades rather than breaking.
+  const art = artFailed
+    ? null
+    : `${import.meta.env.BASE_URL}resorts/${resort.id}.jpg`;
 
   if (art) {
     return (
