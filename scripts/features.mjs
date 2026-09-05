@@ -1423,6 +1423,113 @@ if (feature("15. Gestures, and the mountain being solid")) {
   }
 }
 
+// ========= 33. THE SUN CASTS SHADOWS ==
+// A hillshade says which way a face is turned. It cannot know that a ridge is
+// standing between this ground and the sun, so a north face and a sunlit bowl
+// behind a ridge came out shaded identically — and in life one is grey and the
+// other is blue and the line between them is visible from the lift.
+//
+// src/map/field.test.js proves the shadow map itself: which side of a peak it
+// falls on, that most of a mountain is in sun, that the edges are soft. What
+// that cannot show is whether any of it reaches the screen, which is a
+// question about the renderer and is the way this would quietly do nothing.
+if (feature("33. The sun casts shadows")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(2000);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  /*
+   * Ground in shadow, as a share of ground.
+   *
+   * Told apart by hue, not by darkness. Sunlit snow is warm and near white;
+   * shadowed snow is lit by the sky alone, so it goes blue — and that is the
+   * thing being checked, because darkening alone is what the hillshade already
+   * does and a shadow that only darkens is indistinguishable from a slope
+   * facing away.
+   */
+  const SKY = Array.from({ length: 101 }, (_, i) => skyAt(i / 100));
+  /**
+   * The brightness of every piece of ground on screen, in one flat list.
+   *
+   * Returned per pixel rather than averaged, because a shadow reads by local
+   * contrast and not by the mean: a forty per cent darkening over a tenth of
+   * the mountain is obvious to look at and moves the average by two per cent.
+   * Two renders of the same camera are directly comparable, so subtracting
+   * them says exactly how much of the mountain the sun changed.
+   *
+   * The sky is matched against its own gradient at each row, the way section
+   * 13 does it. Skipping the top of the frame was the first attempt and does
+   * not work: the sky is the bluest thing on screen and the mountain sits low
+   * in it.
+   */
+  const ground = () => page.$eval(SEL, (c, [SKY_ROWS, FLAT]) => {
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    const out = [];
+    for (let y = 0; y < height; y += 3) {
+      const sky = SKY_ROWS[Math.round((y / (height - 1)) * 100)];
+      for (let x = 0; x < width; x += 3) {
+        const i = (y * width + x) * 4;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        if (Math.abs(r - sky[0]) <= 5 && Math.abs(g - sky[1]) <= 5 && Math.abs(b - sky[2]) <= 5) {
+          out.push(-1);
+          continue;
+        }
+        if (FLAT.some((f) => f[0] === r && f[1] === g && f[2] === b)) { out.push(-1); continue; }
+        if (r < 40 && g < 40) { out.push(-1); continue; } // chrome
+        out.push((r * 299 + g * 587 + b * 114) / 1000);
+      }
+    }
+    return out;
+  }, [SKY, [SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR]]);
+
+  const lit = await ground();
+  check("there is ground on screen to shade", lit.filter((v) => v >= 0).length > 400,
+    `${lit.filter((v) => v >= 0).length} samples of ground`);
+
+  await page.evaluate(() => window.__skisSetShadows(false));
+  await page.waitForTimeout(900);
+  const plain = await ground();
+  await page.evaluate(() => window.__skisSetShadows(true));
+  await page.waitForTimeout(900);
+
+  let seen = 0;
+  let darkened = 0;
+  let brightened = 0;
+  let deepest = 0;
+  for (let i = 0; i < Math.min(lit.length, plain.length); i++) {
+    if (lit[i] < 0 || plain[i] < 0) continue;
+    seen++;
+    const d = plain[i] - lit[i];
+    if (d > 10) darkened++;
+    if (d < -10) brightened++;
+    if (d > deepest) deepest = d;
+  }
+  const share = seen ? Math.round((darkened / seen) * 100) : 0;
+  /*
+   * Both ends matter. Nothing changing means the shadow map never reached the
+   * renderer, which is how this feature would quietly do nothing while every
+   * unit check on the map itself passed. Everything changing means the march
+   * has its sign the wrong way round — a dramatically lit mountain that is
+   * inside out, and one that looks perfectly fine in a screenshot.
+   */
+  check("the sun's shadows darken a visible part of the mountain",
+    share >= 8, `${share}% of the ground, deepest ${deepest.toFixed(0)} levels`);
+  check("but not the whole of it", share <= 55, `${share}%`);
+  // A cast shadow only ever removes light. Anything brighter is a sign the
+  // toggle is doing something other than what it says.
+  check("and nothing gets brighter for being in shadow", brightened < seen * 0.01,
+    `${brightened} of ${seen} samples brighter`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ========= 32. THE PLACES ARRIVE AS YOU GET CLOSER ==
 // Every mountain place at every zoom is too many. Kronplatz has thirty-seven,
 // so the mountain seen from a distance was a rash of identical orange discs

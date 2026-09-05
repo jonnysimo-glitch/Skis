@@ -25,8 +25,36 @@ function normalise(v) {
   return [v[0] / l, v[1] / l, v[2] / l];
 }
 
-/** Late afternoon, from the west, which is when the light on snow is best. */
-export const SUN = normalise([-0.5, 0.66, -0.56]);
+/**
+ * Afternoon, from the west, which is when the light on snow is best.
+ *
+ * Thirty degrees up, down from forty-one, and the correction is to realism as
+ * much as to looks: at 46 degrees north the midwinter sun peaks around
+ * twenty-one and only reaches forty by the equinox, so forty-one was a summer
+ * sun over a ski resort. It also cast almost nothing. Monterosa averages about
+ * fifteen degrees of slope across its whole width, so a sun at forty-one
+ * clears nearly all of it — four per cent of the mountain in shadow, which is
+ * a feature nobody can see. At thirty it is a third, which is what an
+ * afternoon on a mountain actually looks like.
+ */
+export const SUN = normalise([-0.5, 0.434, -0.56]);
+
+/**
+ * How the shadow march is spent, and how soft the edge of a shadow is.
+ *
+ * Thirty geometric steps growing by a fifth reach about forty kilometres from
+ * a start half a cell out, which is past the far side of any resort — and
+ * spend most of them in the first kilometre, where a bank or a roll in the
+ * ground does the blocking.
+ *
+ * The softness is in visual metres: ground the sun misses by less than this is
+ * partly lit. It stands in for the sun having a width, which is what makes a
+ * real shadow edge soft, and without it every shadow on the mountain has the
+ * hard edge of something cut out with scissors.
+ */
+const SHADOW_STEPS = 30;
+const SHADOW_GROWTH = 1.2;
+const SHADOW_SOFT = 90;
 
 /** Deterministic value noise — the same mountain every time. */
 function hash2(x, y) {
@@ -300,13 +328,85 @@ export function buildField(nodes, makeProjector) {
     shades = next;
   }
 
+  /*
+   * Cast shadows: whether a ridge is standing between this ground and the sun.
+   *
+   * The hillshade above says which way a face is turned, which is a different
+   * question and the easier one. It is why the terrain has always looked lit
+   * but never looked like a mountain in the afternoon: a north face and the
+   * bowl behind a ridge are shaded identically, when in life one is grey and
+   * the other is blue and you can see the line between them from the lift.
+   *
+   * Marched toward the sun in visual space — heights times the exaggeration —
+   * so the shadows agree with the shading, which is built from the exaggerated
+   * normal, and with the projection, which draws the same exaggerated
+   * mountain. Shadows cast by a mountain of the true proportions would fall in
+   * the wrong places on this one.
+   *
+   * Geometric steps rather than even ones. What blocks the sun is either a
+   * bank a few metres away or a ridge kilometres off, and stepping finely
+   * enough for the first all the way out to the second is thirty times the
+   * work for the same answer.
+   *
+   * Once per mountain, not per frame: it depends on the terrain and the sun,
+   * and neither moves while someone is looking at it.
+   */
+  let shadows = new Float32Array(GRID * GRID);
+  {
+    const cellW = Math.min(dxW, dzW);
+    for (let i = 0; i < GRID; i++) {
+      for (let j = 0; j < GRID; j++) {
+        const x0 = minX + dxW * (i + 0.5);
+        const z0 = minZ + dzW * (j + 0.5);
+        const y0 = sample(x0, z0) * VERT_EXAGGERATION;
+        let blocked = 0;
+        let t = cellW * 0.6;
+        for (let k = 0; k < SHADOW_STEPS; k++) {
+          const x = x0 + SUN[0] * t;
+          const z = z0 + SUN[2] * t;
+          if (x < minX || x > maxX || z < minZ || z > maxZ) break;
+          // How far the terrain rises above the ray, in visual metres. A
+          // magnitude rather than a flag: a ridge that clears the ray by a
+          // hair is a soft edge, and a binary test draws it as a cliff.
+          const over = sample(x, z) * VERT_EXAGGERATION - (y0 + SUN[1] * t);
+          if (over > blocked) blocked = over;
+          t *= SHADOW_GROWTH;
+        }
+        shadows[qAt(i, j)] = Math.max(0, Math.min(1, blocked / SHADOW_SOFT));
+      }
+    }
+    // Smoothed the same way and for the same reason as the hillshade: the
+    // march is one ray per quad, so its edges land on quad boundaries and
+    // read as stairs down the side of a ridge.
+    for (let pass = 0; pass < 2; pass++) {
+      const next = new Float32Array(GRID * GRID);
+      for (let i = 0; i < GRID; i++) {
+        for (let j = 0; j < GRID; j++) {
+          let sum = 0;
+          let count = 0;
+          for (let di = -1; di <= 1; di++) {
+            for (let dj = -1; dj <= 1; dj++) {
+              const a = i + di;
+              const b = j + dj;
+              if (a < 0 || a >= GRID || b < 0 || b >= GRID) continue;
+              sum += shadows[qAt(a, b)];
+              count++;
+            }
+          }
+          next[qAt(i, j)] = sum / count;
+        }
+      }
+      shadows = next;
+    }
+  }
+
   // The height a tenth of the ground is below: the bottom of the mountain
   // proper, as opposed to the bottom of its deepest single valley.
   const sorted = Array.from(heights).sort((a, b) => a - b);
   const body = sorted[Math.floor(sorted.length * 0.1)];
 
   return {
-    proj, heights, at, sample, shades, steeps, grains, qAt,
+    proj, heights, at, sample, shades, shadows, steeps, grains, qAt,
     minX, maxX, minZ, maxZ, lo, hi, body,
     cx: (minX + maxX) / 2,
     cz: (minZ + maxZ) / 2,

@@ -430,7 +430,21 @@ const ROCK_TO = 0.88;
 const SUNLIT = [1.05, 1.02, 0.96];
 const SHADOW = [0.78, 0.87, 1.06];
 
-function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0) {
+/**
+ * Ground the sun cannot reach.
+ *
+ * Darker, and bluer as well as darker, which is the part that matters. Snow in
+ * shadow is lit by the sky and nothing else, so it goes blue — and it is the
+ * blue, not the darkness, that tells a skier at a distance that a slope is out
+ * of the sun. Multiplying by a grey would render it as a slope that is merely
+ * facing away, which the hillshade already says.
+ */
+function inShadow(c, shadow) {
+  if (!(shadow > 0)) return c;
+  return mix(c, [c[0] * 0.60, c[1] * 0.69, c[2] * 0.87], shadow);
+}
+
+function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0, shadow = 0) {
   const t = Math.max(0, Math.min(1, (alt - lo) / (hi - lo || 1)));
   let k1 = BANDS.length - 1;
   while (k1 > 1 && BANDS[k1 - 1][0] > t) k1--;
@@ -456,6 +470,8 @@ function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0) {
   const lift = 1 + grain * 0.09;
   c = [c[0] * lift, c[1] * lift, c[2] * lift];
 
+  c = inShadow(c, shadow);
+
   // A touch of aerial perspective so far ridges sit back, but only a touch.
   // Washing the surface into the sky is what makes a solid model look like a
   // transparency laid over it, and this one is meant to read as an object.
@@ -476,10 +492,11 @@ function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0) {
  * goes on top, weaker, because the photograph is carrying the detail now and
  * the shading only has to say which way each face is turned.
  */
-function photoColour(rgb, shade, haze) {
+function photoColour(rgb, shade, haze, shadow = 0) {
   const k = 0.72 + 0.46 * shade;
   const tint = mix(SHADOW, SUNLIT, Math.max(0, Math.min(1, shade * 1.15)));
   let c = [rgb[0] * k * tint[0], rgb[1] * k * tint[1], rgb[2] * k * tint[2]];
+  c = inShadow(c, shadow);
   c = mix(c, SKY_HORIZON, haze * 0.16);
   return `rgb(${Math.max(0, Math.min(255, c[0])) | 0},` +
     `${Math.max(0, Math.min(255, c[1])) | 0},` +
@@ -1020,7 +1037,7 @@ export default function FallbackTerrain({
             minZ + dz * (q.gj + (t0 + t1) / 2)
           );
           const rgb = drape.at(lat, lon) ?? q.photo;
-          const fill = photoColour(rgb, q.shade, haze);
+          const fill = photoColour(rgb, q.shade, haze, q.shadow);
           g.beginPath();
           g.moveTo(px(s0, t0), py(s0, t0));
           g.lineTo(px(s1, t0), py(s1, t0));
@@ -1039,7 +1056,7 @@ export default function FallbackTerrain({
     };
 
     const drawTerrain = (v, cam, g, dep) => {
-      const { heights, at, shades, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
+      const { heights, at, shades, shadows, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
       const skin = photoGrid();
@@ -1127,6 +1144,7 @@ export default function FallbackTerrain({
             gj: j,
             photo: skin ? skin[i * GRID + j] : null,
             shade: shades[qAt(i, j)],
+            shadow: shadows && shadowsOn ? shadows[qAt(i, j)] : 0,
             steep: steeps[qAt(i, j)],
             grain: grains[qAt(i, j)],
           });
@@ -1297,8 +1315,8 @@ export default function FallbackTerrain({
           // fetched — falls back to the drawn surface rather than to a hole,
           // so the edge of the imagery is a change of texture and not a cliff.
           : q.photo
-            ? photoColour(q.photo, q.shade, haze)
-            : surfaceColour(q.alt, lo, hi, q.shade, haze, q.steep, q.grain);
+            ? photoColour(q.photo, q.shade, haze, q.shadow)
+            : surfaceColour(q.alt, lo, hi, q.shade, haze, q.steep, q.grain, q.shadow);
         g.beginPath();
         g.moveTo(a.x, a.y);
         g.lineTo(b.x, b.y);
@@ -2323,6 +2341,24 @@ export default function FallbackTerrain({
       }
       return best;
     };
+
+    /*
+     * Cast shadows, switchable, for the checks only.
+     *
+     * Whether a shadow reached the screen cannot be answered by looking at one
+     * picture. The snow palette is blue-leaning to begin with, so "count the
+     * blue pixels" put two thirds of a sunlit mountain in shadow, and no
+     * threshold separates the two populations because they overlap. Rendering
+     * the same view twice and subtracting does separate them, and there is no
+     * other way to ask.
+     */
+    let shadowsOn = true;
+    if (mapTest && typeof window !== "undefined") {
+      window.__skisSetShadows = (on) => {
+        shadowsOn = Boolean(on);
+        dirty.current = true;
+      };
+    }
 
     // Where on the mountain a screen position lands. The gesture code needs
     // this to hold the ground under a thumb; a check needs it to know what

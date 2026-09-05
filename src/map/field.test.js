@@ -100,6 +100,72 @@ for (const [name, f, s] of [["monterosa", mono, sMono], ["the other", other, sOt
     tallest <= s.thickness + 0.01, `tallest ${tallest.toFixed(1)}m, thickness ${s.thickness.toFixed(1)}m`);
 }
 
+console.log("\nAND A RIDGE PUTS THE GROUND BEHIND IT IN SHADOW");
+
+/*
+ * A cast shadow is a different thing from a hillshade, and the whole reason to
+ * compute one. A hillshade says which way a face is turned; it cannot know
+ * that a ridge is standing between this ground and the sun, so a north face
+ * and a sunlit bowl behind a ridge come out identically shaded. In life one is
+ * grey and the other is blue and the line between them is visible from the
+ * lift.
+ *
+ * Checked on a made-up mountain rather than on a real one, so the answer is
+ * not a fact about Monterosa: a single tall peak with flat ground around it,
+ * where which side is dark is a matter of arithmetic and not of taste.
+ */
+{
+  const WALL = {
+    peak: { lat: 46.00, lon: 11.00, alt: 3000 },
+    n: { lat: 46.03, lon: 11.00, alt: 1000 },
+    s: { lat: 45.97, lon: 11.00, alt: 1000 },
+    e: { lat: 46.00, lon: 11.04, alt: 1000 },
+    w: { lat: 46.00, lon: 10.96, alt: 1000 },
+  };
+  const f = buildField(WALL, makeProjector(WALL));
+  check("a mountain casts some shadow at all", [...f.shadows].some((v) => v > 0.25),
+    `deepest ${Math.max(...f.shadows).toFixed(2)}`);
+
+  /*
+   * SUN points west and north with a positive height, so the shadow falls east
+   * and south of the peak. Sampled a good way out on each side, past the
+   * peak's own slope, where the only thing that can darken the ground is the
+   * peak standing in the way.
+   */
+  const shadeAt = (fx, fz) => {
+    const i = Math.max(0, Math.min(GRID - 1, Math.round(fx * GRID)));
+    const j = Math.max(0, Math.min(GRID - 1, Math.round(fz * GRID)));
+    return f.shadows[f.qAt(i, j)];
+  };
+  const sunward = shadeAt(0.28, 0.28);   // toward the sun from the peak
+  const away = shadeAt(0.72, 0.72);      // the side it must fall on
+  check("and it falls on the side away from the sun", away > sunward,
+    `${away.toFixed(2)} away against ${sunward.toFixed(2)} sunward`);
+  check("with the sunward side actually in the sun", sunward < 0.2, sunward.toFixed(2));
+
+  /*
+   * And most of a real mountain is in the sun.
+   *
+   * The failure this catches is the sign of the march being wrong, which
+   * shadows everything and looks, at a glance, like a dramatically lit
+   * mountain rather than like a bug.
+   *
+   * Checked on Monterosa rather than on invented flat ground, which was the
+   * first attempt and does not exist: buildField roughens the terrain on
+   * purpose, so four nodes at one altitude come out as six hundred metres of
+   * relief. There is no flat ground in this model to cast nothing.
+   */
+  const deep = [...mono.shadows].filter((v) => v > 0.6).length;
+  const share = deep / mono.shadows.length;
+  check("most of a mountain is in the sun", share > 0 && share < 0.35,
+    `${(share * 100).toFixed(0)}% of it in shadow`);
+  // Soft edges, not a stencil. Every value at 0 or 1 means the softening is
+  // not doing anything and every shadow on the mountain has a cut edge.
+  const partial = [...mono.shadows].filter((v) => v > 0.08 && v < 0.92).length;
+  check("and the edges of a shadow are soft", partial > deep * 0.5,
+    `${partial} quads part shaded against ${deep} fully`);
+}
+
 console.log("\nTHE CAMERA IS ABOVE THE MOUNTAIN");
 
 // Pitch is measured from straight down, so every value in range is a camera
