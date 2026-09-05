@@ -94,6 +94,9 @@ const MAP_CHOICES = [
   { id: "world", name: "Winter map", needsKey: true },
 ];
 
+/** What the layer control calls a map, for anything else that has to say it. */
+const mapChoiceName = (id) => MAP_CHOICES.find((c) => c.id === id)?.name ?? "The map";
+
 /** Tab bar height in CSS pixels; keep in step with --tabbar. */
 const TABBAR_H = 56;
 
@@ -930,7 +933,15 @@ export default function App() {
         mapBroken && wantWorld ? (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
-          <span className="mapnote__t">The world map would not load. Showing the cut-out.</span>
+          {/* Named the way the layer control names them. "The world map"
+              and "the cut-out" are what these are called in the source, and
+              neither is on the menu the reader just used — one of them is not
+              on any menu. It matters more now that Satellite is the default:
+              a wrong key, or an origin restriction that does not list this
+              site, and this sentence is the first thing anyone sees. */}
+          <span className="mapnote__t">
+            {mapChoiceName(mapMode)} would not load. Showing Terrain instead.
+          </span>
           <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">
             <Close width="16" height="16" />
           </button>
