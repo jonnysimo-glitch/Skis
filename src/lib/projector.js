@@ -34,5 +34,9 @@ export function projectorFor(nodes) {
     // North is -z: the projection looks along +z, so this keeps north away
     // from the camera at a bearing of zero.
     project: (lat, lon) => ({ x: (lon - lon0) * mPerLon, z: -(lat - lat0) * M_PER_LAT }),
+    // And back again, for anything that starts from the terrain mesh rather
+    // than from a node — the satellite drape has a grid of local metres and
+    // needs to know what part of the world each square of it is looking at.
+    unproject: (x, z) => ({ lat: lat0 - z / M_PER_LAT, lon: lon0 + x / mPerLon }),
   };
 }

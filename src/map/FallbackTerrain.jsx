@@ -70,11 +70,73 @@ const TERRAIN_BLUR = 1.9;
 /**
  * Depth-buffer resolution, as a fraction of the canvas in CSS pixels.
  *
- * See the block by `depth` in the effect for why it is this coarse. The one
- * artefact it buys is a line ending a pixel or two early where it disappears
- * over a ridge, against a silhouette that is itself soft from the blur.
+ * Was a third, which put the point where a line disappears over a ridge on a
+ * three pixel grid — and a quantised cut is not a still image, it is a line
+ * whose end jumps three pixels at a time while you turn the mountain. Against
+ * a moving silhouette that reads as the line chattering rather than as terrain
+ * passing in front of it, which is a worse artefact than the one the depth
+ * test removed.
+ *
+ * A half rather than the whole because the silhouette it is representing is
+ * itself soft to about two pixels: the terrain is composited through a blur.
+ * A depth buffer sharper than the edge it describes is precision with nothing
+ * to be precise about, and it is four times the readback for it. Measured
+ * anyway — a full-resolution buffer came out the same, so this is chosen on
+ * what it is worth rather than on what it costs.
  */
-const DEPTH_SCALE = 1 / 3;
+const DEPTH_SCALE = 1 / 2;
+
+/**
+ * How many terrain quads across one depth polygon covers.
+ *
+ * One, after trying two. Coarsening is *safe* — every approximation it makes
+ * errs toward hiding less, never more — but it is not free in the way it
+ * looked. A block two quads across is 334 metres of ground written at a single
+ * depth, so every ridge under-occludes by up to that, and the same view went
+ * from hiding 30 runs of 134 to hiding 19. Ten milliseconds a frame for a
+ * third of the thing the pass exists to do is the wrong way round.
+ *
+ * Kept as a constant rather than folded away because the machinery for it is
+ * the same machinery the slab's faces use, and because the next person to look
+ * at this for speed should be able to see the knob and the number it costs.
+ */
+const DEPTH_STEP = 1;
+
+/**
+ * How big a photographed quad has to get on screen before it is painted from
+ * the imagery at more than one colour, and how far that can go.
+ *
+ * Twelve pixels a cell, because the terrain is composited through a two to
+ * three pixel blur and there is nothing to be gained by painting detail the
+ * blur will remove. The ceiling is what stops a quad that fills the screen at
+ * maximum zoom asking for a thousand cells on its own; four by four is enough
+ * to turn a block into a picture, and past that the limit is the imagery's own
+ * resolution rather than the mesh's.
+ */
+const SUBDIVIDE_PX = 12;
+const SUBDIVIDE_MAX = 4;
+
+/**
+ * How long the camera has to be still before asking for sharper imagery.
+ *
+ * Long enough that a drag, a pinch and the glide that follows one are a single
+ * request rather than sixty. Short enough that it arrives while the person is
+ * still looking at the thing they zoomed in on.
+ */
+const DETAIL_SETTLE_MS = 420;
+
+/**
+ * How far the ground-holding correction is allowed to move the map in one
+ * frame, in pixels.
+ *
+ * A drag holds the point it grabbed under the thumb, which needs that point to
+ * still be somewhere sensible on screen. Pushed to the edge of the overscroll,
+ * or swung round behind the camera by a rotate that started mid-drag, its
+ * projection runs off to a large number and the correction would throw the
+ * whole map across the screen between two frames. Past this it is not a
+ * correction any more and the plain screen-space delta is the safer answer.
+ */
+const GRAB_MAX_JUMP = 260;
 
 /**
  * How far in front of the ground a line has to be to count as visible, as a
@@ -391,6 +453,27 @@ function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0) {
     `${Math.max(0, Math.min(255, c[2])) | 0})`;
 }
 
+/**
+ * A photographed colour, lit and hazed the same way a drawn one is.
+ *
+ * The relief has to survive the drape. A satellite tile is already lit — by
+ * the sun that was up when the satellite passed, from a direction that has
+ * nothing to do with this camera — and dropping it on flat-shaded quads with
+ * no hillshade gives a picture with no shape in it at all: a mountain that
+ * reads as a paper map of itself. So the same lighting the drawn terrain uses
+ * goes on top, weaker, because the photograph is carrying the detail now and
+ * the shading only has to say which way each face is turned.
+ */
+function photoColour(rgb, shade, haze) {
+  const k = 0.72 + 0.46 * shade;
+  const tint = mix(SHADOW, SUNLIT, Math.max(0, Math.min(1, shade * 1.15)));
+  let c = [rgb[0] * k * tint[0], rgb[1] * k * tint[1], rgb[2] * k * tint[2]];
+  c = mix(c, SKY_HORIZON, haze * 0.16);
+  return `rgb(${Math.max(0, Math.min(255, c[0])) | 0},` +
+    `${Math.max(0, Math.min(255, c[1])) | 0},` +
+    `${Math.max(0, Math.min(255, c[2])) | 0})`;
+}
+
 export default function FallbackTerrain({
   route,
   graph,
@@ -405,6 +488,11 @@ export default function FallbackTerrain({
   nodes = ACTIVE_NODES,
   places = ACTIVE_PLACES,
   makeProjector = activeProjector,
+  // A satellite drape, or null for the drawn surface. See src/map/imagery.js.
+  imagery = null,
+  // Called with the ground in frame and how finely it wants photographing,
+  // once the camera has come to rest. See `visibleGround`.
+  onDetail,
   onScale,
 }) {
   const canvasRef = useRef(null);
@@ -417,7 +505,7 @@ export default function FallbackTerrain({
   const dirty = useRef(true);
   const lastCam = useRef(null);
   const projectRef = useRef(null);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, onScale });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onDetail, onScale });
   const mapTest =
     typeof window !== "undefined" && window.location.search.includes("maptest=1");
 
@@ -440,7 +528,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, onScale };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onDetail, onScale };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -786,39 +874,246 @@ export default function FallbackTerrain({
       fn(lastScale);
     };
 
+    /**
+     * What ground is on screen, and how finely it needs photographing.
+     *
+     * The drape starts as one mosaic of the whole resort, which is all that
+     * can be prefetched: a ski area is a dozen kilometres across, and covering
+     * that at the half-metre a building needs would be ten thousand tiles. So
+     * the base layer is coarse by necessity, and close up it is blocks.
+     *
+     * The way out is the one every map uses — fetch detail for what is
+     * actually in frame. Zoomed in, that is a few hundred metres of mountain,
+     * which fits in the same handful of tiles at a zoom four or five levels
+     * finer. This reports the box and the resolution; the fetching is the
+     * app's business, not the renderer's.
+     *
+     * Reported on the vertex grid rather than the corners of the viewport,
+     * because the ground on screen is whatever part of a tilted, rotated
+     * height field lands there, and that is not a rectangle in any space this
+     * has a formula for.
+     */
+    const visibleGround = (v, cam) => {
+      const { heights, at, minX, maxX, minZ, maxZ } = field;
+      const dx = (maxX - minX) / GRID;
+      const dz = (maxZ - minZ) / GRID;
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let z0 = Infinity;
+      let z1 = -Infinity;
+      // Every fourth vertex: this runs when the camera stops, and the answer
+      // feeds a choice between whole zoom levels.
+      for (let i = 0; i <= GRID; i += 4) {
+        for (let j = 0; j <= GRID; j += 4) {
+          const x = minX + dx * i;
+          const z = minZ + dz * j;
+          const p = project(x, heights[at(i, j)], z, v, cam);
+          if (p.x < 0 || p.y < 0 || p.x > width || p.y > height) continue;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (z < z0) z0 = z;
+          if (z > z1) z1 = z;
+        }
+      }
+      // Nothing in frame, or a sliver: fall back to the whole mountain rather
+      // than asking for imagery of a point.
+      if (!Number.isFinite(x0) || x1 - x0 < dx || z1 - z0 < dz) return null;
+      // A margin, so a small pan does not immediately fall off the edge of
+      // what was fetched.
+      const padX = (x1 - x0) * 0.15;
+      const padZ = (z1 - z0) * 0.15;
+      const a = field.proj.unproject(x0 - padX, z0 - padZ);
+      const b = field.proj.unproject(x1 + padX, z1 + padZ);
+      const y = field.sample(field.cx, field.cz);
+      const pa = project(field.cx - 500, y, field.cz, v, cam);
+      const pb = project(field.cx + 500, y, field.cz, v, cam);
+      const perKm = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+      if (!Number.isFinite(perKm) || perKm <= 0) return null;
+      return {
+        west: Math.min(a.lon, b.lon),
+        east: Math.max(a.lon, b.lon),
+        south: Math.min(a.lat, b.lat),
+        north: Math.max(a.lat, b.lat),
+        metresPerPixel: 1000 / perKm,
+      };
+    };
+
     // ---- terrain ---------------------------------------------------------
+    /*
+     * The photographed colour of every quad, worked out once.
+     *
+     * Which part of the world a quad covers does not change when the camera
+     * moves, so neither does its colour. Sampling in the draw loop would be
+     * five thousand texture lookups a frame for an answer that is the same
+     * every frame; this is five thousand once, and thrown away when the drape
+     * or the mountain changes.
+     */
+    let photo = null;
+    let photoFor = null;
+    const photoGrid = () => {
+      const drape = propsRef.current.imagery;
+      if (!drape) return null;
+      if (photoFor === drape) return photo;
+      const { at, minX, maxX, minZ, maxZ } = field;
+      const dx = (maxX - minX) / GRID;
+      const dz = (maxZ - minZ) / GRID;
+      const out = new Array(GRID * GRID);
+      for (let i = 0; i < GRID; i++) {
+        for (let j = 0; j < GRID; j++) {
+          // The middle of the quad, which is the ground the flat fill stands
+          // for — a corner would bias every square toward its neighbour.
+          const { lat, lon } = field.proj.unproject(minX + dx * (i + 0.5), minZ + dz * (j + 0.5));
+          out[i * GRID + j] = drape.at(lat, lon);
+        }
+      }
+      photoFor = drape;
+      photo = out;
+      return photo;
+    };
+
+    /**
+     * One quad, painted from the photograph at n by n instead of flat.
+     *
+     * The cell corners come from bilinear interpolation of the quad's four
+     * projected corners rather than from projecting each one, which is both
+     * far cheaper and exactly what tiles the quad without seams. It is not
+     * perspective-correct — the true mapping is a homography and this is its
+     * affine approximation — but the error over 167 metres at the zoom where
+     * subdivision starts is a fraction of a pixel, and the alternative is
+     * projecting sixteen more points per quad to remove something nobody can
+     * see.
+     *
+     * The hillshade is the quad's, not the cell's. Slope is a property of the
+     * mesh and the mesh has no more detail to give here; using one value keeps
+     * the lighting continuous across the cell boundaries, where varying it
+     * would draw a grid on the mountain.
+     */
+    const drawTextured = (g, q, n, haze, dx, dz, minX, minZ) => {
+      const drape = propsRef.current.imagery;
+      const [a, b, c, d] = q.pts;
+      // p(s,t): s runs a→b along the mesh's i, t runs a→d along its j.
+      const px = (s, t) =>
+        a.x * (1 - s) * (1 - t) + b.x * s * (1 - t) + d.x * (1 - s) * t + c.x * s * t;
+      const py = (s, t) =>
+        a.y * (1 - s) * (1 - t) + b.y * s * (1 - t) + d.y * (1 - s) * t + c.y * s * t;
+
+      for (let u = 0; u < n; u++) {
+        const s0 = u / n;
+        const s1 = (u + 1) / n;
+        for (let w = 0; w < n; w++) {
+          const t0 = w / n;
+          const t1 = (w + 1) / n;
+          const { lat, lon } = field.proj.unproject(
+            minX + dx * (q.gi + (s0 + s1) / 2),
+            minZ + dz * (q.gj + (t0 + t1) / 2)
+          );
+          const rgb = drape.at(lat, lon) ?? q.photo;
+          const fill = photoColour(rgb, q.shade, haze);
+          g.beginPath();
+          g.moveTo(px(s0, t0), py(s0, t0));
+          g.lineTo(px(s1, t0), py(s1, t0));
+          g.lineTo(px(s1, t1), py(s1, t1));
+          g.lineTo(px(s0, t1), py(s0, t1));
+          g.closePath();
+          g.fillStyle = fill;
+          g.fill();
+          // Same reason as the whole-quad stroke: without it the hairline gaps
+          // between cells show the canvas through as a grid.
+          g.strokeStyle = fill;
+          g.lineWidth = 0.6;
+          g.stroke();
+        }
+      }
+    };
+
     const drawTerrain = (v, cam, g, dep) => {
       const { heights, at, shades, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
+      const skin = photoGrid();
       const quads = [];
       let dMin = Infinity;
       let dMax = -Infinity;
 
+      /*
+       * Every grid vertex, projected once.
+       *
+       * A vertex is a corner of up to four quads, and this loop used to
+       * project each quad's four corners independently: twenty thousand
+       * projections a frame where five thousand describe the same mountain.
+       * The waste was invisible while the terrain was the only thing being
+       * drawn and became the thing to fix the moment a depth pass wanted the
+       * same corners again.
+       */
+      const verts = new Array((GRID + 1) * (GRID + 1));
+      for (let i = 0; i <= GRID; i++) {
+        const x = minX + dx * i;
+        for (let j = 0; j <= GRID; j++) {
+          const k = at(i, j);
+          verts[k] = project(x, heights[k], minZ + dz * j, v, cam);
+        }
+      }
+
       for (let i = 0; i < GRID; i++) {
         for (let j = 0; j < GRID; j++) {
-          const x0 = minX + dx * i;
-          const z0 = minZ + dz * j;
           const h00 = heights[at(i, j)];
           const h10 = heights[at(i + 1, j)];
           const h01 = heights[at(i, j + 1)];
           const h11 = heights[at(i + 1, j + 1)];
 
-          const a = project(x0, h00, z0, v, cam);
-          const b = project(x0 + dx, h10, z0, v, cam);
-          const c = project(x0 + dx, h11, z0 + dz, v, cam);
-          const d = project(x0, h01, z0 + dz, v, cam);
+          const a = verts[at(i, j)];
+          const b = verts[at(i + 1, j)];
+          const c = verts[at(i + 1, j + 1)];
+          const d = verts[at(i, j + 1)];
 
           const depth = (a.depth + c.depth) / 2;
           dMin = Math.min(dMin, depth);
           dMax = Math.max(dMax, depth);
 
+          /*
+           * The depth mesh is coarser than the picture, and safe to be.
+           *
+           * Both passes fill the same five thousand quads, and it is the fills
+           * that cost — projecting every vertex once instead of four times
+           * barely moved the number. So one depth polygon covers a block of
+           * DEPTH_STEP by DEPTH_STEP quads.
+           *
+           * It stays correct because of which way each approximation errs. The
+           * depth written is the maximum over every vertex in the block, and
+           * that is exact rather than approximate: each quad is planar, so the
+           * furthest point of the surface inside a block is one of its
+           * vertices. The polygon is the block's four corners, which a bulge
+           * in the middle can poke outside of — and a pixel the polygon misses
+           * reads as sky, which hides nothing. Both directions are
+           * under-occlusion, never over.
+           */
+          let block = null;
+          if (dep && i % DEPTH_STEP === 0 && j % DEPTH_STEP === 0) {
+            const i2 = Math.min(i + DEPTH_STEP, GRID);
+            const j2 = Math.min(j + DEPTH_STEP, GRID);
+            let far = -Infinity;
+            for (let u = i; u <= i2; u++) {
+              for (let w = j; w <= j2; w++) {
+                const q = verts[at(u, w)].depth;
+                if (q > far) far = q;
+              }
+            }
+            block = {
+              far,
+              pts: [verts[at(i, j)], verts[at(i2, j)], verts[at(i2, j2)], verts[at(i, j2)]],
+            };
+          }
+
           quads.push({
             depth,
+            block,
             pts: [a, b, c, d],
             // All four corners, not two: the diagonal average jumped between
             // neighbours that share three of them.
             alt: (h00 + h10 + h01 + h11) / 4,
+            gi: i,
+            gj: j,
+            photo: skin ? skin[i * GRID + j] : null,
             shade: shades[qAt(i, j)],
             steep: steeps[qAt(i, j)],
             grain: grains[qAt(i, j)],
@@ -849,17 +1144,22 @@ export default function FallbackTerrain({
 
           const p1 = project(xa, ha, za, v, cam);
           const p2 = project(xb, hb, zb, v, cam);
+          const pts = [
+            p1,
+            p2,
+            project(xb, base, zb, v, cam),
+            project(xa, base, za, v, cam),
+          ];
           quads.push({
             // Depth from the top corners only. Averaging a top and a bottom
             // describes a point halfway down and sorts a near face behind
             // terrain it stands in front of.
             depth: (p1.depth + p2.depth) / 2,
-            pts: [
-              p1,
-              p2,
-              project(xb, base, zb, v, cam),
-              project(xa, base, za, v, cam),
-            ],
+            // A rim face is one polygon already, so it goes in at full size.
+            // It has to go in at all: the near rim stands in front of the
+            // valley floor behind it.
+            block: dep ? { far: Math.max(...pts.map((q) => q.depth)), pts } : null,
+            pts,
             flat: out[0] !== 0 ? SKIRT_SHADE : SKIRT_LIT,
           });
         };
@@ -881,14 +1181,16 @@ export default function FallbackTerrain({
         }
 
         // The underside, one flat tone, so it is a box and not a shell.
+        const floor = [
+          project(minX, base, minZ, v, cam),
+          project(maxX, base, minZ, v, cam),
+          project(maxX, base, maxZ, v, cam),
+          project(minX, base, maxZ, v, cam),
+        ];
         quads.push({
           depth: Infinity, // behind everything; only seen from below
-          pts: [
-            project(minX, base, minZ, v, cam),
-            project(maxX, base, minZ, v, cam),
-            project(maxX, base, maxZ, v, cam),
-            project(minX, base, maxZ, v, cam),
-          ],
+          block: dep ? { far: Math.max(...floor.map((q) => q.depth)), pts: floor } : null,
+          pts: floor,
           flat: BASE_COLOUR,
         });
       }
@@ -906,24 +1208,85 @@ export default function FallbackTerrain({
        * range finite.
        */
       let dFar = dMin;
-      for (const q of quads) {
-        let far = -Infinity;
-        for (const pt of q.pts) if (pt.depth > far) far = pt.depth;
-        q.far = far;
-        if (far > dFar) dFar = far;
-      }
+      for (const q of quads) if (q.block && q.block.far > dFar) dFar = q.block.far;
       // What the visibility test decodes back with. Published before the loop
       // so a frame that draws nothing still leaves a usable scale.
       depthNear = dMin;
       depthSpan = dFar - dMin || 1;
+      // How the ground actually got painted this frame. A check can ask whether
+      // the drape is being resolved rather than inferring it from pixels,
+      // which a hillshade and a bit of aliasing make a poor way to ask.
+      let flat = 0;
+      let textured = 0;
+      let cells = 0;
       for (const q of quads) {
         const haze = Math.max(0, Math.min(1, (q.depth - dMin) / dSpan));
         // Flat means exactly that: one tone, no relief shading and no haze.
         // The block is an object the mountain sits in, not more mountain.
+        const [a, b, c, d] = q.pts;
+
+        /*
+         * Off the screen entirely, so there is nothing to paint.
+         *
+         * The canvas would clip these anyway, which is why the mesh got away
+         * without a test for years: at the framing the app opens on, the whole
+         * mountain is in frame and nothing is rejected. Zoomed in it is the
+         * other way round — ninety-nine per cent of five thousand quads are
+         * outside the viewport, and each one still cost a path built and
+         * handed to the rasteriser to be thrown away.
+         *
+         * It became worth doing when the drape arrived, because subdivision is
+         * decided on how big a quad is on screen and says nothing about
+         * whether it is ON the screen: at maximum zoom two thousand off-screen
+         * quads each qualified for sixteen cells, and a redraw went from 51ms
+         * to 196ms painting them.
+         */
+        if (Math.max(a.x, b.x, c.x, d.x) < 0 || Math.min(a.x, b.x, c.x, d.x) > width ||
+            Math.max(a.y, b.y, c.y, d.y) < 0 || Math.min(a.y, b.y, c.y, d.y) > height) {
+          continue;
+        }
+
+        /*
+         * A quad that is big on screen gets more than one colour.
+         *
+         * One flat colour per quad is 167 metres of ground, and at the framing
+         * the app opens on that is about five pixels — finer than the blur the
+         * terrain is composited through, so nothing is lost. Zoom in and the
+         * same quad is eighty pixels across, and a photograph rendered as
+         * eighty-pixel blocks is not a photograph. It is the one place the
+         * drape visibly stops being one.
+         *
+         * Subdividing costs nothing at the framing where the mesh is all on
+         * screen, because at that framing no quad is big enough to qualify —
+         * and where quads ARE big, most of the mountain is off screen. The
+         * work is bounded by the viewport rather than by the mesh: the number
+         * of subdivided cells is roughly the visible area over the cell size,
+         * whatever the zoom.
+         *
+         * Only for photography. The drawn surface's detail is a function of
+         * altitude and slope, both of which this already has per quad, so
+         * subdividing it would interpolate between two numbers it made up.
+         */
+        if (skin && q.photo) {
+          const wide = Math.max(Math.abs(b.x - a.x), Math.abs(c.x - d.x));
+          const tall = Math.max(Math.abs(d.y - a.y), Math.abs(c.y - b.y));
+          const n = Math.max(1, Math.min(SUBDIVIDE_MAX,
+            Math.round(Math.max(wide, tall) / SUBDIVIDE_PX)));
+          if (n > 1) {
+            drawTextured(g, q, n, haze, dx, dz, minX, minZ);
+            if (mapTest) { textured++; cells += n * n; }
+            continue;
+          }
+        }
+
         const fill = q.flat
           ? `rgb(${q.flat[0]},${q.flat[1]},${q.flat[2]})`
-          : surfaceColour(q.alt, lo, hi, q.shade, haze, q.steep, q.grain);
-        const [a, b, c, d] = q.pts;
+          // A quad the drape could not reach — outside the tiles that were
+          // fetched — falls back to the drawn surface rather than to a hole,
+          // so the edge of the imagery is a change of texture and not a cliff.
+          : q.photo
+            ? photoColour(q.photo, q.shade, haze)
+            : surfaceColour(q.alt, lo, hi, q.shade, haze, q.steep, q.grain);
         g.beginPath();
         g.moveTo(a.x, a.y);
         g.lineTo(b.x, b.y);
@@ -935,27 +1298,30 @@ export default function FallbackTerrain({
         g.strokeStyle = fill; // hides seams between adjacent quads
         g.lineWidth = 0.6;
         g.stroke();
+        if (mapTest && !q.flat) flat++;
 
-        if (dep) {
-          // The same shape, in the same order, coloured by how far away it is.
-          // Alpha stays at full wherever anything was drawn, so "is this sky"
-          // is a test on alpha and open sky never occludes anything.
-          const t = Math.max(0, Math.min(1, (q.far - dMin) / depthSpan));
+        if (dep && q.block) {
+          // In the same order, coloured by how far away it is. Alpha stays at
+          // full wherever anything was drawn, so "is this sky" is a test on
+          // alpha and open sky never occludes anything.
+          const t = Math.max(0, Math.min(1, (q.block.far - dMin) / depthSpan));
           // Ceil, not round. The stored depth has to be at or beyond the
           // quad's furthest corner for a line drawn on that quad to survive
           // the test; a value half a step nearer would cut the line into its
           // own ground. Erring outward costs a quantum of under-occlusion,
           // which is a fifth of a per cent of the scene.
           const n = Math.ceil(t * 255);
+          const [ba, bb, bc, bd] = q.block.pts;
           dep.beginPath();
-          dep.moveTo(a.x, a.y);
-          dep.lineTo(b.x, b.y);
-          dep.lineTo(c.x, c.y);
-          dep.lineTo(d.x, d.y);
+          dep.moveTo(ba.x, ba.y);
+          dep.lineTo(bb.x, bb.y);
+          dep.lineTo(bc.x, bc.y);
+          dep.lineTo(bd.x, bd.y);
           dep.fillStyle = DEPTH_GREYS[n];
           dep.fill();
         }
       }
+      if (mapTest) window.__skisSurface = { flat, textured, cells };
     };
 
     /**
@@ -1643,6 +2009,9 @@ export default function FallbackTerrain({
     let wheelPinch = false;
     let wheelAt = null;
     let lastFrameAt = 0;
+    // When the camera last moved, so the detail request can wait for it to
+    // stop. Zero once the request for that resting place has gone out.
+    let settleAt = 0;
     let raf = 0;
     let lastBearing = null;
     const frame = () => {
@@ -1823,6 +2192,15 @@ export default function FallbackTerrain({
         // and there are far more piste names than there is room for.
         drawRunNames(v, cam, boxes);
         drawPins(v, cam);
+        // The view moved, so whatever detail was asked for is now for
+        // somewhere else. Restart the clock rather than reporting mid-gesture:
+        // a drag would otherwise fire a request a frame, for boxes nobody is
+        // looking at by the time they arrive.
+        settleAt = now;
+      } else if (settleAt && now - settleAt > DETAIL_SETTLE_MS) {
+        settleAt = 0;
+        const want = propsRef.current.onDetail;
+        if (want && lastCam.current) want(visibleGround(v, lastCam.current));
       }
       raf = requestAnimationFrame(frame);
     };
@@ -1898,6 +2276,16 @@ export default function FallbackTerrain({
       return best;
     };
 
+    // Where on the mountain a screen position lands. The gesture code needs
+    // this to hold the ground under a thumb; a check needs it to know what
+    // ground was grabbed, which is the only way to ask whether it was held.
+    if (mapTest && typeof window !== "undefined") {
+      window.__skisGroundAt = (sx, sy) => {
+        const hit = groundUnder(view.current, sx, sy);
+        return hit ? field.proj.unproject(hit.x, hit.z) : null;
+      };
+    }
+
     const startGesture = () => {
       const c = centroid();
       const sp = pointers.size >= 2 ? spread() : {};
@@ -1927,9 +2315,10 @@ export default function FallbackTerrain({
         tilting: false,
         zooming: false,
         rotating: false,
-        // What the fingers are resting on. Found once here rather than every
-        // frame, so rotation can pivot on it.
-        anchor: pointers.size >= 2 ? groundUnder(view.current, c.x, c.y) : null,
+        // What the finger or fingers are resting on. Found once here rather
+        // than every frame: rotation pivots on it, and a one-finger drag holds
+        // it under the thumb.
+        anchor: groundUnder(view.current, c.x, c.y),
       };
     };
 
@@ -2076,8 +2465,48 @@ export default function FallbackTerrain({
       const c = centroid();
 
       if (pointers.size === 1) {
-        const dx = c.x - gesture.x;
-        const dy = c.y - gesture.y;
+        /*
+         * Drag holds the ground, not the screen.
+         *
+         * A screen-space pan moves the picture by however many pixels the
+         * thumb moved, which is right for a flat map seen from directly above
+         * and wrong for everything else. Tilted over, a pixel near the top of
+         * the frame is hundreds of metres of mountain and a pixel near the
+         * bottom is tens — so the same drag slides the ground out from under
+         * the finger at one end of the screen and lags behind it at the other.
+         * It is the difference between moving a photograph of a mountain and
+         * turning the mountain, and it is the single thing that makes this
+         * feel unlike Google Earth, which grabs the ground and keeps it under
+         * you.
+         *
+         * So the point under the thumb when the drag started is projected
+         * again with the camera that drew the last frame, and the pan takes up
+         * whatever gap has opened between where it is and where the thumb now
+         * is. Same camera on both sides, so the pan already in it cancels and
+         * only the correction is left — the same trick `rotateAbout` uses.
+         *
+         * The fallback is the old behaviour, for the frame before a camera
+         * exists and for a grab that lands on sky.
+         */
+        let dx = c.x - gesture.x;
+        let dy = c.y - gesture.y;
+        const held = gesture.anchor;
+        const cam = lastCam.current;
+        const proj = projectRef.current;
+        if (held && cam && proj) {
+          const now2 = proj(held.x, held.y, held.z, v, cam);
+          if (Number.isFinite(now2.x) && Number.isFinite(now2.y)) {
+            const gapX = c.x - now2.x;
+            const gapY = c.y - now2.y;
+            // Only believe it while the correction is the size of a drag. A
+            // grab that has swung behind the camera projects a long way off
+            // and would fling the map across the screen in one frame.
+            if (Math.hypot(gapX, gapY) < GRAB_MAX_JUMP) {
+              dx = gapX;
+              dy = gapY;
+            }
+          }
+        }
         v.panX = resist(v.panX, dx, v.panLimit?.x);
         v.panY = resist(v.panY, dy, v.panLimit?.y);
         // Clamped below at half a millisecond: coalesced moves can arrive with

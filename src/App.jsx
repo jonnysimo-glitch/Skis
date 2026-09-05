@@ -13,7 +13,8 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import Sheet from "./ui/Sheet.jsx";
 import FallbackTerrain from "./map/FallbackTerrain.jsx";
-import { hasMapKey } from "./map/config.js";
+import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
+import { FIELD_PAD } from "./map/field.js";
 
 // MapLibre is ~800KB and not needed until the map is on screen, so it is split
 // out. If the chunk cannot be fetched at all — offline before it was ever
@@ -301,8 +302,149 @@ export default function App() {
   const [addingFriend, setAddingFriend] = useState(false);
   const [friendError, setFriendError] = useState(null);
   const [navExpanded, setNavExpanded] = useState(false);
-  const wantWorld = mapMode === "world" || mapMode === "satellite";
+  /*
+   * Satellite is a skin on our own terrain, not somewhere else.
+   *
+   * It used to be grouped with the winter map as "wantWorld" — both swapped in
+   * MapLibre and MapTiler's basemap, which is a different map: its labels, its
+   * camera, its idea of where the pistes are, and none of the huts, names or
+   * scale bar this app spent its time getting right. Asking for the satellite
+   * view is not asking to leave; it is asking to see the same mountain
+   * photographed instead of drawn.
+   *
+   * So only the winter map is somewhere else now. Satellite stays on the
+   * terrain renderer and changes the colour of the ground.
+   */
+  const wantWorld = mapMode === "world";
   const showSchematic = !wantWorld || mapBroken || !mapLive;
+
+  /*
+   * The satellite tiles for whichever mountain is on screen.
+   *
+   * Fetched once per resort and held until the resort changes, because the
+   * imagery is a property of the ground rather than of the view — orbiting,
+   * zooming and planning a route all leave it alone. Not fetched at all until
+   * someone asks for satellite, so the common case pays nothing.
+   *
+   * A failure resolves to null and the map keeps its drawn surface, with the
+   * note explaining which one would not load. There is no state where the user
+   * is left looking at nothing: the terrain renderer is a complete map and it
+   * is already on screen.
+   */
+  const [drape, setDrape] = useState(null);
+  const [detail, setDetail] = useState(null);
+  // The last box asked for, so a settle that lands where the previous one did
+  // does not fetch it again. A ref, because changing it must not re-render.
+  const askedFor = useRef(null);
+  useEffect(() => {
+    if (mapMode !== "satellite" || !hasMapKey || !resort) {
+      setDrape(null);
+      return undefined;
+    }
+    let live = true;
+    setMapBroken(false);
+    (async () => {
+      const { loadImagery, templateTile, checkerTile } = await import("./map/imagery.js");
+      /*
+       * A tile source that needs no network, for the checks.
+       *
+       * The machine this is developed on cannot reach api.maptiler.com — the
+       * proxy answers 403 at the CONNECT, the same way it does for Overpass —
+       * so the only way to know the drape works is to give it tiles from
+       * somewhere else. `?maptest=1&tiles=check` swaps in generated ones,
+       * which exercises every step that can be wrong: the zoom, the tile
+       * range, the composite, the read back, the sampling, and the shading of
+       * the result. The only thing it does not exercise is the HTTP request.
+       */
+      const params = new URLSearchParams(window.location.search);
+      const synthetic = params.get("maptest") === "1" && params.get("tiles");
+      // The nodes, not the resort's configured bbox. The bbox is the area the
+      // Overpass query was drawn around and is deliberately generous; the
+      // terrain mesh is built from the nodes that survived, and imagery for a
+      // larger box than the mesh is a coarser zoom spent on ground nobody can
+      // see.
+      const lats = Object.values(NODES).map((n) => n.lat);
+      const lons = Object.values(NODES).map((n) => n.lon);
+      const w = Math.min(...lons);
+      const e = Math.max(...lons);
+      const so = Math.min(...lats);
+      const no = Math.max(...lats);
+      // The same 18% the terrain mesh pads its bounding box by, in
+      // src/map/field.js. Without it the outer ring of quads sits off the edge
+      // of the tiles that were fetched and falls back to the drawn surface:
+      // a white fringe of painted snow all the way round the photograph, which
+      // is the first thing the eye goes to.
+      const padX = (e - w) * FIELD_PAD;
+      const padY = (no - so) * FIELD_PAD;
+      const image = await loadImagery({
+        bounds: {
+          west: w - padX, east: e + padX,
+          south: so - padY, north: no + padY,
+        },
+        urlFor: synthetic ? checkerTile : templateTile(SATELLITE_URL, MAPTILER_KEY),
+      });
+      if (!live) return;
+      if (image) setDrape(image);
+      else setMapBroken(true);
+    })();
+    return () => { live = false; };
+  }, [mapMode, resort]);
+
+  // A new resort or a change of map is a different mountain to photograph.
+  useEffect(() => {
+    setDetail(null);
+    askedFor.current = null;
+  }, [mapMode, resort]);
+
+  /*
+   * Sharper imagery for whatever is in frame, once the camera stops.
+   *
+   * The base mosaic covers the whole resort and can only be coarse: a dozen
+   * kilometres at the half-metre a building needs is ten thousand tiles. Close
+   * up that is blocks, which is the point at which a photograph stops looking
+   * like one — and close up is exactly when someone is trying to see what the
+   * ground does.
+   *
+   * Zoomed in, though, the ground in frame is a few hundred metres, and that
+   * fits in the same handful of tiles four or five zoom levels finer. So the
+   * detail layer is the same fetch against a smaller box, and the sampler
+   * below prefers it wherever it reaches.
+   */
+  const onDetail = useCallback(async (want) => {
+    if (!want || mapMode !== "satellite" || !hasMapKey) return;
+    const key = [want.west, want.south, want.east, want.north]
+      .map((n) => n.toFixed(4)).join(",");
+    if (askedFor.current === key) return;
+    askedFor.current = key;
+    const { loadImagery, templateTile, checkerTile, zoomForResolution } =
+      await import("./map/imagery.js");
+    const params = new URLSearchParams(window.location.search);
+    const synthetic = params.get("maptest") === "1" && params.get("tiles");
+    const image = await loadImagery({
+      bounds: want,
+      urlFor: synthetic ? checkerTile : templateTile(SATELLITE_URL, MAPTILER_KEY),
+      // No finer than the screen can show. Asking for more is bytes over a
+      // mountain connection for detail that is averaged away on arrival.
+      atMost: zoomForResolution((want.north + want.south) / 2, want.metresPerPixel),
+    });
+    // A failure here is not worth a message. The base mosaic is still on the
+    // ground and the only difference is that it stays soft.
+    if (image && askedFor.current === key) setDetail(image);
+  }, [mapMode]);
+
+  /*
+   * The two layers as one thing to sample.
+   *
+   * Detail first, base behind it, because the detail layer covers only what
+   * was in frame when it was asked for — pan away and the edges of the
+   * mountain fall back to the coarse mosaic rather than to nothing, and the
+   * next settle fetches the new box.
+   */
+  const skin = useMemo(() => {
+    if (!drape) return null;
+    if (!detail) return drape;
+    return { at: (lat, lon) => detail.at(lat, lon) ?? drape.at(lat, lon) };
+  }, [drape, detail]);
   // With the button gone this is the only way into the world map, and it has
   // to stay reachable: the code still ships, so it still has to stay walled in
   // to the resort. Opt-in via ?maptest=1, like the other hooks.
@@ -790,6 +932,8 @@ export default function App() {
           }
           block
           viewportTop={navigating ? NAV_HEAD_H : 0}
+          imagery={skin}
+          onDetail={onDetail}
           onScale={setMapScale}
         />
       )}
@@ -930,7 +1074,7 @@ export default function App() {
       {exploring && <PlanButton onPlan={() => setScreen("plan")} />}
 
       {noteOpen && mapShowing && !chromeHidden && (
-        mapBroken && wantWorld ? (
+        mapBroken && (wantWorld || mapMode === "satellite") ? (
         <div className="mapnote" style={{ bottom: chromeBottom }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           {/* Named the way the layer control names them. "The world map"

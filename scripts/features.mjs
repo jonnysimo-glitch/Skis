@@ -1423,6 +1423,259 @@ if (feature("15. Gestures, and the mountain being solid")) {
   }
 }
 
+// ========= 31. A DRAG HOLDS THE GROUND ==
+// Google Earth's one-finger drag grabs the earth: the point under your thumb
+// stays under your thumb. A screen-space pan does not — it moves the picture
+// by however many pixels the thumb moved, which is only the same thing when
+// you are looking straight down. Tilted over, a pixel near the top of the
+// frame is hundreds of metres of mountain and one near the bottom is tens, so
+// the ground slides out from under the finger at one end and lags at the
+// other. That is the difference between moving a photograph of a mountain and
+// turning the mountain.
+//
+// Measurable rather than a matter of feel: project a known place, drag from
+// exactly there, and see whether it arrives where the finger did.
+if (feature("31. A drag holds the ground")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1600);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  const box = await page.$eval(SEL, (c) => {
+    const r = c.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+
+  /** Where a lat/lon is on the canvas right now. */
+  const at = (lon, lat) => page.evaluate(([o, a]) => window.__skisProject(o, a), [lon, lat]);
+
+  /*
+   * Tipped right over, and dragging up the screen.
+   *
+   * At the framing the app opens on, this check cannot tell the two
+   * behaviours apart: the whole mountain is in frame, so the foreshortening
+   * across a ninety pixel drag is a couple of pixels and a screen-space pan
+   * scores the same. Which is worth knowing — at THAT framing they really are
+   * the same, and the bug was never there.
+   *
+   * Pitched to 78 the frame runs from ground at your feet to ground near the
+   * horizon, a pixel at the top is many times the ground of a pixel at the
+   * bottom, and dragging up the screen is the movement that exposes it.
+   */
+  await page.evaluate(() => window.__skisSetPitch(78));
+  await page.waitForTimeout(700);
+
+  const start = { x: box.x + box.w * 0.5, y: box.y + box.h * 0.62 };
+  const groundBefore = await page.evaluate(([sx, sy]) => window.__skisGroundAt(sx, sy), [start.x, start.y]);
+  check("there is ground under the starting point", groundBefore !== null,
+    groundBefore ? `${groundBefore.lat.toFixed(4)},${groundBefore.lon.toFixed(4)}` : "sky");
+
+  if (!groundBefore) {
+    await page.context_.close();
+  } else {
+    const end = { x: start.x - 26, y: start.y - 95 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    // In steps, the way a thumb moves: one jump would not exercise the
+    // frame-by-frame correction at all.
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(start.x + ((end.x - start.x) * i) / 10,
+        start.y + ((end.y - start.y) * i) / 10);
+      await page.waitForTimeout(24);
+    }
+    // Come to a stop before letting go, or the release is a flick and the map
+    // keeps travelling — which lands the ground somewhere else through no
+    // fault of the grab, and pollutes both sides of the comparison equally
+    // enough to hide it.
+    await page.waitForTimeout(260);
+    await page.mouse.move(end.x, end.y);
+    await page.waitForTimeout(260);
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+
+    const landed = await at(groundBefore.lon, groundBefore.lat);
+    const off = landed ? Math.hypot(landed.x - end.x, landed.y - end.y) : Infinity;
+    /*
+     * Measured both ways before the number was written down: 8 pixels holding
+     * the ground, 89 with the screen-space pan this replaced. The threshold
+     * sits between them rather than at a round guess.
+     *
+     * The drag length is part of the check. A longer one runs into the
+     * overscroll clamp, and a clamped map cannot keep the ground under your
+     * thumb — correctly, it has an edge — which closed the gap to 18 against
+     * 44 and made this look like a weak effect rather than a clamped one.
+     */
+    check("the ground grabbed is the ground under the finger at the end",
+      off < 18, `${Number.isFinite(off) ? off.toFixed(0) : "?"}px from the thumb`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
+// ========= 30. SATELLITE IS A SKIN, NOT SOMEWHERE ELSE ==
+// Asking for the satellite view used to swap in MapLibre and MapTiler's
+// basemap: a different map, with its own labels, its own camera, its own idea
+// of where the pistes are, and none of the huts, run names or scale bar this
+// app spent its time on. That is not what anyone means by "show me the
+// satellite" — they mean this mountain, photographed instead of drawn.
+//
+// The tiles come from a generated source here. api.maptiler.com is not
+// reachable from this machine, so a check that needed it would not be a check;
+// `?tiles=check` runs the whole pipeline — zoom, tile range, composite, read
+// back, sample, shade — against flat green squares, and green is a colour the
+// drawn terrain cannot produce.
+if (feature("30. Satellite is a skin, not somewhere else")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  const SEL = "canvas[aria-label*='Terrain view']";
+
+  /** How much of the canvas is the generated imagery's green. */
+  const greenness = () =>
+    page.$eval(SEL, (c) => {
+      const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+      let green = 0;
+      let seen = 0;
+      for (let y = 0; y < height; y += 4) {
+        for (let x = 0; x < width; x += 4) {
+          const i = (y * width + x) * 4;
+          seen++;
+          // Green channel clearly ahead of both others: the drawn terrain is a
+          // blue-grey ramp and never is.
+          if (data[i + 1] > data[i] + 18 && data[i + 1] > data[i + 2] + 18) green++;
+        }
+      }
+      return Math.round((green / seen) * 100);
+    });
+
+  await page.goto(`${url}?maptest=1&tiles=check`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  // Explicitly, rather than relying on what the app opens on. Whether there is
+  // a key decides that, and there is one in the build these checks run
+  // against — so the first version of this measured the drape and called it
+  // the baseline, and every comparison after it was against itself.
+  await page.evaluate(() => window.__skisSetMapMode("cutout"));
+  await page.waitForTimeout(1400);
+  const drawn = await greenness();
+  check("the drawn terrain has no photography in it", drawn < 2, `${drawn}% green`);
+
+  const before = await page.evaluate(() => ({
+    places: (window.__skisPlaces ?? []).length,
+    labels: (window.__skisLabels ?? []).length,
+    runs: (window.__skisRunNames ?? []).length,
+  }));
+
+  await page.evaluate(() => window.__skisSetMapMode("satellite"));
+  await page.waitForTimeout(2600);
+
+  // The canvas is still ours. If satellite had swapped in MapLibre this
+  // selector would not resolve at all, which is the failure worth naming.
+  check("satellite keeps our own terrain canvas", (await page.$(SEL)) !== null,
+    (await page.$(SEL)) ? "still the terrain view" : "the canvas was replaced");
+
+  const draped = await greenness();
+  check("and the ground is photographed", draped > 12, `${draped}% green, was ${drawn}%`);
+
+  // The whole point: everything the app draws on the mountain is still there.
+  const after = await page.evaluate(() => ({
+    places: (window.__skisPlaces ?? []).length,
+    labels: (window.__skisLabels ?? []).length,
+    runs: (window.__skisRunNames ?? []).length,
+  }));
+  check("the mountain huts are still on it", after.places >= Math.max(1, before.places - 2),
+    `${after.places} against ${before.places} before`);
+  check("the place names are still on it", after.labels >= Math.max(1, before.labels - 2),
+    `${after.labels} against ${before.labels} before`);
+  // No loss, rather than a floor. How many run names fit is a question about
+  // zoom and collision, and at the framing the app opens on the answer can
+  // legitimately be none — the drape must not change it either way.
+  check("and no run name was lost to the change", after.runs >= before.runs,
+    `${after.runs} against ${before.runs} before`);
+
+  // The scale bar is a thing MapTiler's basemap would not have had.
+  const scale = await page.$eval("body", (b) => /\d+\s?(m|km)\b/.test(b.innerText));
+  check("the distance scale survives the change", scale);
+
+  // And the relief has to survive it too: a photograph dropped on flat quads
+  // with no hillshade is a paper map, not a mountain.
+  const relief = await page.$eval(SEL, (c) => {
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    let lo = 255;
+    let hi = 0;
+    for (let y = 0; y < height; y += 4) {
+      for (let x = 0; x < width; x += 4) {
+        const i = (y * width + x) * 4;
+        if (!(data[i + 1] > data[i] + 18 && data[i + 1] > data[i + 2] + 18)) continue;
+        if (data[i + 1] < lo) lo = data[i + 1];
+        if (data[i + 1] > hi) hi = data[i + 1];
+      }
+    }
+    return hi - lo;
+  });
+  check("the imagery is still lit, so the relief reads", relief > 40,
+    `${relief} levels of shading across one flat tile colour`);
+
+  /*
+   * And zoomed in, the drape shows detail the mesh could not.
+   *
+   * One flat colour per quad is 167 metres of ground; close up that is a
+   * screenful of blocks, which is the one place a photograph visibly stops
+   * being one.
+   *
+   * Asked of the renderer rather than of the pixels. Counting variation in the
+   * picture was the first attempt and it measures the wrong things: a
+   * hillshade is a gradient and single-texel sampling of a fine pattern is
+   * aliasing, so the far view scored HIGHER than the near one while being
+   * strictly less detailed.
+   */
+  const surface = () => page.evaluate(() => window.__skisSurface);
+  const far = await surface();
+  check("far out, one colour a quad is all the blur would keep anyway",
+    far && far.textured === 0, `${far?.textured ?? "?"} quads subdivided of ${far?.flat ?? "?"}`);
+
+  // One notch per frame: the wheel handler accumulates within a frame and its
+  // sigmoid caps a single frame at doubling, so a synchronous burst is one.
+  for (let n = 0; n < 10; n++) {
+    await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      c.dispatchEvent(new WheelEvent("wheel", {
+        deltaY: -400, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true,
+      }));
+    });
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(1600);
+  const near = await page.evaluate(() => window.__skisView?.zoom);
+  check("zooming in actually gets close", near > 8, `zoom ${near?.toFixed(1)}`);
+
+  const close = await surface();
+  check("and close up the ground is painted from the imagery, not in blocks",
+    close && close.textured > 0 && close.cells > close.textured * 3,
+    `${close?.textured} quads became ${close?.cells} cells`);
+  // Bounded by the viewport, not by the mesh. Subdivision is decided on how
+  // big a quad is on screen and says nothing about whether it is ON the
+  // screen: without a cull, two thousand off-screen quads each qualified for
+  // sixteen cells and a redraw went from 51ms to 196ms painting them.
+  check("and only for the part of the mountain on screen",
+    close && close.flat + close.textured < 900,
+    `${(close?.flat ?? 0) + (close?.textured ?? 0)} quads drawn of ${72 * 72}`);
+
+  // Back again, and nothing is stuck.
+  await page.evaluate(() => window.__skisSetMapMode("cutout"));
+  await page.waitForTimeout(1400);
+  const back = await greenness();
+  check("and switching back returns the drawn surface", back < 2, `${back}% green`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ============== 16. ONE GESTURE AT A TIME ==
 // Two fingers can mean zoom, rotate or tilt, and all three used to be applied
 // on every frame of every two finger gesture. Fingers never move perfectly

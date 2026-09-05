@@ -98,6 +98,55 @@ computed contrast against whatever is actually behind each piece of text.
 All three share `scripts/harness.mjs`, so they cannot drift apart on what counts
 as a page error or which browser gets driven.
 
+### Satellite imagery, and why it is not winter
+
+The satellite view is a drape on the app's own terrain — the same mesh, the
+same runs, huts, names and scale bar, with the ground photographed instead of
+drawn. It is not a second map. `src/map/imagery.js` fetches raster tiles for
+the resort's bounding box, composites them, and hands the renderer a function
+from lat/lon to a colour.
+
+Two things about it are worth knowing before anyone is disappointed by it.
+
+**The default source is a summer composite.** MapTiler's `satellite-v2`, like
+Esri's World Imagery and EOX's Sentinel-2 cloudless, is built to be cloud-free
+and green — which for the Alps means photographed in July. It is correct
+imagery of the wrong season for a ski app: the mountain renders in grass and
+rock, not snow.
+
+**Winter imagery at the resolution that shows buildings is a purchase.** This
+was checked rather than assumed. FATMAP — the app whose winter Alps view is
+the reference for this — did not find a free source either; they bought
+high-resolution winter satellite imagery outright and overlaid it on their own
+3D terrain, and it is a large part of why nobody else had the same picture.
+EOX will quote for a seasonal Sentinel-2 mosaic; Sentinel-2 itself is free and
+does show snow, but at 10m a building is one pixel. So the choice is roughly:
+
+| Source | Season | Resolution | Cost |
+|---|---|---|---|
+| MapTiler `satellite-v2` | summer | sub-metre in places | included with the key |
+| Esri World Imagery | mixed, mostly summer | sub-metre | free tier is non-commercial |
+| Sentinel-2 cloudless (EOX) | summer | 10m | free, attribution required |
+| Sentinel-2 winter scene | winter | 10m | free, no buildings at that scale |
+| EOX seasonal mosaic | winter | 10m | quoted |
+| Maxar/Airbus winter tasking | winter | sub-metre | commercial, what FATMAP bought |
+
+Which one to use is therefore a business decision, so it is a setting rather
+than a constant. `VITE_SATELLITE_URL` takes an XYZ template with `{z}`, `{x}`,
+`{y}` and `{key}`, and nothing in the code assumes the provider — the
+substitution is tested against a provider that orders y before x, because
+getting that wrong shows imagery of somewhere else entirely rather than
+failing.
+
+**Resolution is view-dependent**, which is what stops the drape being blocks
+close up. A whole resort at the half-metre a building needs would be ten
+thousand tiles, so the base mosaic is necessarily coarse. When the camera comes
+to rest, the renderer reports the ground actually in frame and how finely the
+screen could show it, and a second mosaic is fetched for that box at whatever
+zoom fits the same handful of tiles — four or five levels finer, because the
+box is that much smaller. The sampler prefers it and falls back to the base
+one at the edges, so panning degrades to soft rather than to nothing.
+
 ### The map key
 
 The 3D map uses **MapLibre GL JS** over **MapTiler** terrain and its winter

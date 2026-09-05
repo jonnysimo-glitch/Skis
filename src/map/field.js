@@ -70,6 +70,16 @@ export function fbm(x, y) {
 export const SKIRT = 0.17;
 
 /**
+ * How far the terrain mesh reaches beyond the outermost node, as a fraction of
+ * the resort's extent.
+ *
+ * Exported because it is not only this file's business any more: the satellite
+ * drape has to fetch imagery for the same box, and a drape narrower than the
+ * mesh leaves a ring of painted snow around a photograph.
+ */
+export const FIELD_PAD = 0.18;
+
+/**
  * The slab's faces.
  *
  * Exported because the feature tests identify slab pixels by exact value, and
@@ -149,8 +159,8 @@ export function buildField(nodes, makeProjector) {
 
   const xs = pts.map((p) => p.x);
   const zs = pts.map((p) => p.z);
-  const padX = (Math.max(...xs) - Math.min(...xs)) * 0.18;
-  const padZ = (Math.max(...zs) - Math.min(...zs)) * 0.18;
+  const padX = (Math.max(...xs) - Math.min(...xs)) * FIELD_PAD;
+  const padZ = (Math.max(...zs) - Math.min(...zs)) * FIELD_PAD;
   const minX = Math.min(...xs) - padX;
   const maxX = Math.max(...xs) + padX;
   const minZ = Math.min(...zs) - padZ;

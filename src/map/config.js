@@ -19,6 +19,22 @@
 
 export const MAPTILER_KEY = (import.meta.env?.VITE_MAPTILER_KEY || "").trim();
 
+/**
+ * Where the satellite drape's tiles come from, as an XYZ template.
+ *
+ * Overridable because which provider to use is not a settled question and the
+ * answer is not a technical one. MapTiler's satellite is a cloud-free SUMMER
+ * composite, so the Alps render green — correct imagery of the wrong season
+ * for a ski app. Winter imagery of the Alps at the resolution that shows
+ * buildings is a commercial purchase; FATMAP bought theirs, which is why they
+ * were the only app that had it. See the README.
+ *
+ * `{z}`, `{x}`, `{y}` and `{key}` are substituted. Set VITE_SATELLITE_URL to
+ * point somewhere else without touching the code.
+ */
+export const SATELLITE_URL = (import.meta.env?.VITE_SATELLITE_URL || "").trim() ||
+  "https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key={key}";
+
 export const hasMapKey =
   MAPTILER_KEY.length > 0 && MAPTILER_KEY !== "your_key_here";
 
