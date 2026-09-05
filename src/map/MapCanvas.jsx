@@ -14,6 +14,7 @@ import {
   styleUrl,
   hasMapKey,
   maptilerTerrain,
+  SATELLITE_CHAIN,
   openTerrainStyle,
   TERRAIN_EXAGGERATION,
   cameraLimits,
@@ -38,9 +39,15 @@ export default function MapCanvas({
   onReady,
   onFail,
   controlRef,
+  /** 'winter' or 'satellite'. Only meaningful with a MapTiler key. */
+  imagery = "winter",
 }) {
   const holder = useRef(null);
   const mapRef = useRef(null);
+  // In a ref as well as a prop: the map is created once, in an effect that
+  // must not re-run when the imagery changes, and the effect below swaps the
+  // style on a live map instead.
+  const imageryRef = useRef(imagery);
   const readyRef = useRef(false);
 
   /**
@@ -56,6 +63,21 @@ export default function MapCanvas({
     }
   };
 
+  /**
+   * Swap the imagery under a map that is already up.
+   *
+   * setStyle throws away every layer the app added, so the style.load handler
+   * puts the terrain, the sky and the route back — which it already does,
+   * because that is the same path the fallback chain takes.
+   */
+  useEffect(() => {
+    imageryRef.current = imagery;
+    const map = mapRef.current;
+    if (!map || !hasMapKey) return;
+    const chain = imagery === "satellite" ? SATELLITE_CHAIN : STYLE_CHAIN;
+    map.setStyle(styleUrl(chain[0]));
+  }, [imagery]);
+
   // ---- create once -------------------------------------------------------
   useEffect(() => {
     if (!holder.current || mapRef.current) return;
@@ -65,13 +87,17 @@ export default function MapCanvas({
     }
     let cancelled = false;
     let styleIndex = 0;
+    // Which chain the fallback walks depends on what was asked for, so a
+    // satellite style that has moved degrades to hybrid and then to the winter
+    // basemap rather than straight to a grey box.
+    const chain = imageryRef.current === "satellite" ? SATELLITE_CHAIN : STYLE_CHAIN;
 
     const map = new MapLibreMap({
       container: holder.current,
       // With a key, the winter basemap brings its own pistes and lifts. Without
       // one, a style built straight from open elevation data: no basemap, but
       // the real shape of the mountain rather than a schematic of it.
-      style: hasMapKey ? styleUrl(STYLE_CHAIN[0]) : openTerrainStyle(),
+      style: hasMapKey ? styleUrl(chain[0]) : openTerrainStyle(),
       center: resort.center,
       zoom: resort.zoom,
       pitch: resort.pitch,
@@ -95,13 +121,13 @@ export default function MapCanvas({
       if (!failedStyle || readyRef.current) return;
       // A MapTiler style that has moved is recoverable — walk the chain first,
       // then drop to the keyless terrain style, and only then give up entirely.
-      if (hasMapKey && styleIndex < STYLE_CHAIN.length - 1) {
+      if (hasMapKey && styleIndex < chain.length - 1) {
         styleIndex += 1;
-        map.setStyle(styleUrl(STYLE_CHAIN[styleIndex]));
+        map.setStyle(styleUrl(chain[styleIndex]));
         return;
       }
       if (hasMapKey) {
-        styleIndex = STYLE_CHAIN.length;
+        styleIndex = chain.length;
         map.setStyle(openTerrainStyle());
         return;
       }

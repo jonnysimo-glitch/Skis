@@ -116,27 +116,68 @@ console.log("\nWHAT THE STYLESHEET ACTUALLY PAIRS");
     if (/^#[0-9a-f]{3}$/i.test(v)) return "#" + v.slice(1).split("").map((c) => c + c).join("");
     if (/^white$/i.test(v)) return "#ffffff";
     if (/^black$/i.test(v)) return "#000000";
+    /*
+     * rgb(), and rgba() that is opaque enough to decide.
+     *
+     * An rgba over an unknown backdrop is genuinely ambiguous and stays
+     * skipped, but the white disc under every map control is 0.96 alpha, and
+     * skipping it meant the one rule that mattered was never judged: it paired
+     * `color: var(--ink)` with that disc, and --ink is a near-white in this
+     * palette, so every control was an empty circle and this said the palette
+     * was sound.
+     */
+    const rgb = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgb) {
+      const parts = rgb[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+      const [r, g, b, a = 1] = parts;
+      if ([r, g, b].every(Number.isFinite) && (!Number.isFinite(a) || a >= 0.85)) {
+        return "#" + [r, g, b].map((n) => Math.round(n).toString(16).padStart(2, "0")).join("");
+      }
+    }
     return null;
   };
 
+  /*
+   * What sits behind the text, including a disc drawn by a pseudo-element.
+   *
+   * `.iconbtn` has no background of its own: its white circle is an
+   * `::before`, so a rule pairing a colour with that disc looked to this like
+   * a rule with no background at all and was skipped. It set `color:
+   * var(--ink)`, which was near-black under the light palette and near-white
+   * under this one, and every map control became an empty circle.
+   */
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+    selector: selector.trim(),
+    decls: Object.fromEntries(
+      body.split(";").map((d) => d.split(":")).filter((d) => d.length >= 2)
+        .map(([k, ...rest]) => [k.trim(), rest.join(":").trim()])),
+  }));
+  const pseudoBg = new Map();
+  for (const rule of rules) {
+    const base = rule.selector.match(/^(\.[a-z0-9_-]+)::(before|after)$/i)?.[1];
+    const bg = rule.decls["background"] ?? rule.decls["background-color"];
+    if (base && bg) pseudoBg.set(base, bg);
+  }
+
   let judged = 0, skipped = 0;
   const bad = [];
-  for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (selector.trim().startsWith("@")) continue;
-    const decls = Object.fromEntries(
-      body.split(";").map((d) => d.split(":")).filter((d) => d.length >= 2)
-        .map(([k, ...rest]) => [k.trim(), rest.join(":").trim()]));
-    const bgRaw = decls["background"] ?? decls["background-color"];
+  for (const { selector, decls } of rules) {
+    if (selector.startsWith("@")) continue;
+    const bgRaw = decls["background"] ?? decls["background-color"] ?? pseudoBg.get(selector);
     if (!bgRaw || !decls["color"]) continue;
     // A shorthand can carry a gradient or an image; only a bare colour counts.
-    const bg = flat(bgRaw.split(/\s+/)[0]);
+    // Splitting on whitespace unconditionally broke the functional notations,
+    // because rgba(255, 255, 255, 0.96) has spaces in it and came out as
+    // "rgba(255," — which is how the white disc under every map control went
+    // unjudged.
+    const bg = flat(/^[a-z-]+\(/i.test(bgRaw) ? bgRaw : bgRaw.split(/\s+/)[0]);
     const fg = flat(decls["color"]);
     if (!bg || !fg) { skipped++; continue; }
     judged++;
     // 3:1, not 4.5 — many of these are large type, icons or pressed states,
     // and the point here is catching invisible, not grading body copy.
     const c = contrast(fg, bg);
-    if (c < 3) bad.push(`${selector.trim().split("\n").pop().trim()} — ${c.toFixed(2)}:1`);
+    if (c < 3) bad.push(`${selector.split("\n").pop().trim()} — ${c.toFixed(2)}:1`);
   }
   check(`every rule that sets both colours can be read (${judged} judged, ${skipped} not flat)`,
     bad.length === 0, bad.slice(0, 4).join("; "));

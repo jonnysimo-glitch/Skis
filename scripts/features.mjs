@@ -663,7 +663,8 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   check("there is no panel over it", (await page.$(".sheet, .resortpanel")) === null);
   check("and nothing to drag", (await page.$(".sheet__grab")) === null);
   check("the map has its controls here, where there is a map",
-    (await page.$$(".maptools .iconbtn")).length === 4);
+    (await page.$$(".maptools .iconbtn")).length >= 4,
+    `${(await page.$$(".maptools .iconbtn")).length} controls`);
 
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body), body.replace(/\n/g, " ").slice(0, 60));
@@ -1787,7 +1788,12 @@ if (feature("19. Navigate keeps its map controls")) {
 
   const nav = await read();
   check("but starting from there still gives you them", nav.shown === true, JSON.stringify(nav));
-  check("all four of them", nav.buttons?.length === 4, (nav.buttons || []).join(", "));
+  // Five since the map chooser joined them. Named rather than counted, so the
+  // next one to arrive does not read as a regression.
+  check("all of them, by name",
+    ["Face north", "Recentre the view", "Zoom in", "Zoom out", "Choose the map"]
+      .every((label) => (nav.buttons || []).includes(label)),
+    (nav.buttons || []).join(", "));
   check("the compass among them", (nav.buttons || []).includes("Face north"));
   check("and they are on screen, not under the footer", nav.onScreen === true);
 
@@ -2018,6 +2024,63 @@ if (feature("20. The mountain is labelled")) {
       : `${withRoute.length} places, ${pinned.length} pins, frame ${vw}px`);
   check("no page errors on the routed map", routed.errors.length === 0, routed.errors.join(" | "));
   await routed.context_.close();
+}
+
+// ===================== 29. WHICH MAP YOU ARE LOOKING AT ==
+// The drawn mountain is the one that needs nothing, and it is what a committed
+// route falls back to on a chairlift with no signal. It should not be the only
+// one on offer: a photograph of the same terrain is a different way of reading
+// the same hill, and which one you want is a preference.
+if (feature("29. Which map you are looking at")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1500);
+
+  const opener = await page.$('[aria-label="Choose the map"]');
+  check("there is a way to change the map", opener !== null);
+  if (!opener) { await page.context_.close(); }
+  else {
+    await opener.click();
+    await page.waitForTimeout(400);
+    const opts = await page.$$eval(".layers__opt", (n) => n.map((o) => ({
+      // The option is its name and nothing else. Anything it cannot do is in
+      // the small `i` beside it.
+      name: (o.childNodes[0]?.textContent ?? "").trim(),
+      why: o.querySelector("i")?.textContent ?? "",
+      on: o.getAttribute("aria-pressed") === "true",
+      disabled: o.disabled,
+    })));
+    check("it offers the drawn mountain and a photograph of it", opts.length >= 2,
+      opts.map((o) => o.name).join(", "));
+    check("one of them is the one you are on", opts.filter((o) => o.on).length === 1,
+      opts.filter((o) => o.on).map((o) => o.name).join(", ") || "none marked");
+    // Names, not sentences. A list of three things you can already see does
+    // not need explaining, and the explanation was in the way of the choice.
+    check("each is named and not explained", opts.every((o) => o.name.length > 2),
+      opts.map((o) => o.name).join(", "));
+
+    /*
+     * The two MapTiler ones need a key. Without one they are shown and
+     * disabled with the reason beside them rather than hidden: a feature you
+     * cannot find is worse than one you cannot yet use, and the reason is
+     * also the instruction.
+     */
+    const locked = opts.filter((o) => o.disabled);
+    check("and anything unavailable says why, rather than vanishing",
+      locked.every((o) => /key/i.test(o.why)),
+      locked.map((o) => `${o.name}: ${o.why}`).join(" | ") || "nothing locked");
+
+    // The drawn mountain never needs anything, so it is never the locked one.
+    const drawn = opts.find((o) => /terrain/i.test(o.name));
+    check("the one that needs nothing is always available", drawn && !drawn.disabled,
+      drawn ? `${drawn.name} enabled` : "no terrain option");
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
 }
 
 // ===================== 28. THE RUNS HAVE THEIR NAMES ON THEM ==

@@ -31,6 +31,21 @@ export const styleUrl = (name = "winter-v2") =>
 
 export const STYLE_CHAIN = ["winter-v2", "winter", "outdoor-v2"];
 
+/**
+ * The photograph of the mountain, from above.
+ *
+ * MapTiler's satellite style is imagery with no cartography on it, which is
+ * exactly right here: the pistes, the lifts, the route and the huts are all
+ * drawn by this app, so a basemap that also draws them would fight it. Draped
+ * over the same terrain mesh as everything else, so it is the real shape of
+ * the mountain under a real picture of it.
+ *
+ * The fallback chain below applies to it too. Satellite has been at this name
+ * for years, but a style that moves should degrade to the winter basemap
+ * rather than to a grey box.
+ */
+export const SATELLITE_CHAIN = ["satellite", "hybrid", "winter-v2"];
+
 export const maptilerTerrain = {
   type: "raster-dem",
   url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,

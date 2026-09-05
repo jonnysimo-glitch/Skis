@@ -63,7 +63,7 @@ import {
   routeBounds,
   nearestNode,
 } from "./lib/geo.js";
-import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain } from "./ui/Icons.jsx";
+import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain, Layers } from "./ui/Icons.jsx";
 
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
@@ -77,6 +77,22 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 const MAX_SNAP_METRES = 6000;
 
 /** How tall the sheet opens for each screen. */
+
+/**
+ * The three maps, and what each one is for.
+ *
+ * The drawn mountain first, because it is the one that needs nothing: no key,
+ * no network, and it is what a committed route falls back to on a chairlift
+ * with no signal. The photograph and the winter basemap are MapTiler's and
+ * need a key, so without one they are shown and disabled with the reason
+ * rather than hidden — a feature you cannot find is worse than one you cannot
+ * yet use.
+ */
+const MAP_CHOICES = [
+  { id: "cutout", name: "Terrain" },
+  { id: "satellite", name: "Satellite", needsKey: true },
+  { id: "world", name: "Winter map", needsKey: true },
+];
 
 /** Tab bar height in CSS pixels; keep in step with --tabbar. */
 const TABBAR_H = 56;
@@ -231,7 +247,26 @@ export default function App() {
   // terrain, but a button to swap to it was not earning its place in a column
   // of four. Bringing it back is one button.
   const onMountain = tab === "skiing";
-  const [mapMode, setMapMode] = useState("cutout"); // 'cutout' | 'world'
+  /**
+   * Which map you are looking at.
+   *
+   * 'cutout' is the drawn mountain, which needs nothing and works offline.
+   * 'satellite' is a photograph of the same terrain from MapTiler, and
+   * 'world' is their winter basemap; both need a key, so both are offered
+   * only when there is one. Remembered, because it is a preference rather
+   * than a per-session choice.
+   */
+  const [mapMode, setMapMode] = useState(() => {
+    const saved = load("mapMode");
+    return saved && (saved === "cutout" || hasMapKey) ? saved : "cutout";
+  });
+  const [layersOpen, setLayersOpen] = useState(false);
+  const chooseMap = (next) => {
+    setMapBroken(false);
+    setMapMode(next);
+    save("mapMode", next);
+    setLayersOpen(false);
+  };
   const [statusOpen, setStatusOpen] = useState(false);
   // Measured, not assumed: the navigate footer grows when the overrun banner
   // appears. NAV_FOOT_H is only the starting guess for the first frame.
@@ -246,7 +281,7 @@ export default function App() {
   const [addingFriend, setAddingFriend] = useState(false);
   const [friendError, setFriendError] = useState(null);
   const [navExpanded, setNavExpanded] = useState(false);
-  const wantWorld = mapMode === "world";
+  const wantWorld = mapMode === "world" || mapMode === "satellite";
   const showSchematic = !wantWorld || mapBroken || !mapLive;
   // With the button gone this is the only way into the world map, and it has
   // to stay reachable: the code still ships, so it still has to stay walled in
@@ -712,6 +747,7 @@ export default function App() {
             route={routeGeo}
             pins={pins}
             focus={focus}
+            imagery={mapMode === "satellite" ? "satellite" : "winter"}
             doneThrough={focus?.doneThrough ?? -1}
             onReady={() => setMapLive(true)}
             onFail={() => {
@@ -802,6 +838,17 @@ export default function App() {
         // is worse than not hiding them at all.
         {...(chromeHidden ? { inert: "" } : {})}
       >
+        {/* What you are looking at, rather than where. Sits at the top of the
+            stack because it is the one control you press once and then leave
+            alone, and the ones below it are the ones you press repeatedly. */}
+        <button
+          className={`iconbtn${layersOpen ? " iconbtn--on" : ""}`}
+          aria-label="Choose the map"
+          aria-expanded={layersOpen}
+          onClick={() => setLayersOpen((open) => !open)}
+        >
+          <Layers />
+        </button>
         <button
           className="iconbtn iconbtn--compass"
           aria-label="Face north"
@@ -825,6 +872,29 @@ export default function App() {
           <Minus />
         </button>
       </div>
+      )}
+
+      {mapShowing && layersOpen && !chromeHidden && (
+        <div className="layers" style={{ bottom: chromeBottom }} role="group" aria-label="Map">
+          {MAP_CHOICES.map((choice) => {
+            const locked = choice.needsKey && !hasMapKey;
+            return (
+              <button
+                key={choice.id}
+                className={`layers__opt${mapMode === choice.id ? " layers__opt--on" : ""}`}
+                aria-pressed={mapMode === choice.id}
+                disabled={locked}
+                // The reason is on the disabled ones only. Explaining the
+                // choice you can already see is words in the way of it.
+                title={locked ? "Needs a MapTiler key" : undefined}
+                onClick={() => chooseMap(choice.id)}
+              >
+                {choice.name}
+                {locked && <i>Needs a key</i>}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* Only once the schematic is what you are actually going to be looking

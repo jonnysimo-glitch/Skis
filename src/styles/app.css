@@ -74,11 +74,16 @@ input, select { font: inherit; color: inherit; }
 }
 
 /* 44pt tap target with a 38pt visual — the iOS convention. */
+/* The glyph is dark because the disc under it is white, and it is white
+   whatever the theme is doing: these float over snow. Set to var(--ink) it
+   inherited the theme's text colour, which went from near-black to near-white
+   when the palette flipped, and every map control turned into an empty
+   circle. */
 .iconbtn {
   width: var(--tap); height: var(--tap);
   border-radius: 50%;
   display: grid; place-items: center;
-  color: var(--ink);
+  color: #14212c;
   flex: none;
   position: relative;
   transition: transform 0.12s var(--ease-std);
@@ -864,6 +869,41 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .tabbar__tab[aria-current="page"] { color: var(--accent); font-weight: 600; }
 .tabbar__tab:active { opacity: 0.6; }
 
+/* ---------------------------------------------------------------- maps -- */
+/* Which map you are looking at. Sits beside the control that opens it rather
+   than in a settings screen, because it is a thing you decide while looking at
+   the mountain. */
+.layers {
+  position: absolute;
+  right: calc(var(--gutter) + var(--tap) + var(--s-2));
+  z-index: 6;
+  display: grid; gap: 2px;
+  padding: var(--s-2);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--e-2);
+}
+.layers__opt {
+  display: flex; align-items: center; gap: var(--s-2);
+  white-space: nowrap;
+  text-align: left;
+  padding: 0 var(--s-4);
+  border-radius: var(--r-md);
+  min-height: var(--tap);
+  font-size: var(--t-callout); font-weight: 600;
+  color: var(--ink);
+}
+/* Only the ones you cannot pick say anything, and then only why. */
+.layers__opt i {
+  font-style: normal; font-weight: 500;
+  font-size: var(--t-caption); color: var(--ink-4);
+}
+.layers__opt--on { background: var(--accent-tint); color: var(--accent-ink); }
+.layers__opt:active { background: var(--surface-2); }
+.layers__opt[disabled] { opacity: 0.55; cursor: default; }
+.layers__opt[disabled]:active { background: transparent; }
+
 /* ------------------------------------------------------------ map scale -- */
 /* A rule and a number, bottom left, the way every map app does it. Sits on the
    same line as the map controls and hides with them, because both are chrome
@@ -936,6 +976,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   color: var(--ink);
   text-shadow: none;
 }
+.iconbtn--flat { color: var(--ink); }
 .iconbtn--flat::before { background: var(--surface-2); box-shadow: none; }
 
 /* --------------------------------------------------------------- days -- */
