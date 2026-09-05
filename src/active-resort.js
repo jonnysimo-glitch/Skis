@@ -53,6 +53,12 @@ export let RUNS = builtIn.RUNS;
 export let SHORT_NAMES = builtIn.SHORT_NAMES;
 export let DIFFICULTY_RANK = builtIn.DIFFICULTY_RANK;
 export let buildEdges = builtIn.buildEdges;
+/**
+ * Where to eat and where to hire skis. Not part of the routing, and the
+ * hand-typed graph has none, so an empty list is the honest default rather
+ * than something to throw over.
+ */
+export let PLACES = builtIn.PLACES || [];
 
 /** Which resort these bindings currently describe. */
 export const activeResortId = () => current.id;
@@ -80,6 +86,7 @@ export function setActiveResort(id, module) {
   SHORT_NAMES = module.SHORT_NAMES || {};
   DIFFICULTY_RANK = module.DIFFICULTY_RANK;
   buildEdges = module.buildEdges;
+  PLACES = module.PLACES || [];
   return current.id;
 }
 

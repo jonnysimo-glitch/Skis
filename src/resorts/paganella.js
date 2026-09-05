@@ -166,6 +166,31 @@ export const RUNS = [
   ["intermediadosson", "intermediadosson2", "Intermedia Dosson link", "blue", 0.2, 2],
 ];
 
+/**
+ * Places on the mountain that are not junctions: where to eat, and where to
+ * hire skis.
+ *
+ * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ *
+ * Narrowed to what is actually on the hill. A resort's bounding box holds
+ * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
+ * showing all of them shows none of them. Somewhere to eat has to be within a
+ * couple of hundred metres of a place the graph can put you; somewhere to hire
+ * skis has further to reach, because it is in the village you parked in.
+ */
+export const PLACES = [
+  ["Albi de Mez", "restaurant", 46.14639, 11.02396],
+  ["Baita Lovara", "restaurant", 46.14718, 10.99762],
+  ["Chalet Forst", "restaurant", 46.15013, 10.99632],
+  ["Chalet Paganella 2", "restaurant", 46.14136, 11.015],
+  ["Malga Zambana", "restaurant", 46.15027, 11.02837],
+  ["Rifugio Dosson", "restaurant", 46.1535, 11.01597],
+  ["Rifugio La Roda", "hut", 46.14245, 11.03693],
+  ["Rifugio Meriz", "restaurant", 46.16381, 11.05063],
+  ["Ski Bar", "restaurant", 46.16021, 11.00135],
+  ["Tre3", "restaurant", 46.17551, 11.05251],
+];
+
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 
 export const SHORT_NAMES = {};

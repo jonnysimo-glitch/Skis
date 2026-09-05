@@ -12,7 +12,7 @@
  * construction: there is nothing to fetch.
  */
 import { useEffect, useRef } from "react";
-import { NODES as ACTIVE_NODES, activeProjector } from "../active-resort.js";
+import { NODES as ACTIVE_NODES, PLACES as ACTIVE_PLACES, activeProjector } from "../active-resort.js";
 import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
   SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
@@ -225,6 +225,7 @@ export default function FallbackTerrain({
   // Defaults follow whichever resort is active, so a caller that does not care
   // which mountain it is drawing still draws the right one.
   nodes = ACTIVE_NODES,
+  places = ACTIVE_PLACES,
   makeProjector = activeProjector,
 }) {
   const canvasRef = useRef(null);
@@ -237,7 +238,7 @@ export default function FallbackTerrain({
   const dirty = useRef(true);
   const lastCam = useRef(null);
   const projectRef = useRef(null);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places });
   const mapTest =
     typeof window !== "undefined" && window.location.search.includes("maptest=1");
 
@@ -260,7 +261,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -758,9 +759,30 @@ export default function FallbackTerrain({
      * one that would collide with a name already down is dropped rather than
      * drawn over. Zoom in and the ones that lost the room come back.
      */
-    const drawPlaces = (v, cam) => {
+    /**
+     * The chrome is DOM drawn over this canvas, so anything the declutterer
+     * does not know about wins the pixels: "Champoluc" rendered half under the
+     * zoom buttons. Measured rather than guessed at — the first attempt
+     * reserved a box where the controls were assumed to be and the compass sat
+     * forty pixels above it. The canvas fills the viewport, so client rects are
+     * already in the coordinates used here.
+     */
+    const chromeBoxes = () => {
+      const boxes = [];
+      for (const sel of CHROME) {
+        const node = typeof document === "undefined" ? null : document.querySelector(sel);
+        if (!node) continue;
+        const cs = getComputedStyle(node);
+        if (cs.opacity === "0" || cs.visibility === "hidden") continue;
+        const r = node.getBoundingClientRect();
+        if (r.width && r.height) boxes.push({ l: r.left - 4, r: r.right + 4, t: r.top - 4, b: r.bottom + 4 });
+      }
+      return boxes;
+    };
+
+    const drawPlaces = (v, cam, placed) => {
       const list = Object.entries(propsRef.current.nodes ?? {});
-      if (!list.length) return;
+      if (!list.length) return placed;
       ctx.font = "600 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "alphabetic";
@@ -776,15 +798,7 @@ export default function FallbackTerrain({
       // reserved a box where the controls were assumed to be and the compass
       // sat forty pixels above it. The canvas fills the viewport, so client
       // rects are already in the coordinates used here.
-      const placed = [];
-      for (const sel of CHROME) {
-        const node = typeof document === "undefined" ? null : document.querySelector(sel);
-        if (!node) continue;
-        const cs = getComputedStyle(node);
-        if (cs.opacity === "0" || cs.visibility === "hidden") continue;
-        const r = node.getBoundingClientRect();
-        if (r.width && r.height) placed.push({ l: r.left - 4, r: r.right + 4, t: r.top - 4, b: r.bottom + 4 });
-      }
+
       const pinned = new Set(
         (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
       );
@@ -875,6 +889,78 @@ export default function FallbackTerrain({
       // Canvas text leaves no DOM to assert against, so the placement is
       // published for the feature suite. Same gate as the camera hooks.
       if (mapTest) window.__skisLabels = drawn;
+      return placed;
+    };
+
+    /**
+     * Where to eat, and where to hire skis.
+     *
+     * Most of what a skier reads off a piste map is not junctions: it is the
+     * huts. This app had every lift and every run and not one restaurant. They
+     * are drawn after the place names and share the same collision list, so a
+     * hut never sits on top of a station, and the marker is a rounded square
+     * rather than the circle a place uses — at eleven pixels a glyph is a
+     * smudge, but a different shape reads at a glance.
+     *
+     * Names only when there is room and the camera is close enough for the
+     * mountain to have any: at rest a resort has twenty-odd of these and
+     * twenty-odd labels is a grey smear over the terrain.
+     */
+    const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false } = {}) => {
+      const list = propsRef.current.places ?? [];
+      if (!list.length) return placed;
+      const named = v.zoom > 1.25;
+      ctx.font = "600 10.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+
+      const hits = (box) =>
+        placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
+
+      const drawn = [];
+      for (const [name, kind, lat, lon] of list) {
+        const { x, z } = field.proj.project(lat, lon);
+        const s = project(x, field.sample(x, z), z, v, cam);
+        if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
+
+        const r = 4.2;
+        const box = { l: s.x - r - 3, r: s.x + r + 3, t: s.y - r - 3, b: s.y + r + 3 };
+        if (labelsOnly) {
+          // The marker went down in the earlier pass; this one only has to
+          // find room for the words.
+          if (!named) continue;
+          const w = ctx.measureText(name).width;
+          const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
+          const ty = s.y + r + 12;
+          const label = { l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 10, b: ty + 3 };
+          if (hits(label)) continue;
+          placed.push(label);
+          ctx.lineWidth = 3;
+          ctx.lineJoin = "round";
+          ctx.strokeStyle = "rgba(255,255,255,0.92)";
+          ctx.strokeText(name, tx, ty);
+          ctx.fillStyle = "rgba(11,26,36,0.78)";
+          ctx.fillText(name, tx, ty);
+          continue;
+        }
+        if (hits(box)) continue;
+        placed.push(box);
+
+        ctx.beginPath();
+        // Rounded square for food, circle for hire: two kinds, told apart
+        // without a legend and without a glyph nobody can read at this size.
+        if (kind === "rental") ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        else ctx.roundRect(s.x - r, s.y - r, r * 2, r * 2, 1.6);
+        ctx.fillStyle = kind === "rental" ? "#5cd3f5" : "#f0b45e";
+        ctx.fill();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.stroke();
+
+        drawn.push({ name, kind, ...box });
+      }
+      if (mapTest && !labelsOnly) window.__skisPlaces = drawn;
+      return placed;
     };
 
     const drawPins = (v, cam) => {
@@ -1077,7 +1163,18 @@ export default function FallbackTerrain({
         ctx.restore();
         drawGraph(v, cam);
         drawRoute(v, cam);
-        drawPlaces(v, cam);
+        /*
+         * Markers first, then the station names, then the huts' own names.
+         *
+         * A name reserves a box six times the width of a marker, so running
+         * the huts last meant four of Monterosa's twenty-five got drawn at
+         * all: the names had taken the mountain. The markers are small enough
+         * to fit around anything, so they go down first and only their labels
+         * queue behind the places.
+         */
+        const boxes = drawHuts(v, cam, chromeBoxes(), { markersOnly: true });
+        drawPlaces(v, cam, boxes);
+        drawHuts(v, cam, boxes, { labelsOnly: true });
         drawPins(v, cam);
       }
       raf = requestAnimationFrame(frame);

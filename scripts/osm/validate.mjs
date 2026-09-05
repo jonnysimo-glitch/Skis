@@ -119,7 +119,7 @@ function undirectedPieces(keys, edges) {
   return pieces.sort((a, b) => b.length - a.length);
 }
 
-export function prune({ NODES, LIFTS, RUNS, report = {} }) {
+export function prune({ NODES, LIFTS, RUNS, PLACES = [], report = {} }) {
   const keys = Object.keys(NODES);
   const edges = [...LIFTS, ...RUNS];
   const pieces = undirectedPieces(keys, edges);
@@ -136,6 +136,9 @@ export function prune({ NODES, LIFTS, RUNS, report = {} }) {
     NODES: keptNodes,
     LIFTS: keptLifts,
     RUNS: keptRuns,
+    // Untouched: a hut is not part of the connectivity argument. It is
+    // narrowed against the nodes that survived, in emit().
+    PLACES,
     report: {
       ...report,
       components: components.length,

@@ -99,6 +99,18 @@ out body;
   nwr["amenity"="restaurant"](${box});
   nwr["amenity"="cafe"](${box});
 );
+out center tags;
+// Where to hire skis. Not part of the routing, but it is the first thing
+// somebody who flew in needs and the last thing they can find on a piste map.
+// shop=rental with ski in the offer covers the Italian noleggio; shop=ski and
+// a sports shop that hires are the other two ways OSM writes it. No backticks
+// in here: these lines are inside the query's own template literal.
+(
+  nwr["shop"="ski"](${box});
+  nwr["shop"="rental"]["rental"~"ski"](${box});
+  nwr["shop"="sports"]["service:bicycle:rental"!~"."]["ski"="yes"](${box});
+  nwr["amenity"="ski_rental"](${box});
+);
 out center tags;`;
 }
 

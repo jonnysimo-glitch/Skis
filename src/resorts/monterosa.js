@@ -214,6 +214,46 @@ export const RUNS = [
   ["p67", "p66", "Salati 1", "red", 1.4, 4],
 ];
 
+/**
+ * Places on the mountain that are not junctions: where to eat, and where to
+ * hire skis.
+ *
+ * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ *
+ * Narrowed to what is actually on the hill. A resort's bounding box holds
+ * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
+ * showing all of them shows none of them. Somewhere to eat has to be within a
+ * couple of hundred metres of a place the graph can put you; somewhere to hire
+ * skis has further to reach, because it is in the village you parked in.
+ */
+export const PLACES = [
+  ["Alpen stop", "restaurant", 45.86485, 7.90495],
+  ["Alpenhutten Lys", "restaurant", 45.85626, 7.84532],
+  ["Baita Rifugio Belvedere", "restaurant", 45.84496, 7.75166],
+  ["Bar \"Passo da Mania'\"", "cafe", 45.87799, 7.86937],
+  ["Bar du Soleil", "restaurant", 45.85658, 7.74269],
+  ["Bar Ristorante Ostafa", "restaurant", 45.83432, 7.76165],
+  ["Bar Ristoro L'Aroula", "restaurant", 45.8285, 7.75145],
+  ["Bar Tavola Calda Del Crest", "restaurant", 45.83275, 7.7427],
+  ["Bedemi", "restaurant", 45.84471, 7.82186],
+  ["Campo Base", "restaurant", 45.85992, 7.75969],
+  ["Edelboden", "cafe", 45.83128, 7.8232],
+  ["Edelweiss", "restaurant", 45.83258, 7.7422],
+  ["FZRY", "restaurant", 45.85943, 7.81274],
+  ["Kondor", "restaurant", 45.83667, 7.7309],
+  ["L’Abri du ski", "restaurant", 45.8326, 7.76429],
+  ["La Mandria", "restaurant", 45.85961, 7.75351],
+  ["Le Sapin", "restaurant", 45.83703, 7.73123],
+  ["Novez Cafè Bar", "restaurant", 45.83048, 7.7484],
+  ["Osteria il Balivo", "restaurant", 45.83749, 7.7313],
+  ["Retsignon", "restaurant", 45.85559, 7.74218],
+  ["Rifugio Belvedere", "hut", 45.84494, 7.75156],
+  ["Rifugio Jutz", "hut", 45.85562, 7.80349],
+  ["Ristoro Colle Bettaforca", "restaurant", 45.87026, 7.78197],
+  ["Ristoro Sitten", "restaurant", 45.85776, 7.79949],
+  ["Wunderbar", "cafe", 45.85827, 7.81195],
+];
+
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 
 export const SHORT_NAMES = {};

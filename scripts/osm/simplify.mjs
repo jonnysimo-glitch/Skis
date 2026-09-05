@@ -30,7 +30,7 @@ const KEEP = (node) => node.base || node.rifugio;
  * neighbour a pass-through in turn — a piste traced as five ways collapses to
  * one edge in four passes.
  */
-export function contractChains({ NODES, LIFTS, RUNS, report = {} }) {
+export function contractChains({ NODES, LIFTS, RUNS, PLACES = [], report = {} }) {
   let nodes = { ...NODES };
   let runs = RUNS.map((r) => ({ ...r }));
   let merged = 0;
@@ -92,6 +92,7 @@ export function contractChains({ NODES, LIFTS, RUNS, report = {} }) {
     NODES: nodes,
     LIFTS,
     RUNS: runs,
+    PLACES,
     report: {
       ...report,
       chainsMerged: merged,
@@ -118,14 +119,14 @@ function pickName(a, b) {
  * Runs after the chains have merged and the junctions have their names, so
  * both ends are a place a skier could point at rather than a placeholder.
  */
-export function nameRuns({ NODES, LIFTS, RUNS, report }) {
+export function nameRuns({ NODES, LIFTS, RUNS, PLACES = [], report }) {
   let named = 0;
   const runs = RUNS.map((run) => {
     if (run.name) return run;
     named++;
     return { ...run, name: describe(NODES[run.from], NODES[run.to], run) };
   });
-  return { NODES, LIFTS, RUNS: runs, report: { ...report, runsNamedByEndpoints: named } };
+  return { NODES, LIFTS, RUNS: runs, PLACES, report: { ...report, runsNamedByEndpoints: named } };
 }
 
 /**

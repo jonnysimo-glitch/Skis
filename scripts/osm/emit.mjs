@@ -125,10 +125,45 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
   };
 }
 
-export function emit({ id, meta, NODES, LIFTS, RUNS, report, fetchedAt }) {
+export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], report, fetchedAt }) {
   const nodeKeys = Object.keys(NODES);
   const keyWidth = Math.max(...nodeKeys.map((k) => k.length)) + 2;
   const nameWidth = Math.max(...nodeKeys.map((k) => quote(NODES[k].name).length)) + 1;
+
+  /*
+   * On the mountain, or at a base you could walk from.
+   *
+   * 200 m of a graph node is "you can ski to it". A rental shop is a walk from
+   * the car park rather than a stop on a piste, so it gets 600 m of a base and
+   * nothing else qualifies it.
+   */
+  const NEAR_PISTE = 200;
+  const NEAR_BASE = 600;
+  const spanM = (a, b) => {
+    const R = 6371000;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+    const lat = ((a.lat + b.lat) / 2) * Math.PI / 180;
+    const x = dLon * Math.cos(lat);
+    return Math.round(Math.sqrt(dLat * dLat + x * x) * R);
+  };
+  const nodeList = nodeKeys.map((k) => NODES[k]);
+  const baseList = nodeList.filter((n) => n.base);
+  const nearest = (place, list) =>
+    list.reduce((best, n) => Math.min(best, spanM(place, n)), Infinity);
+  const kept = PLACES.filter((place) =>
+    place.kind === "rental"
+      ? nearest(place, baseList) <= NEAR_BASE
+      : nearest(place, nodeList) <= NEAR_PISTE);
+  // One entry per name: OSM often has the building and its restaurant as two
+  // objects a few metres apart, and two identical pins is worse than one.
+  const seenPlace = new Set();
+  const placeLines = kept
+    .filter((place) => !seenPlace.has(place.name) && seenPlace.add(place.name))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((place) =>
+      `  [${quote(place.name)}, ${quote(place.kind)}, ` +
+      `${Math.round(place.lat * 1e5) / 1e5}, ${Math.round(place.lon * 1e5) / 1e5}],`);
 
   const nodeLines = nodeKeys.map((key) => {
     const n = NODES[key];
@@ -212,6 +247,22 @@ ${liftLines.join("\n")}
 /** [from, to, name, difficulty, km, minutes] */
 export const RUNS = [
 ${runLines.join("\n")}
+];
+
+/**
+ * Places on the mountain that are not junctions: where to eat, and where to
+ * hire skis.
+ *
+ * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ *
+ * Narrowed to what is actually on the hill. A resort's bounding box holds
+ * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
+ * showing all of them shows none of them. Somewhere to eat has to be within a
+ * couple of hundred metres of a place the graph can put you; somewhere to hire
+ * skis has further to reach, because it is in the village you parked in.
+ */
+export const PLACES = [
+${placeLines.join("\n")}
 ];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };

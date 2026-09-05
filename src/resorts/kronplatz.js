@@ -210,6 +210,44 @@ export const RUNS = [
   ["p63", "p28", "Ruipa", "blue", 0.7, 4],
 ];
 
+/**
+ * Places on the mountain that are not junctions: where to eat, and where to
+ * hire skis.
+ *
+ * [name, kind, lat, lon] with kind one of hut, restaurant, cafe or rental.
+ *
+ * Narrowed to what is actually on the hill. A resort's bounding box holds
+ * every pizzeria in the valley — sixty-two of them at Monterosa — and a map
+ * showing all of them shows none of them. Somewhere to eat has to be within a
+ * couple of hundred metres of a place the graph can put you; somewhere to hire
+ * skis has further to reach, because it is in the village you parked in.
+ */
+export const PLACES = [
+  ["AlpINN", "restaurant", 46.74074, 11.95565],
+  ["Alpres", "restaurant", 46.75173, 11.99306],
+  ["Bivacco", "restaurant", 46.72819, 11.96644],
+  ["Corones", "restaurant", 46.7382, 11.9579],
+  ["Furcia Center", "restaurant", 46.72294, 11.9646],
+  ["Geiselsberger Hütte", "restaurant", 46.74246, 11.97086],
+  ["Gipfel Restaurant Cima", "restaurant", 46.73907, 11.95891],
+  ["Graziani Lodge & Chalets", "restaurant", 46.73204, 11.9571],
+  ["Hardimitz‘n", "restaurant", 46.77156, 11.94316],
+  ["Herzlalm", "restaurant", 46.7545, 11.95859],
+  ["Huiba Hitte", "restaurant", 46.75136, 11.98283],
+  ["K1", "restaurant", 46.77221, 11.94143],
+  ["Kron-Restaurant", "restaurant", 46.73907, 11.96011],
+  ["Lorenzi Hütte", "restaurant", 46.74481, 11.99093],
+  ["Marchner Hütte", "restaurant", 46.73441, 11.99455],
+  ["P5 Mountain Club", "restaurant", 46.73209, 11.96264],
+  ["Panorama", "restaurant", 46.73126, 11.95994],
+  ["Pizzeria Dolasilla", "restaurant", 46.77105, 11.93893],
+  ["Prackenhütte - Rifugio Pracken", "restaurant", 46.75254, 11.98288],
+  ["Schnapskurve", "restaurant", 46.71255, 11.9498],
+  ["Treff Kronplatz", "cafe", 46.73926, 11.95819],
+  ["Treff Reischach", "cafe", 46.77243, 11.94196],
+  ["Ücia Picio Pré", "restaurant", 46.71783, 11.96978],
+];
+
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 
 export const SHORT_NAMES = {};

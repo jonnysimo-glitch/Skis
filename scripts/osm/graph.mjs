@@ -190,11 +190,38 @@ export function build(osm, { tolerance = 45, elevation }) {
     .map((el) => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags.name }))
     .filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lon));
 
+  /**
+   * Places you would go to that are not junctions: somewhere to eat, and
+   * somewhere to hire skis.
+   *
+   * They are not part of the routing — the solver already uses `rifugio` to
+   * route past lunch — but they are most of what a skier looks for on a piste
+   * map and none of it was on ours. Kept whole here, with a kind and a name,
+   * and narrowed down to the ones actually on the mountain at emit time, when
+   * the final node set is known.
+   */
+  const KIND = (t) =>
+    t.tourism === "alpine_hut" || t.tourism === "wilderness_hut" ? "hut"
+      : t.amenity === "restaurant" ? "restaurant"
+        : t.amenity === "cafe" ? "cafe"
+          : t.shop === "ski" || t.shop === "rental" || t.amenity === "ski_rental" ? "rental"
+            : null;
+  const places = elements
+    .filter((el) => el.tags?.name && KIND(el.tags))
+    .map((el) => ({
+      name: el.tags.name,
+      kind: KIND(el.tags),
+      lat: el.lat ?? el.center?.lat,
+      lon: el.lon ?? el.center?.lon,
+    }))
+    .filter((pl) => Number.isFinite(pl.lat) && Number.isFinite(pl.lon));
+
   const report = {
     lifts: lifts.length,
     pistes: pistes.length,
     namedPlaces: named.length,
     huts: huts.length,
+    places: places.length,
     tolerance,
     droppedNoGeometry: 0,
     difficultyAssumed: 0,
@@ -480,5 +507,5 @@ export function build(osm, { tolerance = 45, elevation }) {
     }
   }
 
-  return { NODES, LIFTS, RUNS, report };
+  return { NODES, LIFTS, RUNS, PLACES: places, report };
 }

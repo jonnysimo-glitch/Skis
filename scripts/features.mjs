@@ -2020,6 +2020,42 @@ if (feature("20. The mountain is labelled")) {
   await routed.context_.close();
 }
 
+// ===================== 26. SOMEWHERE TO EAT, AND SOMEWHERE TO HIRE SKIS ==
+// Most of what a skier reads off a piste map is not junctions: it is the huts.
+// The app had every lift and every run on the mountain and not one restaurant.
+if (feature("26. Somewhere to eat")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(2200);
+
+  const drawn = (await page.evaluate(() => window.__skisPlaces)) ?? [];
+  check("the mountain restaurants are on the map", drawn.length >= 8,
+    `${drawn.length} drawn — ${drawn.slice(0, 3).map((d) => d.name).join(", ")}`);
+  check("every one of them has a real name", drawn.every((d) => d.name && d.name.length > 2),
+    drawn.map((d) => d.name).find((n) => !n || n.length <= 2) ?? "all named");
+
+  // Markers go down before the station names take the room. Ranked the other
+  // way round, four of Monterosa's twenty-five got drawn at all.
+  const labels = (await page.evaluate(() => window.__skisLabels)) ?? [];
+  const clash = drawn.find((a) => labels.some((b) => a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t));
+  check("and none of them sits under a place name", !clash, clash ? clash.name : "clear");
+
+  // And they are listed, because "is there anywhere to eat up there" is a
+  // question you ask before you leave the car park.
+  await page.click(".resortbar__main");
+  await page.waitForTimeout(600);
+  const listed = await page.evaluate(() => document.body.innerText);
+  check("and listed in the resort panel", /On the mountain/i.test(listed));
+  check("with what kind of place each one is",
+    /restaurant|mountain hut|ski hire|bar/i.test(listed));
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ===================== 21. THE PANEL DOES NOT MOVE ==
 // It used to be a sheet with three snap points, a drag handle and an expand
 // button, and this feature checked that one tap reached the top. None of that

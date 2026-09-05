@@ -14,8 +14,16 @@
  */
 import { useEffect, useRef } from "react";
 import { Close, Info } from "../ui/Icons.jsx";
-import { LIFTS, RUNS, NODES } from "../active-resort.js";
+import { LIFTS, RUNS, NODES, PLACES } from "../active-resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
+
+/** What OSM calls it, said the way a skier would. */
+const PLACE_LABEL = {
+  hut: "mountain hut",
+  restaurant: "restaurant",
+  cafe: "bar",
+  rental: "ski hire",
+};
 
 const hhmm = (min) =>
   `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
@@ -155,6 +163,25 @@ export default function ResortStatus({ resort, onClose }) {
               </li>
             </ul>
           </div>
+
+          {PLACES.length > 0 && (
+            <div className="sectionrule">
+              {/* On the map as amber markers, and listed here because "is
+                  there anywhere to eat up there" is a question a piste map
+                  answers and ours could not. */}
+              <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>
+                On the mountain
+              </div>
+              <ul className="rows">
+                {PLACES.map(([name, kind]) => (
+                  <li className="row" key={name}>
+                    <span>{name}</span>
+                    <span className="row__v">{PLACE_LABEL[kind] ?? kind}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="sectionrule">
             <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>Planning against</div>
