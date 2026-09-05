@@ -41,8 +41,13 @@ const GLIDE_DECAY = 0.92;
  * Wide enough to dissolve the steps between flat quads completely. It can be
  * this wide because the blurred copy is cut back to the sharp silhouette
  * before it is composited, so only the inside of the mountain is softened.
+ *
+ * Narrower than it was, because the grid is finer than it was. At GRID 60 the
+ * steps were 2.6px of blur apart; at 72 they are closer together and the same
+ * blur was throwing away the extra resolution it had just paid for, along with
+ * the rock and the snow grain that make the surface read as ground.
  */
-const TERRAIN_BLUR = 2.6;
+const TERRAIN_BLUR = 1.9;
 
 /**
  * How much of that blur survives once the camera is close.
@@ -187,16 +192,54 @@ const mix = (a, b, t) => [
  * flat quads that edge landed on cell boundaries and read as blockiness. The
  * mountain has no such lines on it.
  */
+/**
+ * What the ground is made of, by height.
+ *
+ * A starting point only. Steepness overrides it below, because a wall is rock
+ * at any altitude and a shelf holds snow well down the mountain, and that is
+ * the difference between terrain that reads as ground and terrain that reads
+ * as a painted contour map.
+ */
 const BANDS = [
-  [0.00, [58, 82, 72]],   // valley forest
-  [0.26, [96, 118, 108]], // treeline
-  [0.44, [150, 163, 164]], // rock and scree
-  [0.60, [196, 210, 216]], // old snow
-  [0.78, [232, 240, 245]], // firn
-  [1.00, [248, 251, 253]], // snowfield
+  // Winter, not summer. Even the valley floor is under snow with stands of
+  // spruce through it, so the low band is a snowy forest rather than a green
+  // one: this is a ski map and a green valley reads as the wrong season.
+  [0.00, [116, 134, 130]], // snowy forest
+  [0.26, [156, 172, 174]], // thinning trees
+  [0.44, [196, 208, 213]], // treeline and scree
+  [0.60, [222, 232, 238]], // old snow
+  [0.78, [238, 244, 249]], // firn
+  [1.00, [250, 252, 254]], // snowfield
 ];
 
-function surfaceColour(alt, lo, hi, shade, haze) {
+/**
+ * Bare rock, for a face too steep to hold snow.
+ *
+ * Lighter than rock actually is. From a distance an alpine face is dusted and
+ * half lit, and a true rock grey turned every ridge into a black scar.
+ */
+const ROCK = [148, 142, 138];
+/**
+ * Where the snow gives out. Above ROCK_TO the face is bare.
+ *
+ * These are steepness after the vertical exaggeration, which is the right
+ * reference: what should look like rock is what looks steep on screen. Set at
+ * 0.42 the mountain came out mostly rock and read as a summer photograph.
+ */
+const ROCK_FROM = 0.62;
+const ROCK_TO = 0.88;
+
+/**
+ * Low sun on snow is warm where it lands and blue where it does not.
+ *
+ * The shading used to be a flat grey multiply, which is what a clay model
+ * looks like: a snowfield in shadow is not a darker white, it is blue. These
+ * are multipliers per channel at full light and in full shade.
+ */
+const SUNLIT = [1.05, 1.02, 0.96];
+const SHADOW = [0.78, 0.87, 1.06];
+
+function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0) {
   const t = Math.max(0, Math.min(1, (alt - lo) / (hi - lo || 1)));
   let k1 = BANDS.length - 1;
   while (k1 > 1 && BANDS[k1 - 1][0] > t) k1--;
@@ -204,13 +247,31 @@ function surfaceColour(alt, lo, hi, shade, haze) {
   const [t1, c1] = BANDS[k1];
   const f = (t - t0) / (t1 - t0 || 1);
   let c = mix(c0, c1, f * f * (3 - 2 * f)); // smoothstep, so the joins vanish
+
+  // Steep ground is rock. The grain moves the threshold about, so the snow
+  // line is ragged rather than a contour, which is what it looks like from a
+  // helicopter and never looks like on a map.
+  const edge = Math.max(0, Math.min(1,
+    (steep - (ROCK_FROM + grain * 0.16)) / (ROCK_TO - ROCK_FROM)));
+  c = mix(c, ROCK, edge * edge * (3 - 2 * edge));
+
+  // Warm in the light, blue in the shade, rather than one grey multiplier.
   const k = 0.52 + 0.80 * shade;
-  c = [c[0] * k, c[1] * k, c[2] * k];
+  const tint = mix(SHADOW, SUNLIT, Math.max(0, Math.min(1, shade * 1.15)));
+  c = [c[0] * k * tint[0], c[1] * k * tint[1], c[2] * k * tint[2]];
+
+  // And a little brightness grain on top: wind on the snowfields, mottle on
+  // the rock. Small enough to be texture rather than noise.
+  const lift = 1 + grain * 0.09;
+  c = [c[0] * lift, c[1] * lift, c[2] * lift];
+
   // A touch of aerial perspective so far ridges sit back, but only a touch.
   // Washing the surface into the sky is what makes a solid model look like a
   // transparency laid over it, and this one is meant to read as an object.
   c = mix(c, SKY_HORIZON, haze * 0.16);
-  return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+  return `rgb(${Math.max(0, Math.min(255, c[0])) | 0},` +
+    `${Math.max(0, Math.min(255, c[1])) | 0},` +
+    `${Math.max(0, Math.min(255, c[2])) | 0})`;
 }
 
 export default function FallbackTerrain({
@@ -534,7 +595,7 @@ export default function FallbackTerrain({
 
     // ---- terrain ---------------------------------------------------------
     const drawTerrain = (v, cam, g) => {
-      const { heights, at, shades, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
+      const { heights, at, shades, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
       const quads = [];
@@ -566,6 +627,8 @@ export default function FallbackTerrain({
             // neighbours that share three of them.
             alt: (h00 + h10 + h01 + h11) / 4,
             shade: shades[qAt(i, j)],
+            steep: steeps[qAt(i, j)],
+            grain: grains[qAt(i, j)],
           });
         }
       }
@@ -645,7 +708,7 @@ export default function FallbackTerrain({
         // The block is an object the mountain sits in, not more mountain.
         const fill = q.flat
           ? `rgb(${q.flat[0]},${q.flat[1]},${q.flat[2]})`
-          : surfaceColour(q.alt, lo, hi, q.shade, haze);
+          : surfaceColour(q.alt, lo, hi, q.shade, haze, q.steep, q.grain);
         const [a, b, c, d] = q.pts;
         g.beginPath();
         g.moveTo(a.x, a.y);

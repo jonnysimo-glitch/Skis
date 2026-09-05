@@ -6,7 +6,13 @@
  * deterministic: the same resort gives the same mountain every time, which the
  * refine chips depend on and which makes the tests worth writing.
  */
-export const GRID = 60;
+/*
+ * 72, measured rather than guessed. The redraw only happens when something
+ * moved, so what matters is the frame time during a drag: 60 was 44ms at the
+ * 95th percentile on this machine and 72 is 46ms, for 44% more ground. 84
+ * costs 60ms, which is a visible stutter on a phone.
+ */
+export const GRID = 72;
 
 /**
  * Real alpine terrain looks flat at 1.0 on a phone, per the brief. Lives here
@@ -185,6 +191,19 @@ export function buildField(nodes, makeProjector) {
   // of that on a phone. Smoothing the tones instead is free.
   const qAt = (i, j) => i * GRID + j;
   let shades = new Float32Array(GRID * GRID);
+  /**
+   * How steep the quad is, 0 flat and 1 a wall, and a grain value that breaks
+   * up the tone.
+   *
+   * Altitude alone decides nothing about what a piece of mountain is made of.
+   * A flat shelf at 2,600 m is a snowfield and the north face below it is bare
+   * rock, and a surface coloured purely by height paints both the same, which
+   * is most of why the terrain read as a clay model rather than as ground. The
+   * grain does the rest: real snow has wind features and rock outcrops, and a
+   * single flat tone per cell has neither.
+   */
+  const steeps = new Float32Array(GRID * GRID);
+  const grains = new Float32Array(GRID * GRID);
   const clamp = (v) => Math.max(0, Math.min(GRID, v));
   const H = (i, j) => heights[at(clamp(i), clamp(j))];
   const dxW = (maxX - minX) / GRID;
@@ -198,6 +217,18 @@ export function buildField(nodes, makeProjector) {
       const gz = (H(i, j + 2) + H(i + 1, j + 2) - H(i, j - 1) - H(i + 1, j - 1)) / (6 * dzW);
       const n = normalise([-gx * VERT_EXAGGERATION, 1, -gz * VERT_EXAGGERATION]);
       shades[qAt(i, j)] = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
+      // n[1] is the upward component of the unit normal, so it falls from 1 on
+      // the flat to 0 on a wall. Exaggeration is already in it, which is right:
+      // what should look like rock is what looks steep on screen.
+      steeps[qAt(i, j)] = 1 - Math.max(0, Math.min(1, n[1]));
+      // Two octaves at different scales, so the surface has both broad patches
+      // and a finer speckle. Tied to the cell like the height noise above, or
+      // it aliases the moment a smaller resort uses the same grid.
+      const x = minX + dxW * (i + 0.5);
+      const z = minZ + dzW * (j + 0.5);
+      grains[qAt(i, j)] =
+        (fbm(x / (cell * 3.1), z / (cell * 3.1)) - 0.5) * 0.7 +
+        (fbm(x / (cell * 0.9), z / (cell * 0.9)) - 0.5) * 0.3;
     }
   }
   // One box blur pass. Two starts flattening the ridges themselves, and the
@@ -224,7 +255,7 @@ export function buildField(nodes, makeProjector) {
   }
 
   return {
-    proj, heights, at, sample, shades, qAt,
+    proj, heights, at, sample, shades, steeps, grains, qAt,
     minX, maxX, minZ, maxZ, lo, hi,
     cx: (minX + maxX) / 2,
     cz: (minZ + maxZ) / 2,
