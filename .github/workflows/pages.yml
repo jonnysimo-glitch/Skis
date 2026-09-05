@@ -99,7 +99,21 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # enablement, so the Pages source does not have to be switched by hand.
+      #
+      # Pages serves from a branch or from a workflow artifact, and the repo
+      # setting decides which. This one was on the branch, so the first run of
+      # this workflow would have built the site, uploaded it, and then failed
+      # at the deploy step with "Pages is not configured for GitHub Actions" —
+      # a red X and a stale site, waiting on a click in Settings.
+      #
+      # `enablement` makes the action set build_type to workflow itself, using
+      # the pages: write permission already granted above. If it cannot, the
+      # job fails exactly where it would have failed anyway and Pages carries
+      # on serving the branch, so this costs nothing to try.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
