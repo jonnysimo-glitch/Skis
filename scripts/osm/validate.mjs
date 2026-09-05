@@ -119,9 +119,33 @@ function undirectedPieces(keys, edges) {
   return pieces.sort((a, b) => b.length - a.length);
 }
 
+/**
+ * Lift kinds a skier can also ride down.
+ *
+ * Kept in step with the same list in emit.mjs, which is what the app's own
+ * edge list is built from. It matters here because connectivity is judged on
+ * these edges: a valley station whose only way out is riding the gondola back
+ * up is strongly connected in the graph the app uses, and was not in the graph
+ * this function was looking at.
+ */
+const DOWNLOADABLE = new Set(["gondola", "cable car", "funicular"]);
+
 export function prune({ NODES, LIFTS, RUNS, PLACES = [], report = {} }) {
   const keys = Object.keys(NODES);
-  const edges = [...LIFTS, ...RUNS];
+  /*
+   * The edges the app will actually have, not the ones OSM drew.
+   *
+   * A gondola is two edges in the running graph, one each way. This function
+   * saw only the upward one, so any base a skier reaches by riding down and
+   * leaves by riding back up looked like somewhere you could get to and not
+   * get out of, and was pruned. That is exactly Predazzo: the Stalimen
+   * gondola is Ski Center Latemar's third way in, nothing skis back down to
+   * the village, and the whole valley — five hundred metres of the resort's
+   * vertical — was being thrown away as unreachable.
+   */
+  const rideable = LIFTS.filter((l) => DOWNLOADABLE.has(l.kind))
+    .map((l) => ({ ...l, from: l.to, to: l.from, down: true }));
+  const edges = [...LIFTS, ...rideable, ...RUNS];
   const pieces = undirectedPieces(keys, edges);
   const components = stronglyConnected(keys, edges);
   components.sort((a, b) => b.length - a.length);
@@ -206,7 +230,11 @@ export function check({ NODES, LIFTS, RUNS }) {
   }
   if (bases.length) {
     const adj = new Map(keys.map((k) => [k, []]));
+    // The same edges the app will have, gondolas both ways included. Judging
+    // this on the upward direction alone said Champoluc could not be reached
+    // from Stafal, when the way there is the Alagna cable car, ridden down.
     for (const e of [...LIFTS, ...RUNS]) adj.get(e.from).push(e.to);
+    for (const e of LIFTS) if (DOWNLOADABLE.has(e.kind)) adj.get(e.to).push(e.from);
     const reach = (start) => {
       const seen = new Set([start]);
       const queue = [start];

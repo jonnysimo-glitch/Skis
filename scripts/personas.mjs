@@ -183,8 +183,16 @@ const PEOPLE = [
         n ? `${n} routes` : "empty state");
       if (empty) {
         const body = await page.$eval(".empty", (e) => e.textContent);
+        /*
+         * Either honest reason will do. On a mountain with no linked blue at
+         * all the answer names the grade; on one where there is some but not
+         * four hours of it, the answer is about the terrain and the clock.
+         * Asserting the first alone read a correct message as a failure the
+         * moment a resort gained enough blue to change which one applies.
+         */
         check(`${resort.id}: ${this.who} is told why in words she would use`,
-          /blue/i.test(body) && !/NaN|undefined/.test(body), body.replace(/\s+/g, " ").slice(0, 80));
+          /blue|terrain|enough/i.test(body) && !/NaN|undefined/.test(body),
+          body.replace(/\s+/g, " ").slice(0, 80));
         const fixed = await takeAFix(page);
         check(`${resort.id}: ${this.who} is given something that works`,
           fixed === null || fixed.routes > 0 || (await page.$(".fixlist button")) !== null,

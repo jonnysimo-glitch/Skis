@@ -10,7 +10,7 @@
     12.08,
     46.84
   ],
-  "tolerance": 120,
+  "tolerance": 90,
   "bases": [
     "Reischach",
     "Riscone",
@@ -52,7 +52,7 @@
   ],
   "defaultBase": "Olang",
   "defaultBaseWhy": "The Olang gondola is the base most people use and the one OSM names after the village. The other three are found through their lift names.",
-  "toleranceWhy": "120, chosen on what the four bases can offer rather than on kilometres. At 60 the graph keeps 58.4 km but Korer can offer nothing below black and Kronplatz 2000 nothing to a blue skier; at 120 all four bases fill a day at all three grades, and it stitches a twentieth lift. Above 160 Korer merges into Kronplatz 2000 and the resort loses a car park.",
+  "toleranceWhy": "Re-measured after the prune fix. 90 gives 26 of the 32 published lifts, 66.9 km, and a day at every grade from all four bases. 60 keeps more piste on paper but leaves Kronplatz 2000 with nothing for a blue skier and Korer with under two hours at red; 120 costs four kilometres and twenty-seven runs for the same lift count.",
   "published": {
     "lifts": 32,
     "top": 2275,

@@ -17,6 +17,7 @@ import { shortName } from "../lib/places.js";
 import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
   SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
+  SKY_TOP, SKY_MID, SKY_HORIZON,
 } from "./field.js";
 import { PISTE_COLOUR, PISTE_TINT, LIFT_TINT } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
@@ -188,8 +189,7 @@ const PAN_REACH = 0.45;
 const BLOCK_BLEED = 1.62;
 const BLOCK_FILL = 0.72;
 
-const SKY_TOP = [104, 158, 196];
-const SKY_HORIZON = [216, 234, 244];
+
 
 const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
 
@@ -1395,7 +1395,7 @@ export default function FallbackTerrain({
 
         const sky = ctx.createLinearGradient(0, 0, 0, height);
         sky.addColorStop(0, `rgb(${SKY_TOP.join(",")})`);
-        sky.addColorStop(0.55, "rgb(170,203,224)");
+        sky.addColorStop(0.55, `rgb(${SKY_MID.join(",")})`);
         sky.addColorStop(1, `rgb(${SKY_HORIZON.join(",")})`);
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, width, height);

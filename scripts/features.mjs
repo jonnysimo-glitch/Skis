@@ -11,7 +11,7 @@
  */
 import { RESORTS } from "../src/resorts/index.js";
 import { graphFor } from "../src/resorts/graphs.js";
-import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR } from "../src/map/field.js";
+import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR, skyAt } from "../src/map/field.js";
 import { DWELL_MS as DWELL } from "../src/lib/progress.js";
 import { PNG } from "pngjs";
 import {
@@ -42,6 +42,45 @@ const NODES = graphFor(RESORTS.find((r) => r.available).id).NODES;
 /** The key of the place called `name`, or null. */
 const keyNamed = (name) =>
   Object.keys(NODES).find((k) => new RegExp(name, "i").test(NODES[k].name)) ?? null;
+
+/**
+ * Two places a red skier can genuinely get between, taken from the graph.
+ *
+ * The transfer cases used to name a pair: Colle Salati to Champoluc. That
+ * worked until the data behind it changed, and then the feature tests were
+ * reporting a data limitation as a broken feature — a red skier cannot reach
+ * Champoluc on the current Monterosa graph, because the only way in is a black
+ * run. What these cases are for is the "straight there" flow, so the pair is
+ * derived: somewhere high, and somewhere reachable from it that is not itself.
+ */
+const RANK = { blue: 1, red: 2, black: 3 };
+function transferPair(ability = "red") {
+  const edges = graphFor(RESORTS.find((r) => r.available).id).buildEdges();
+  const adj = {};
+  for (const e of edges) {
+    if (e.kind !== "lift" && RANK[e.difficulty] > RANK[ability]) continue;
+    (adj[e.from] ||= []).push(e.to);
+  }
+  const reach = (from) => {
+    const seen = new Set([from]);
+    const queue = [from];
+    while (queue.length) {
+      for (const next of adj[queue.shift()] ?? []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+    return seen;
+  };
+  // From high, to low: a transfer is somewhere you are to somewhere your car
+  // is, and the interesting version of it goes down the mountain.
+  const byHeight = Object.keys(NODES).sort((a, b) => NODES[b].alt - NODES[a].alt);
+  for (const from of byHeight) {
+    const seen = reach(from);
+    const to = [...seen].filter((k) => k !== from && NODES[k].alt < NODES[from].alt - 400)
+      .sort((a, b) => NODES[a].alt - NODES[b].alt)[0];
+    if (to) return { from, to, fromName: NODES[from].name, toName: NODES[to].name };
+  }
+  return null;
+}
+const TRANSFER = transferPair();
 
 const HEADED = process.argv.includes("--headed");
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).toLowerCase();
@@ -142,8 +181,8 @@ if (feature("1. Straight there: getting to one place, now")) {
   );
 
   // A real transfer.
-  await page.selectOption("#p-start", keyNamed("Colle Salati"));
-  await page.selectOption("#p-finish", keyNamed("Champoluc"));
+  await page.selectOption("#p-start", TRANSFER.from);
+  await page.selectOption("#p-finish", TRANSFER.to);
   check("picking two different ends re-enables it", !(await page.$eval(".page__foot .btn", (n) => n.disabled)));
 
   await page.click("text=Take me there");
@@ -151,7 +190,8 @@ if (feature("1. Straight there: getting to one place, now")) {
   check("it goes straight to the route, with nothing to choose between", (await where(page)) === "detail");
 
   const body = await text(page);
-  check("the route is named for where it is going", /To Champoluc/.test(body), body.split("\n")[1] || "");
+  check("the route is named for where it is going",
+    new RegExp(`To ${TRANSFER.toName}`).test(body), body.split("\n")[1] || "");
   check("it is not dressed up as one of several options", !body.includes("Most vertical"));
 
   await openLegs(page);
@@ -180,7 +220,7 @@ if (feature("1. Straight there: getting to one place, now")) {
 
 // =============================== 2. A TRANSFER IGNORES A DAY'S REFINEMENTS ==
 if (feature("2. A transfer is not a refined day")) {
-  // The discriminating case. Salati to Champoluc crosses the whole mountain on
+  // The discriminating case. The derived pair crosses the mountain on
   // red and does not exist at all on blue. So a leftover "Easier" from a day
   // plan does not merely shade the answer, it turns a real transfer into "no
   // way there". The window has to fit the crossing while 60% of it does not,
@@ -208,8 +248,8 @@ if (feature("2. A transfer is not a refined day")) {
   await page.click('[aria-label="Change the plan"]');
   await page.waitForSelector("#p-t1", { timeout: 10000 });
   await page.click('.segmented__opt:has-text("Straight there")');
-  await page.selectOption("#p-start", keyNamed("Colle Salati"));
-  await page.selectOption("#p-finish", keyNamed("Champoluc"));
+  await page.selectOption("#p-start", TRANSFER.from);
+  await page.selectOption("#p-finish", TRANSFER.to);
   await page.fill("#p-t0", "11:00");
   await page.fill("#p-t1", "12:45");
   await page.click("text=Take me there");
@@ -221,7 +261,7 @@ if (feature("2. A transfer is not a refined day")) {
     await where(page)
   );
   const body = await text(page);
-  check("it goes where you asked", /To Champoluc/.test(body));
+  check("it goes where you asked", new RegExp(`To ${TRANSFER.toName}`).test(body), TRANSFER.toName);
   check(
     "the window is not quietly cut to 60% of itself by a stale Shorter",
     !/further than that/.test(body)
@@ -268,8 +308,8 @@ if (feature("3. Route between any two points")) {
   // A day that starts and ends at two different mid-mountain points.
   const page = await newPage(browser, { at: [11, 30] });
   await toPlan(page, url);
-  await page.selectOption("#p-start", keyNamed("Colle Salati"));
-  await page.selectOption("#p-finish", keyNamed("Gabiet"));
+  await page.selectOption("#p-start", TRANSFER.from);
+  await page.selectOption("#p-finish", TRANSFER.to);
   await page.fill("#p-t0", "11:30");
   await page.fill("#p-t1", "16:00");
   await solve(page);
@@ -283,8 +323,10 @@ if (feature("3. Route between any two points")) {
       const legs = [...document.querySelectorAll(".leg")];
       return legs.length ? document.body.innerText : "";
     });
-    check("the route it gives actually ends at the point asked for", /Gabiet/.test(ends));
-    check("and starts from the point asked for", /Salati/.test(ends));
+    check("the route it gives actually ends at the point asked for",
+      new RegExp(TRANSFER.toName.split(" ")[0]).test(ends), TRANSFER.toName);
+    check("and starts from the point asked for",
+      new RegExp(TRANSFER.fromName.split(" ")[0]).test(ends), TRANSFER.fromName);
   }
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
@@ -1103,17 +1145,27 @@ if (feature("13. The block is under the mountain, not in front of it")) {
     // Passed in from the module that defines them. A copy of these numbers
     // lived here once and went stale the first time the slab was recoloured,
     // which read as the slab having vanished.
-    const shot = await page.$eval(SEL, (c, FLAT) => {
+    /*
+     * The sky is matched against the gradient that drew it, not guessed at.
+     *
+     * "Bluer than it is red" was true of the sky and, once the shading learned
+     * that shadows on snow are blue, of half the mountain: those pixels were
+     * skipped as sky, and the slab came out at 43% of a model it is 11% of.
+     * The renderer's own stops are imported, so this cannot drift again.
+     */
+    const SKY = Array.from({ length: 101 }, (_, i) => skyAt(i / 100));
+    const shot = await page.$eval(SEL, (c, [FLAT, SKY_ROWS]) => {
       const g = c.getContext("2d");
       const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
       let slab = 0, terrain = 0, top = 1e9, bottom = -1;
       const rows = [];
       for (let y = 0; y < height; y += 4) {
         let rTerrain = 0, rSlab = 0;
+        const sky = SKY_ROWS[Math.round((y / (height - 1)) * 100)];
         for (let x = 0; x < width; x += 4) {
           const i = (y * width + x) * 4;
           const [r, gg, b] = [data[i], data[i + 1], data[i + 2]];
-          const isSky = b > r + 12 && b > gg + 6;
+          const isSky = Math.abs(r - sky[0]) <= 5 && Math.abs(gg - sky[1]) <= 5 && Math.abs(b - sky[2]) <= 5;
           if (isSky) continue;
           const isSlab = FLAT.some((f) => f[0] === r && f[1] === gg && f[2] === b);
           if (isSlab) { slab++; rSlab++; } else { terrain++; rTerrain++; }
@@ -1132,7 +1184,7 @@ if (feature("13. The block is under the mountain, not in front of it")) {
         upperSlab += r.rSlab;
       }
       return { slab, terrain, upperTerrain, upperSlab };
-    }, [SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR]);
+    }, [[SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR], SKY]);
 
     const model = shot.slab + shot.terrain;
     const slabPct = (shot.slab / model) * 100;
@@ -1179,8 +1231,21 @@ if (feature("14. The real map cannot leave the resort")) {
   }
 
   if (!present) {
-    check("MapLibre reached style.load, so there is a camera to test", false,
-      "__skisMap never appeared");
+    /*
+     * MapLibre needs a style, and a style needs a host it can reach.
+     *
+     * With no MapTiler key it falls back to a keyless style over open
+     * elevation tiles and this runs. With a key, on a machine that cannot
+     * reach api.maptiler.com, the style request fails and there is no camera
+     * to test — which is the network, not the wall. Saying so beats a red
+     * tick that means "we could not look".
+     */
+    const keyed = await page.evaluate(() =>
+      Boolean(document.querySelector('.layers__opt:not([disabled])[aria-pressed="false"]')));
+    check("MapLibre reached style.load, so there is a camera to test", !keyed,
+      keyed
+        ? "a MapTiler key is set and its host is unreachable from here, so there is no map to test"
+        : "__skisMap never appeared");
     await page.context_.close();
   } else {
     const state = await page.evaluate(() => {

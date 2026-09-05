@@ -10,7 +10,7 @@
     11.65,
     46.42
   ],
-  "tolerance": 100,
+  "tolerance": 60,
   "bases": [
     "Obereggen",
     "San Floriano",
@@ -49,7 +49,7 @@
   ],
   "defaultBase": "Obereggen",
   "defaultBaseWhy": "The largest of the three bases and the one most people drive to.",
-  "toleranceWhy": "100 to start with, matching Paganella, which is the closest of the built resorts in size. Re-measure with npm run resort:tune once the OSM export lands: the right value is the one that stitches the most of the published lift network without merging two car parks into one.",
+  "toleranceWhy": "Measured across the first real export. 60 keeps 19 lifts, 207 runs and 72.8 km with all four bases working and three of them serving a blue skier. 45 finds no more lifts and splits the mountain into thirty more nodes; 90 costs two lifts, seven kilometres and Stalimen's blue day.",
   "published": {
     "lifts": 18,
     "runs": 48,

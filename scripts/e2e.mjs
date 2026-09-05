@@ -1014,10 +1014,15 @@ try {
       withLunch.every((b) => b <= t1),
       `${withLunch.join(", ")} vs ${t1}`
     );
+    // The latest of the offered days, not the earliest. These are two different
+    // sets of routes, and the shortest option in each set is chosen for being
+    // short rather than for what lunch did to it: one mountain offered the same
+    // 14:51 route in both, and "the earliest went up" read as a failure when
+    // nothing was wrong. The longest day is the one that shows the 45 minutes.
     check(
       "the sit-down comes out of the skiing, so the day ends later",
-      Math.min(...withLunch.map(toMinutes)) > Math.min(...withoutLunch.map(toMinutes)),
-      `earliest back ${withoutLunch.join(",")} → ${withLunch.join(",")}`
+      Math.max(...withLunch.map(toMinutes)) > Math.max(...withoutLunch.map(toMinutes)),
+      `latest back ${withoutLunch.join(",")} → ${withLunch.join(",")}`
     );
 
     // And the route has to actually pass somewhere to eat. The bar carries

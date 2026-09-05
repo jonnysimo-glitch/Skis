@@ -11,10 +11,11 @@
  */
 
 import * as kronplatz from "./kronplatz.js";
+import * as latemar from "./latemar.js";
 import * as monterosa from "./monterosa.js";
 import * as paganella from "./paganella.js";
 
-export const GRAPHS = { kronplatz, monterosa, paganella };
+export const GRAPHS = { kronplatz, latemar, monterosa, paganella };
 
 /** The graph module for a resort id, or null if there is no data for it. */
 export const graphFor = (id) => GRAPHS[id] ?? null;

@@ -116,9 +116,21 @@ function applyOperations(graph, config) {
    * resort's own range keeps "Olang" from marking the 2066 m mid-station of
    * the Olang II lift as somewhere you could park a car.
    */
-  const alts = Object.values(NODES).map((n) => n.alt).filter(Number.isFinite);
-  const floor = alts.length ? Math.min(...alts) : 0;
-  const ceiling = alts.length ? Math.max(...alts) : 0;
+  /*
+   * The floor is a low percentile, not the lowest node.
+   *
+   * One stray node collapses the band. Paganella's widened bounding box caught
+   * a path at 268 m down in the Adige valley, twelve kilometres from any lift,
+   * and that single point put the top of the "valley" at 914 m — below Andalo
+   * at 1,035, which is the village the resort is named after. Latemar failed
+   * the same way, on one node at Predazzo that never joined the mountain.
+   *
+   * A tenth of the nodes is a robust floor: it survives an outlier or five and
+   * still sits at the bottom of the skiing, which is what this is measuring.
+   */
+  const alts = Object.values(NODES).map((n) => n.alt).filter(Number.isFinite).sort((a, b) => a - b);
+  const floor = alts.length ? alts[Math.floor(alts.length * 0.1)] : 0;
+  const ceiling = alts.length ? alts[alts.length - 1] : 0;
   const valleyBelow = floor + (ceiling - floor) * 0.35;
 
   const candidates = new Map(); // configured name -> node keys

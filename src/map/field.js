@@ -77,6 +77,29 @@ export const SKIRT = 0.17;
  * Filled flat, with no slope shading and no haze, so no terrain pixel can
  * collide with them.
  */
+/**
+ * The sky, as three stops of a vertical gradient over the whole canvas.
+ *
+ * Here rather than in the renderer because the feature suite has to tell sky
+ * from mountain, and it cannot do that by eye. It used to guess — "bluer than
+ * it is red" — which was true of the sky and became true of a snowfield in
+ * shadow the moment the shading learned that shadows on snow are blue. Half
+ * the mountain was then counted as sky, and the slab looked like 43% of a
+ * model it is 11% of.
+ */
+export const SKY_TOP = [104, 158, 196];
+export const SKY_MID = [170, 203, 224];
+export const SKY_HORIZON = [216, 234, 244];
+
+/** The sky's colour at a given fraction down the canvas. */
+export function skyAt(t) {
+  const f = Math.max(0, Math.min(1, t));
+  const [a, b, k] = f <= 0.55
+    ? [SKY_TOP, SKY_MID, f / 0.55]
+    : [SKY_MID, SKY_HORIZON, (f - 0.55) / 0.45];
+  return [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * k));
+}
+
 export const SKIRT_LIT = [241, 246, 251];
 export const SKIRT_SHADE = [203, 220, 235];
 export const BASE_COLOUR = [188, 208, 226];
@@ -90,7 +113,20 @@ export const BASE_COLOUR = [188, 208, 226];
  * see the block comment in FallbackTerrain.jsx before changing it.
  */
 export function slabFor(field) {
-  const thickness = Math.max(field.hi - field.lo, 1) * SKIRT;
+  /*
+   * Thickness from the body of the mountain, not from its deepest point.
+   *
+   * One narrow valley should not make the plinth thicker. Monterosa gained
+   * Alagna at 1,220 m, which dropped `lo` by 364 m without adding any surface
+   * to speak of, and the slab went from a rim to 43% of the model — a wall
+   * with a mountain on top of it. The 10th percentile is the same robust floor
+   * the base matcher uses, for the same reason.
+   *
+   * The base still hangs below the true low point, or the deepest valley would
+   * poke through the underside.
+   */
+  const floor = Number.isFinite(field.body) ? field.body : field.lo;
+  const thickness = Math.max(field.hi - floor, 1) * SKIRT;
   return { thickness, base: field.lo - thickness };
 }
 
@@ -254,9 +290,14 @@ export function buildField(nodes, makeProjector) {
     shades = next;
   }
 
+  // The height a tenth of the ground is below: the bottom of the mountain
+  // proper, as opposed to the bottom of its deepest single valley.
+  const sorted = Array.from(heights).sort((a, b) => a - b);
+  const body = sorted[Math.floor(sorted.length * 0.1)];
+
   return {
     proj, heights, at, sample, shades, steeps, grains, qAt,
-    minX, maxX, minZ, maxZ, lo, hi,
+    minX, maxX, minZ, maxZ, lo, hi, body,
     cx: (minX + maxX) / 2,
     cz: (minZ + maxZ) / 2,
     cy: (lo + hi) / 2,

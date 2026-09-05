@@ -36,7 +36,7 @@
   ],
   "defaultBase": "Andalo",
   "defaultBaseWhy": "The main village and the larger of the two lift bases.",
-  "toleranceWhy": "100 stitches all 15 of the resort's published lifts into the graph; 75 left one of them unattached and cost a stranded node. It merges station endpoints a kilometre of piste apart into 47 nodes instead of 55, which is 1.1 km of piste less and the whole lift network more.",
+  "toleranceWhy": "100 stitches all 15 of the resort's published lifts into the graph and gives both bases a full day at red and black; 75 leaves one lift unattached and drops both bases to under five and a half hours.",
   "published": {
     "lifts": 15,
     "runs": 31,

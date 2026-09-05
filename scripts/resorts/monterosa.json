@@ -10,7 +10,7 @@
     8.0,
     45.94
   ],
-  "tolerance": 100,
+  "tolerance": 75,
   "bases": [
     "Staffal",
     "Stafal",
@@ -45,7 +45,7 @@
     "bearing": -24
   },
   "cameraWhy": "Set by eye to open looking up the Gressoney valley. The derivation from lowest base to high point gives -53, which looks up from Alagna instead.",
-  "toleranceWhy": "Measured with npm run resort:tune, then re-measured against what each base can actually offer. 75 gives 20 lifts and 62.3 km but leaves Champoluc able to fill only 145 minutes for a black skier; 100 gives 19 lifts and 60.7 km and a full day from both bases at red and black. A base that cannot fill a day is worse than 1.6 km of junction detail.",
+  "toleranceWhy": "Re-measured against the widened export, after the prune learned that a gondola can be ridden down. 75 keeps all three valleys — Alagna, Stafal and Champoluc — with 21 lifts and 62.3 km. 60 loses Alagna entirely along with three lifts and six kilometres.",
   "publishedSource": "NOT RECORDED. The figures the app used before this resort had OSM data came from src/resort.js, which was hand-typed from memory and is not a source. Needs the resort's own published network figures or its PDF piste map.",
   "bboxWhy": "Widened all round. Champoluc sat close to the west edge and Alagna to the east, and Gressoney-Saint-Jean was outside the south edge entirely; Alagna's own village node did not survive the connectivity prune."
 }
