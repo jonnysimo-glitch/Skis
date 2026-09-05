@@ -186,6 +186,27 @@ const PLACE_FADE_MS = 220;
 const PAN_REUSE_MAX = 140;
 
 /**
+ * How far past the canvas the terrain is drawn, in CSS pixels.
+ *
+ * The reason the cached picture can be slid at all without lying. Sliding an
+ * image the size of the canvas leaves an unpainted strip at the trailing edge
+ * — ground that was off screen when it was drawn — and "the mountain is
+ * usually nowhere near the edge" is not a property, it is a hope. Fling the
+ * map into a corner and the sliver still on screen is exactly what that strip
+ * eats.
+ *
+ * It showed as a check that passed at a reuse limit of 140, failed at 60 and
+ * passed again at 32: not a magnitude at all, but where in the slide the
+ * screenshot happened to land. A tolerance that is really a coin toss is worse
+ * than no tolerance.
+ *
+ * Drawing a margin of exactly the reuse limit removes it by construction —
+ * anything a slide can expose was already painted — and costs one extra band
+ * of rasterising on the redraws, not on the frames in between.
+ */
+const TERRAIN_MARGIN = 140;
+
+/**
  * How many mountain places to show, as `count = base * zoom ** power`.
  *
  * Three at the framing the app opens on, ten by the time a valley fills the
@@ -778,10 +799,12 @@ export default function FallbackTerrain({
       height = rect.height || 900;
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
-      off.width = canvas.width;
-      off.height = canvas.height;
-      blur.width = canvas.width;
-      blur.height = canvas.height;
+      // The margin is on every side, so the offscreen is bigger than the
+      // canvas by twice it.
+      off.width = Math.round((width + TERRAIN_MARGIN * 2) * dpr);
+      off.height = Math.round((height + TERRAIN_MARGIN * 2) * dpr);
+      blur.width = off.width;
+      blur.height = off.height;
       // Deliberately coarse, and never scaled by the device pixel ratio.
       // Rasterising the terrain a second time is the cost of the depth test,
       // and area is what that costs: at a third of the linear size it is a
@@ -789,11 +812,14 @@ export default function FallbackTerrain({
       // that hides a run is tens of pixels across, not one — and the readback
       // afterwards is a ninth of the bytes too, which is the part that would
       // otherwise stutter a drag.
-      depth.width = Math.max(1, Math.round(width * DEPTH_SCALE));
-      depth.height = Math.max(1, Math.round(height * DEPTH_SCALE));
+      depth.width = Math.max(1, Math.round((width + TERRAIN_MARGIN * 2) * DEPTH_SCALE));
+      depth.height = Math.max(1, Math.round((height + TERRAIN_MARGIN * 2) * DEPTH_SCALE));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
+      // Shifted by the margin, so canvas (0,0) lands inside the offscreen
+      // rather than on its corner.
+      offCtx.setTransform(dpr, 0, 0, dpr, TERRAIN_MARGIN * dpr, TERRAIN_MARGIN * dpr);
+      depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE,
+        TERRAIN_MARGIN * DEPTH_SCALE, TERRAIN_MARGIN * DEPTH_SCALE);
       depthData = null;
       // The pixels the cache describes have just been thrown away with the
       // canvases. See the note where it is declared.
@@ -1390,8 +1416,10 @@ export default function FallbackTerrain({
          * quads each qualified for sixteen cells, and a redraw went from 51ms
          * to 196ms painting them.
          */
-        if (Math.max(a.x, b.x, c.x, d.x) < 0 || Math.min(a.x, b.x, c.x, d.x) > width ||
-            Math.max(a.y, b.y, c.y, d.y) < 0 || Math.min(a.y, b.y, c.y, d.y) > height) {
+        if (Math.max(a.x, b.x, c.x, d.x) < -TERRAIN_MARGIN ||
+            Math.min(a.x, b.x, c.x, d.x) > width + TERRAIN_MARGIN ||
+            Math.max(a.y, b.y, c.y, d.y) < -TERRAIN_MARGIN ||
+            Math.min(a.y, b.y, c.y, d.y) > height + TERRAIN_MARGIN) {
           continue;
         }
 
@@ -1482,8 +1510,8 @@ export default function FallbackTerrain({
      */
     const visible = (p) => {
       if (!depthData) return true;
-      const px = Math.round((p.x - depthShiftX) * DEPTH_SCALE);
-      const py = Math.round((p.y - depthShiftY) * DEPTH_SCALE);
+      const px = Math.round((p.x - depthShiftX + TERRAIN_MARGIN) * DEPTH_SCALE);
+      const py = Math.round((p.y - depthShiftY + TERRAIN_MARGIN) * DEPTH_SCALE);
       if (px < 0 || py < 0 || px >= depthData.width || py >= depthData.height) return true;
       const i = (py * depthData.width + px) * 4;
       if (depthData.data[i + 3] === 0) return true; // sky
@@ -2391,9 +2419,38 @@ export default function FallbackTerrain({
          * bbox to the same width, and drawing one mountain with another's
          * terrain is not a mistake that announces itself.
          */
-        const shape = `${cam.f}|${v.bearing}|${v.pitch}|${v.zoom}|${width}x${height}|${propsRef.current.imagery ? 1 : 0}|${propsRef.current.block ? 1 : 0}`;
-        const slidX = cachedAt && cachedAt.shape === shape ? cam.ox - cachedAt.ox : null;
-        const slidY = cachedAt && cachedAt.shape === shape ? cam.oy - cachedAt.oy : null;
+        /*
+         * Is this frame the last one, slid sideways?
+         *
+         * Everything that changes what drawTerrain puts on the canvas, and
+         * nothing that only changes where it puts it. Getting that list wrong
+         * is silent in the worst way — the picture simply stops responding to
+         * something, and it looks like that thing not working rather than like
+         * a stale cache. Turning the sun's shadows off did nothing at all,
+         * because the shadows are not in the camera and the camera was all
+         * this compared.
+         *
+         * By identity rather than by a string key, so the drape counts as a
+         * different drape when the sharper tiles for a closer view arrive.
+         * A key of "has imagery: yes" would have frozen the coarse mosaic on
+         * screen for ever.
+         */
+        const now2 = {
+          f: cam.f,
+          bearing: v.bearing,
+          pitch: v.pitch,
+          zoom: v.zoom,
+          width,
+          height,
+          imagery: propsRef.current.imagery,
+          block: propsRef.current.block,
+          nodes: propsRef.current.nodes,
+          shadowsOn,
+        };
+        const same = cachedAt !== null &&
+          Object.keys(now2).every((k) => cachedAt.what[k] === now2[k]);
+        const slidX = same ? cam.ox - cachedAt.ox : null;
+        const slidY = same ? cam.oy - cachedAt.oy : null;
         // Far enough and the cached picture no longer contains the ground that
         // has slid into frame, so it has to be drawn rather than moved.
         const reuse = slidX !== null && Math.abs(slidX) <= PAN_REUSE_MAX &&
@@ -2407,10 +2464,11 @@ export default function FallbackTerrain({
           depthShiftY = 0;
           offCtx.setTransform(1, 0, 0, 1, 0, 0);
           offCtx.clearRect(0, 0, off.width, off.height);
-          offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          offCtx.setTransform(dpr, 0, 0, dpr, TERRAIN_MARGIN * dpr, TERRAIN_MARGIN * dpr);
           depthCtx.setTransform(1, 0, 0, 1, 0, 0);
           depthCtx.clearRect(0, 0, depth.width, depth.height);
-          depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
+          depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE,
+            TERRAIN_MARGIN * DEPTH_SCALE, TERRAIN_MARGIN * DEPTH_SCALE);
           drawTerrain(v, cam, offCtx, depthCtx);
           // One readback for the frame. Per-point getImageData is the obvious
           // way to write this and is orders of magnitude slower: every call
@@ -2419,7 +2477,7 @@ export default function FallbackTerrain({
           depthData = depth.width && depth.height
             ? depthCtx.getImageData(0, 0, depth.width, depth.height)
             : null;
-          cachedAt = { shape, ox: cam.ox, oy: cam.oy };
+          cachedAt = { what: now2, ox: cam.ox, oy: cam.oy };
         }
 
         // Blur it, then cut the blur back to the sharp shape.
@@ -2445,7 +2503,7 @@ export default function FallbackTerrain({
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         // Offset in device pixels, because that is what the offscreen is in.
-        ctx.drawImage(blur, depthShiftX * dpr, depthShiftY * dpr);
+        ctx.drawImage(blur, (depthShiftX - TERRAIN_MARGIN) * dpr, (depthShiftY - TERRAIN_MARGIN) * dpr);
         ctx.restore();
         drawGraph(v, cam);
         drawRoute(v, cam);
@@ -2644,6 +2702,10 @@ export default function FallbackTerrain({
         shadowsOn = Boolean(on);
         dirty.current = true;
       };
+      // Reading it back is how a check can tell the toggle took effect rather
+      // than being swallowed by the cache, which is how it failed the first
+      // time.
+      window.__skisShadowsOn = () => shadowsOn;
     }
 
     // Where on the mountain a screen position lands. The gesture code needs
