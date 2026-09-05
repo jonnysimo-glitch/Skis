@@ -105,7 +105,7 @@ export const SKIRT = 0.17;
  * drape has to fetch imagery for the same box, and a drape narrower than the
  * mesh leaves a ring of painted snow around a photograph.
  */
-export const FIELD_PAD = 0.18;
+export const FIELD_PAD = 0.24;
 
 /**
  * The slab's faces.

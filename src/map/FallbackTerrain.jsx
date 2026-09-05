@@ -42,7 +42,24 @@ const DIM_ACCENT = "rgba(42, 196, 238, 0.3)";
  * nobody chose for its scrolling. Same curve as before at 60Hz, measured
  * against the clock so it is that curve everywhere.
  */
-const GLIDE_MS = 190;
+const GLIDE_MS = 130;
+
+/**
+ * The fastest a released flick may throw the map, in pixels per millisecond.
+ *
+ * There was no cap, because there did not need to be one: velocity used to be
+ * measured per pointermove event, which on a device firing two moves a frame
+ * came out at half the real speed. Measuring it against the clock fixed that
+ * and made every flick roughly twice the throw it had been — correct, and
+ * reported as "it moves too fast", which it was.
+ *
+ * So the ceiling is what a flick is allowed to be worth rather than what a
+ * thumb can physically do, and the decay above is shorter than the 190ms that
+ * matched the old per-frame constant. Two and a bit pixels a millisecond is
+ * about a third of a screen of travel after release, which is a map that
+ * carries on rather than one that is thrown.
+ */
+const GLIDE_MAX = 2.2;
 
 /**
  * The two speeds that bound a fling, both in pixels per millisecond.
@@ -104,27 +121,35 @@ const DEPTH_STEP = 1;
 
 /**
  * How big a photographed quad has to be before it is painted from the imagery
- * at more than one colour — one number for while the camera is moving and a
- * finer one for when it has stopped.
+ * at more than one colour.
  *
- * Two numbers because the answer really is different. At the framing the app
- * opens on, a quad is about five pixels: one flat colour for 167 metres of
- * ground, where the screen could show five by five. Painting all of them at
- * three pixels a cell fixes that and costs 26,000 cells and 119ms a frame,
- * against 60 — fine for a picture, ruinous for a drag.
+ * One number, and it took two goes to get there. A quad at the opening framing
+ * is about five pixels of screen standing for 167 metres of ground, so one
+ * flat colour throws away most of what the photograph knows — but painting
+ * every one of them at three pixels a cell is 26,000 cells and doubles the
+ * frame. So the first version used a coarse pass while the camera moved and a
+ * fine one when it stopped.
  *
- * So the drag gets the cheap one and the picture gets the fine one, redrawn
- * once when the camera comes to rest. Nobody is studying the ground while
- * throwing the mountain around, and nobody is dragging while looking at a
- * still map, so neither number is ever the wrong one at the moment it applies.
+ * That is worse, and it is worse in a way measuring does not show: the switch
+ * is visible. The ground goes soft the instant you touch it and sharpens when
+ * you let go, which reads as the map failing to load rather than as a
+ * considered trade. A map that is always the same is better than one that is
+ * sometimes sharper.
+ *
+ * Four is the level that can be afforded all the time. Measured against a
+ * frame with no subdivision at all in the same run: 6,600 cells costs 10ms,
+ * 16,000 costs 18ms, and 26,000 costs 39. Four puts 89% of the visible mesh on
+ * the photograph for the middle of those.
  *
  * The ceiling stops a quad that fills the screen at maximum zoom asking for a
  * thousand cells on its own. Four by four turns a block into a picture, and
  * past that the limit is the imagery's resolution rather than the mesh's.
  */
-const SUBDIVIDE_MOVING = 12;
-const SUBDIVIDE_RESTING = 3;
+const SUBDIVIDE_PX = 4;
 const SUBDIVIDE_MAX = 4;
+
+/** How far a texture cell reaches past its own edge, as a fraction of a cell. */
+const OVERLAP = 0.06;
 
 /**
  * How long the camera has to be still before asking for sharper imagery.
@@ -134,6 +159,16 @@ const SUBDIVIDE_MAX = 4;
  * still looking at the thing they zoomed in on.
  */
 const DETAIL_SETTLE_MS = 420;
+
+/**
+ * How long a mountain place takes to appear or disappear, in milliseconds.
+ *
+ * Long enough that the eye reads it as something arriving rather than as a
+ * glitch, short enough that it is never in the way of an answer. A marker that
+ * flickers across a silhouette for two frames now changes by a tenth and comes
+ * straight back, which is invisible.
+ */
+const PLACE_FADE_MS = 220;
 
 /**
  * How many mountain places to show, as `count = base * zoom ** power`.
@@ -502,15 +537,41 @@ function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0, shadow = 
  * goes on top, weaker, because the photograph is carrying the detail now and
  * the shading only has to say which way each face is turned.
  */
+/*
+ * Fill strings, kept rather than rebuilt.
+ *
+ * A subdivided frame asks for twenty-five thousand colours, and every one was
+ * a template string built and then parsed by the canvas — the same cost the
+ * depth buffer's palette removed, in a hotter loop. The terrain does not have
+ * twenty-five thousand distinct colours in it: quantised to five bits a
+ * channel it has a few hundred, and five bits is finer than the eye resolves
+ * on a gradient, which is all this is drawing.
+ */
+const FILLS = new Map();
+function fillFor(r, g, b) {
+  const q = ((r & 0xf8) << 7) | ((g & 0xf8) << 2) | (b >> 3);
+  let hit = FILLS.get(q);
+  if (hit === undefined) {
+    hit = `rgb(${r & 0xf8},${g & 0xf8},${b & 0xf8})`;
+    // Bounded: a resort has a few hundred, and an unbounded map on a hot path
+    // is a leak waiting for a long session.
+    if (FILLS.size > 4096) FILLS.clear();
+    FILLS.set(q, hit);
+  }
+  return hit;
+}
+
 function photoColour(rgb, shade, haze, shadow = 0) {
   const k = 0.72 + 0.46 * shade;
   const tint = mix(SHADOW, SUNLIT, Math.max(0, Math.min(1, shade * 1.15)));
   let c = [rgb[0] * k * tint[0], rgb[1] * k * tint[1], rgb[2] * k * tint[2]];
   c = inShadow(c, shadow);
   c = mix(c, SKY_HORIZON, haze * 0.16);
-  return `rgb(${Math.max(0, Math.min(255, c[0])) | 0},` +
-    `${Math.max(0, Math.min(255, c[1])) | 0},` +
-    `${Math.max(0, Math.min(255, c[2])) | 0})`;
+  return fillFor(
+    Math.max(0, Math.min(255, c[0])) | 0,
+    Math.max(0, Math.min(255, c[1])) | 0,
+    Math.max(0, Math.min(255, c[2])) | 0
+  );
 }
 
 export default function FallbackTerrain({
@@ -1036,12 +1097,24 @@ export default function FallbackTerrain({
       const py = (s, t) =>
         a.y * (1 - s) * (1 - t) + b.y * s * (1 - t) + d.y * (1 - s) * t + c.y * s * t;
 
+      /*
+       * Cells overlap rather than being stroked.
+       *
+       * Adjacent fills leave a hairline of canvas between them, which reads as
+       * a grid drawn on the mountain. Stroking each cell in its own colour
+       * closes it and doubles the work — twenty-five thousand strokes a frame
+       * on top of twenty-five thousand fills. Reaching a fraction past the far
+       * edges closes it for nothing: the neighbour paints over the excess, and
+       * the last row and column spill by a fraction of a pixel onto ground the
+       * quad's own edge stroke already covers.
+       */
+      const bleed = OVERLAP / n;
       for (let u = 0; u < n; u++) {
         const s0 = u / n;
-        const s1 = (u + 1) / n;
+        const s1 = Math.min(1 + bleed, (u + 1) / n + bleed);
         for (let w = 0; w < n; w++) {
           const t0 = w / n;
-          const t1 = (w + 1) / n;
+          const t1 = Math.min(1 + bleed, (w + 1) / n + bleed);
           const { lat, lon } = field.proj.unproject(
             minX + dx * (q.gi + (s0 + s1) / 2),
             minZ + dz * (q.gj + (t0 + t1) / 2)
@@ -1056,11 +1129,6 @@ export default function FallbackTerrain({
           g.closePath();
           g.fillStyle = fill;
           g.fill();
-          // Same reason as the whole-quad stroke: without it the hairline gaps
-          // between cells show the canvas through as a grid.
-          g.strokeStyle = fill;
-          g.lineWidth = 0.6;
-          g.stroke();
         }
       }
     };
@@ -1310,8 +1378,8 @@ export default function FallbackTerrain({
         if (skin && q.photo) {
           const wide = Math.max(Math.abs(b.x - a.x), Math.abs(c.x - d.x));
           const tall = Math.max(Math.abs(d.y - a.y), Math.abs(c.y - b.y));
-          const n = Math.max(1, Math.min(SUBDIVIDE_MAX, Math.round(
-            Math.max(wide, tall) / (drawFine ? SUBDIVIDE_RESTING : SUBDIVIDE_MOVING))));
+          const n = Math.max(1, Math.min(SUBDIVIDE_MAX,
+            Math.round(Math.max(wide, tall) / SUBDIVIDE_PX)));
           if (n > 1) {
             drawTextured(g, q, n, haze, dx, dz, minX, minZ);
             if (mapTest) { textured++; cells += n * n; }
@@ -1873,6 +1941,34 @@ export default function FallbackTerrain({
     // marker does, and running them together cost the bases their labels.
     const hutsDrawn = new Set();
 
+    /*
+     * How solid each place is, easing toward where it belongs.
+     *
+     * Everything that decides whether a marker is drawn is a hard yes or no —
+     * is it behind the ridge, does its box collide with one already down, is it
+     * inside this zoom's budget — and every one of them flips on a threshold.
+     * Turn the mountain a degree and a marker crosses a silhouette; that frees
+     * a box, which lets a second marker in, which pushes a third out. Two
+     * screenshots a frame apart had visibly different mountains.
+     *
+     * The decisions stay hard, because softening them would mean drawing
+     * markers through a ridge. What softens is the drawing: a place eases in
+     * and out over a fifth of a second, so a marker that flickers for two
+     * frames barely changes and one that is genuinely gone leaves properly.
+     * A pop is a thing the eye is built to catch; a fade of this length is not.
+     */
+    const fades = new Map();
+    const fadeOf = (key, want, dt) => {
+      const from = fades.get(key) ?? (want ? 1 : 0);
+      const step = Math.min(1, dt / PLACE_FADE_MS);
+      const to = from + ((want ? 1 : 0) - from) * step;
+      fades.set(key, to);
+      // Anything moving needs another frame to finish moving in.
+      if (Math.abs(to - (want ? 1 : 0)) > 0.01) fadingPlaces = true;
+      return to;
+    };
+    let fadingPlaces = false;
+
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false } = {}) => {
       const all = propsRef.current.places ?? [];
       if (!all.length) return placed;
@@ -1940,19 +2036,32 @@ export default function FallbackTerrain({
           const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
           const ty = s.y + r + 12;
           const label = { l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 10, b: ty + 3 };
-          if (hits(label)) continue;
-          placed.push(label);
+          const fits = !hits(label);
+          const solid = fadeOf(`n:${full}`, fits, frameDt);
+          if (fits) placed.push(label);
+          if (solid <= 0.02) continue;
+          ctx.globalAlpha = solid;
           ctx.lineWidth = 3;
           ctx.lineJoin = "round";
           ctx.strokeStyle = "rgba(255,255,255,0.92)";
           ctx.strokeText(name, tx, ty);
           ctx.fillStyle = "rgba(11,26,36,0.78)";
           ctx.fillText(name, tx, ty);
+          ctx.globalAlpha = 1;
           continue;
         }
-        if (hits(box)) continue;
-        placed.push(box);
-        pin(s.x, s.y, r, kind);
+        // The box is reserved on the decision, not on the fade: a marker on its
+        // way out still owns its room until it has gone, or the one replacing
+        // it arrives on top of it.
+        const wanted = !hits(box);
+        const solid = fadeOf(`m:${full}`, wanted, frameDt);
+        if (wanted) placed.push(box);
+        if (solid > 0.02) {
+          ctx.globalAlpha = solid;
+          pin(s.x, s.y, r, kind);
+          ctx.globalAlpha = 1;
+        }
+        if (!wanted) continue;
 
         drawn.push({ name, kind, alt, ...box });
         hutsDrawn.add(full);
@@ -2088,11 +2197,9 @@ export default function FallbackTerrain({
     // When the camera last moved, so the detail request can wait for it to
     // stop. Zero once the request for that resting place has gone out.
     let settleAt = 0;
-    // Whether the frame about to be drawn is the still one. Set by the settle
-    // below, cleared as soon as it has been drawn — a fine redraw must not
-    // restart the settle clock, or it asks for another one for ever.
-    let wantFine = false;
-    let drawFine = false;
+    // The frame time the draw pass should ease by. Set once at the top of a
+    // frame rather than threaded through six functions.
+    let frameDt = 16.7;
     let raf = 0;
     let lastBearing = null;
     const frame = () => {
@@ -2182,10 +2289,10 @@ export default function FallbackTerrain({
 
       // Redraw only when something moved. 3,600 filled quads a frame is not a
       // thing to do at 60Hz on a phone in a pocket on a chairlift.
-      if (dirty.current) {
+      if (dirty.current || fadingPlaces) {
         dirty.current = false;
-        drawFine = wantFine;
-        wantFine = false;
+        frameDt = dt;
+        fadingPlaces = false;
         const cam = fit(v);
         lastCam.current = cam;
         publishScale(v, cam);
@@ -2279,21 +2386,12 @@ export default function FallbackTerrain({
         // somewhere else. Restart the clock rather than reporting mid-gesture:
         // a drag would otherwise fire a request a frame, for boxes nobody is
         // looking at by the time they arrive.
-        //
-        // Unless this WAS the still frame, which must not restart it: the
-        // settle asks for a redraw, and a redraw that restarts the clock asks
-        // for another settle, for ever.
-        if (!drawFine) settleAt = now;
-        drawFine = false;
+        settleAt = now;
       } else if (settleAt && now - settleAt > DETAIL_SETTLE_MS) {
         settleAt = 0;
         const want = propsRef.current.onDetail;
         if (want && lastCam.current) want(visibleGround(v, lastCam.current));
-        // And paint it once more, properly, now that nothing is moving.
-        if (propsRef.current.imagery) {
-          wantFine = true;
-          dirty.current = true;
-        }
+
       }
       raf = requestAnimationFrame(frame);
     };
@@ -2851,9 +2949,12 @@ export default function FallbackTerrain({
       // Let go mid-flick and the map should keep going and settle, the way it
       // does in every map app. Without this a drag stops dead under your
       // thumb, which is the single thing that makes a map feel cheap.
-      if (wasPanning && Math.hypot(velocity.x, velocity.y) > FLING_MIN) {
-        glide.x = velocity.x;
-        glide.y = velocity.y;
+      const speed = Math.hypot(velocity.x, velocity.y);
+      if (wasPanning && speed > FLING_MIN) {
+        // Scaled as a pair, so a capped flick keeps its direction.
+        const keep = speed > GLIDE_MAX ? GLIDE_MAX / speed : 1;
+        glide.x = velocity.x * keep;
+        glide.y = velocity.y * keep;
         dirty.current = true;
       }
     };

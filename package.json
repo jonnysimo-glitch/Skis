@@ -34,7 +34,8 @@
     "test:resorts": "node scripts/check-resorts.mjs",
     "resort:turbo": "node scripts/build-resort.mjs --turbo",
     "bench:scale": "node scripts/bench-scale.mjs",
-    "personas": "npm run build && node scripts/personas.mjs"
+    "personas": "npm run build && node scripts/personas.mjs",
+    "resort:triangulate": "node scripts/triangulate.mjs"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",

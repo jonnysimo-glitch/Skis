@@ -32,10 +32,31 @@ import App from "./App.jsx";
  */
 if ("serviceWorker" in navigator) {
   const hadController = Boolean(navigator.serviceWorker.controller);
-  let reloading = false;
+  /*
+   * At most one automatic reload per tab, ever.
+   *
+   * A flag in this scope only lasts as long as the page it is in, and the
+   * whole point of the reload is that the page does not last. So the guard has
+   * to outlive it: land on a build, take over, reload — and if the reloaded
+   * page finds ANOTHER new worker waiting, the flag it was relying on has been
+   * reset to false along with everything else, and round it goes. During a run
+   * of deploys that is a page that reloads whenever it is touched, which is
+   * how it was reported.
+   *
+   * sessionStorage survives a reload and dies with the tab, which is exactly
+   * the lifetime this needs. A second new build in the same session waits for
+   * the next navigation, which is the behaviour before any of this and is only
+   * ever one reload behind.
+   */
+  const ONCE = "skis:sw-reloaded";
+  let already = false;
+  try { already = sessionStorage.getItem(ONCE) === "1"; } catch { already = false; }
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!hadController || reloading) return;
-    reloading = true;
+    if (!hadController || already) return;
+    already = true;
+    // Written before the reload, or the page that comes back does not know it
+    // has already had its turn.
+    try { sessionStorage.setItem(ONCE, "1"); } catch { /* private mode */ }
     window.location.reload();
   });
 }
