@@ -126,6 +126,18 @@ const SUBDIVIDE_MAX = 4;
 const DETAIL_SETTLE_MS = 420;
 
 /**
+ * How many mountain places to show, as `count = base * zoom ** power`.
+ *
+ * Three at the framing the app opens on, ten by the time a valley fills the
+ * screen, and all of them once you are looking at one bowl. The curve is
+ * steeper than linear because what changes with zoom is area, not width: twice
+ * as close is four times the room, so the number that fits comfortably grows
+ * faster than the zoom does.
+ */
+const HUT_BASE_COUNT = 5;
+const HUT_ZOOM_POWER = 1.7;
+
+/**
  * How far the ground-holding correction is allowed to move the map in one
  * frame, in pixels.
  *
@@ -1828,24 +1840,49 @@ export default function FallbackTerrain({
       ctx.restore();
     };
 
+    // Which places the markers pass put down, so the names pass can name those
+    // and only those. Two passes because a name reserves six times the room a
+    // marker does, and running them together cost the bases their labels.
+    const hutsDrawn = new Set();
+
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false } = {}) => {
-      const list = propsRef.current.places ?? [];
-      if (!list.length) return placed;
+      const all = propsRef.current.places ?? [];
+      if (!all.length) return placed;
       /*
-       * Named at every zoom, not only close up.
+       * How many places are worth showing, and which ones, by how close you
+       * are.
        *
-       * These were markers with no words under them until 1.25, which is past
-       * the view the app opens on — so the mountain showed a dozen identical
-       * orange discs and no way to tell a restaurant you want from one you
-       * do not. A pin whose name you cannot read is a pin that does not answer
-       * the question you tapped it for.
+       * Every one of them, at every zoom, was the first version and it is too
+       * many: thirty-seven at Kronplatz, so the mountain viewed from a
+       * distance was a rash of identical orange discs over the terrain a
+       * skier was trying to read. A marker that far out cannot tell you
+       * anything useful anyway — you are not choosing lunch from ten
+       * kilometres up — so it is decoration with a cost.
        *
-       * What stopped it being soup is not the zoom gate, it is the
-       * declutterer: a name that will not fit without hitting one already
-       * down is dropped, so the far view names the few with room and zooming
-       * in brings back the rest. That is the same rule the place names use,
-       * and it is the rule that should have been carrying this all along.
+       * Ranked by altitude, highest first, and that does the work with no
+       * table of kinds behind it. The high places are the landmarks: a summit
+       * restaurant is visible from most of the resort and is a real planning
+       * question ("can I eat at the top?"). The ski hire is at the bases,
+       * which are the lowest points, so it appears as you zoom into a base —
+       * which is exactly when it is the thing you want and never before.
+       * That is also how a paper piste map does it.
+       *
+       * The declutterer still runs on top of this. It answers a different
+       * question — "does this name physically fit" — and answering only that
+       * one is what left the far view crowded, because at that distance the
+       * markers are small and a great many of them fit.
        */
+      const budget = Math.round(HUT_BASE_COUNT * v.zoom ** HUT_ZOOM_POWER);
+      if (budget <= 0) { if (!labelsOnly) hutsDrawn.clear(); return placed; }
+      if (!labelsOnly) hutsDrawn.clear();
+      // Sorted, not sliced. The budget is spent on places that actually get
+      // drawn, and whether one does depends on the mountain being in the way
+      // and on the room left beside it — neither of which this can know in
+      // advance. Slicing first meant that when the three highest places all
+      // happened to be behind a ridge, the answer was no places at all, on a
+      // mountain with thirty-seven.
+      const list = [...all].sort((a, b) => (b[4] ?? 0) - (a[4] ?? 0));
+
       ctx.font = "600 10.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "alphabetic";
@@ -1854,7 +1891,11 @@ export default function FallbackTerrain({
         placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
 
       const drawn = [];
-      for (const [full, kind, lat, lon] of list) {
+      for (const [full, kind, lat, lon, alt] of list) {
+        // The names pass only names what the markers pass drew. Without this
+        // the budget applied to markers and not to labels, so past it a place
+        // got its name written on the mountain with no marker under it.
+        if (labelsOnly && !hutsDrawn.has(full)) continue;
         const name = shortName(full);
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
@@ -1885,9 +1926,16 @@ export default function FallbackTerrain({
         placed.push(box);
         pin(s.x, s.y, r, kind);
 
-        drawn.push({ name, kind, ...box });
+        drawn.push({ name, kind, alt, ...box });
+        hutsDrawn.add(full);
+        if (drawn.length >= budget) break;
       }
-      if (mapTest && !labelsOnly) window.__skisPlaces = drawn;
+      if (mapTest && !labelsOnly) {
+        window.__skisPlaces = drawn;
+        // Everything the resort has, so a check can ask whether what got shown
+        // is the high ground rather than merely the right number of things.
+        window.__skisAllPlaces = all;
+      }
       return placed;
     };
 

@@ -112,6 +112,16 @@ const NAV_FOOT_H = 96;
 /** Plan's height; the map controls stack above it rather than behind it. */
 const PLAN_BUTTON_H = 52;
 
+/**
+ * How far the map note sits above the bottom of the map chrome.
+ *
+ * The scale bar is anchored to the same line, and both were sitting on it: the
+ * note is a filled pill and it covered "2 km" completely. Seven pixels of bar,
+ * the label stacked above it, and a gap — measured off .mapscale in the
+ * stylesheet rather than guessed, so the two move together if either changes.
+ */
+const SCALE_CLEARANCE = 32;
+
 
 
 /**
@@ -1075,7 +1085,7 @@ export default function App() {
 
       {noteOpen && mapShowing && !chromeHidden && (
         mapBroken && (wantWorld || mapMode === "satellite") ? (
-        <div className="mapnote" style={{ bottom: chromeBottom }}>
+        <div className="mapnote" style={{ bottom: chromeBottom + (mapScale ? SCALE_CLEARANCE : 0) }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           {/* Named the way the layer control names them. "The world map"
               and "the cut-out" are what these are called in the source, and
@@ -1091,7 +1101,7 @@ export default function App() {
           </button>
         </div>
         ) : screen === "plan" ? (
-        <div className="mapnote" style={{ bottom: chromeBottom }}>
+        <div className="mapnote" style={{ bottom: chromeBottom + (mapScale ? SCALE_CLEARANCE : 0) }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           <span className="mapnote__t">Drag to orbit the resort. Pinch to zoom.</span>
           <button className="mapnote__x" onClick={dismissNote} aria-label="Dismiss">

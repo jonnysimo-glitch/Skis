@@ -1423,6 +1423,87 @@ if (feature("15. Gestures, and the mountain being solid")) {
   }
 }
 
+// ========= 32. THE PLACES ARRIVE AS YOU GET CLOSER ==
+// Every mountain place at every zoom is too many. Kronplatz has thirty-seven,
+// so the mountain seen from a distance was a rash of identical orange discs
+// over the terrain a skier was trying to read — and a marker that far out
+// cannot answer anything anyway, because nobody chooses lunch from ten
+// kilometres up.
+//
+// Ranked by altitude, so the high places — the ones visible from most of the
+// resort, and the ones a plan turns on — come first, and the ski hire at the
+// bases arrives when you zoom into a base, which is when you want it.
+if (feature("32. The places arrive as you get closer")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  // Kronplatz, which has the most of them.
+  const heroes = await page.$$(".hero");
+  await heroes[1].click();
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  const places = () => page.evaluate(() => window.__skisPlaces ?? []);
+
+  const far = await places();
+  check("a few places at the framing it opens on", far.length > 0 && far.length <= 6,
+    `${far.length} on the mountain`);
+  // The regression that would look like a working hierarchy: none at all.
+  check("but never none, or the mountain has nothing on it", far.length >= 1,
+    `${far.length}`);
+
+  const zoomIn = async (steps) => {
+    for (let n = 0; n < steps; n++) {
+      await page.$eval(SEL, (c) => {
+        const r = c.getBoundingClientRect();
+        c.dispatchEvent(new WheelEvent("wheel", {
+          deltaY: -400, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true,
+        }));
+      });
+      await page.waitForTimeout(150);
+    }
+    await page.waitForTimeout(1200);
+  };
+
+  await zoomIn(4);
+  const mid = await places();
+  check("more of them once a valley fills the screen", mid.length > far.length,
+    `${mid.length} against ${far.length}`);
+
+  await zoomIn(5);
+  const near = await places();
+  // Not "more again". Past a point, zooming in shows FEWER, because the frame
+  // holds less mountain and most places have left it — which is right, and an
+  // assertion that they keep increasing was asserting the opposite.
+  check("and close up, the ones in frame are still marked", near.length >= 1,
+    `${near.length} in a frame holding one bowl`);
+
+  /*
+   * The ranking, not just the count.
+   *
+   * What survives the far view has to be the high ground: those are the places
+   * visible from most of the resort and the ones a plan turns on. A budget
+   * that filled itself from whatever came first in the file would pass every
+   * count check above while showing the village bars.
+   */
+  const alts = far.map((p) => p.alt).filter((n) => typeof n === "number");
+  const every = await page.evaluate(() =>
+    (window.__skisAllPlaces ?? []).map((p) => p[4]).filter((n) => typeof n === "number"));
+  if (alts.length && every.length > alts.length) {
+    const median = [...every].sort((a, b) => a - b)[Math.floor(every.length / 2)];
+    const low = alts.filter((a) => a < median).length;
+    check("and the far view shows the high places, not the village",
+      low <= 1, `${low} of ${alts.length} below the ${median}m median`);
+  } else {
+    check("and the far view shows the high places, not the village", false,
+      `no altitudes to compare — ${alts.length} shown, ${every.length} known`);
+  }
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ========= 31. A DRAG HOLDS THE GROUND ==
 // Google Earth's one-finger drag grabs the earth: the point under your thumb
 // stays under your thumb. A screen-space pan does not — it moves the picture
@@ -2490,6 +2571,31 @@ if (feature("27. How far is that")) {
   await page.waitForSelector(".planbtn", { timeout: 15000 });
   await page.waitForTimeout(1800);
 
+  /*
+   * Nothing sits on top of it.
+   *
+   * The note and the scale bar are anchored to the same line at the bottom of
+   * the map, and both were sitting on it: the note is a filled pill, so it
+   * covered "2 km" entirely. A scale nobody can read is not a scale, and it
+   * failed silently — every check about the scale's width and its number
+   * passed the whole time, because the element was there and correct and
+   * underneath something.
+   */
+  const covered = () => page.evaluate(() => {
+    const bar = document.querySelector(".mapscale");
+    const note = document.querySelector(".mapnote");
+    if (!bar || !note) return null;
+    const a = bar.getBoundingClientRect();
+    const b = note.getBoundingClientRect();
+    // The label sits above the bar, so the box to keep clear is taller.
+    const top = a.top - 16;
+    return b.left < a.right && b.right > a.left && b.top < a.bottom && b.bottom > top;
+  });
+  const clash = await covered();
+  check("nothing is sitting on top of the scale", clash !== true,
+    clash === null ? "no note showing to clash with"
+      : clash ? "the note is over it" : "clear");
+
   const read = () => page.evaluate(() => {
     const el = document.querySelector(".mapscale");
     if (!el) return null;
@@ -2533,8 +2639,22 @@ if (feature("26. Somewhere to eat")) {
   await page.waitForTimeout(2200);
 
   const drawn = (await page.evaluate(() => window.__skisPlaces)) ?? [];
-  check("the mountain restaurants are on the map", drawn.length >= 8,
+  const known = (await page.evaluate(() => window.__skisAllPlaces)) ?? [];
+  /*
+   * Some of them, not all of them. This used to require eight on screen at the
+   * opening framing and that is now the wrong requirement: showing every one
+   * of a resort's thirty-odd places at that distance is a rash of identical
+   * discs over the terrain, and section 32 is where the tiering is checked.
+   *
+   * What this still has to hold is that the mountain has places on it and that
+   * the resort's whole list is behind them — a hierarchy that tiered its way
+   * down to nothing would satisfy section 32's "fewer when far out" perfectly
+   * well.
+   */
+  check("the mountain restaurants are on the map", drawn.length >= 3,
     `${drawn.length} drawn — ${drawn.slice(0, 3).map((d) => d.name).join(", ")}`);
+  check("and the rest of them exist to be zoomed into", known.length >= 8,
+    `${known.length} on this mountain`);
   check("every one of them has a real name", drawn.every((d) => d.name && d.name.length > 2),
     drawn.map((d) => d.name).find((n) => !n || n.length <= 2) ?? "all named");
 
