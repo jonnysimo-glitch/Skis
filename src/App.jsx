@@ -209,6 +209,13 @@ export default function App() {
   const [mapLive, setMapLive] = useState(false);
   const [noteOpen, setNoteOpen] = useState(!load("seenMapNote"));
   const [sheetHeight, setSheetHeight] = useState(0);
+  /**
+   * How far a bar on the map is on the ground, measured by the renderer.
+   *
+   * A map with no scale on it is a picture. This is the one thing on the
+   * mountain that answers "how far is that", and it costs a rule and a number.
+   */
+  const [mapScale, setMapScale] = useState(null);
 
   // Two map layers, and the cut-out is the default.
   //
@@ -727,6 +734,7 @@ export default function App() {
           }
           block
           viewportTop={navigating ? NAV_HEAD_H : 0}
+          onScale={setMapScale}
         />
       )}
     </>
@@ -773,6 +781,16 @@ export default function App() {
         )}
         {screen !== "explore" && <span className="topbar__spacer" />}
       </div>
+
+      {mapShowing && mapScale && (
+        <div
+          className={`mapscale${chromeHidden ? " mapscale--hidden" : ""}`}
+          style={{ bottom: chromeBottom, width: mapScale.px }}
+          aria-hidden="true"
+        >
+          <span>{mapScale.metres >= 1000 ? `${mapScale.metres / 1000} km` : `${mapScale.metres} m`}</span>
+        </div>
+      )}
 
       {mapShowing && (
       <div

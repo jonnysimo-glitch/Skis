@@ -108,7 +108,10 @@ export function graphToGeoJSON(edges) {
     // both would lay an identical line over itself and double the geometry.
     features: edges.filter((edge) => !edge.down).map((edge) => ({
       type: "Feature",
-      properties: { kind: edge.kind, difficulty: edge.difficulty || null },
+      // The name comes along now: close in, the map writes it along the run
+      // the way a road map writes a road, which is how a skier reads a piste
+      // map and was the one thing ours could not do.
+      properties: { kind: edge.kind, difficulty: edge.difficulty || null, name: edge.name || null },
       geometry: { type: "LineString", coordinates: edgeCoords(edge) },
     })),
   };

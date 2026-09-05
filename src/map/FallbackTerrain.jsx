@@ -73,7 +73,21 @@ const TERRAIN_BLUR = 1.9;
  */
 const rotateRate = (zoom) => Math.max(0.5, Math.min(1, 1 / (1 + 0.08 * (zoom - 1))));
 
-const blurFor = (zoom) => TERRAIN_BLUR * Math.max(0.3, Math.min(1, 2.2 / Math.max(zoom, 1)));
+/*
+ * More blur the closer you get, not less.
+ *
+ * This had it backwards. A quad is a fixed piece of ground, so zooming in
+ * makes it bigger on screen, not smaller: at the closest zoom a facet is forty
+ * pixels across and the softening was down to one, which is why the mountain
+ * broke into visible tiles exactly when a skier was looking at it hardest.
+ * Scaling with the zoom keeps the seams dissolved at every distance.
+ *
+ * The ceiling is the other half of it, and it is low on purpose. Blur cannot
+ * add detail that is not there, so past about three pixels the near ground
+ * stops looking soft and starts looking out of focus, which is worse than a
+ * seam.
+ */
+const blurFor = (zoom) => TERRAIN_BLUR * Math.max(0.75, Math.min(1.55, Math.max(zoom, 1) / 2.2));
 
 /**
  * Pitch limits. 0 is straight down, which is as far as the camera goes: there
@@ -289,6 +303,7 @@ export default function FallbackTerrain({
   nodes = ACTIVE_NODES,
   places = ACTIVE_PLACES,
   makeProjector = activeProjector,
+  onScale,
 }) {
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
@@ -300,7 +315,7 @@ export default function FallbackTerrain({
   const dirty = useRef(true);
   const lastCam = useRef(null);
   const projectRef = useRef(null);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, onScale });
   const mapTest =
     typeof window !== "undefined" && window.location.search.includes("maptest=1");
 
@@ -323,7 +338,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, onScale };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -594,6 +609,42 @@ export default function FallbackTerrain({
     };
     projectRef.current = project;
 
+    /**
+     * How far a bar on screen is on the ground.
+     *
+     * Measured rather than derived from the zoom: the camera is a perspective
+     * one over an exaggerated height field, so there is no single scale for
+     * the whole frame. Two points a kilometre apart at the middle of the
+     * resort, at ground level, is the same thing a map app means by its scale
+     * bar — the distance at the centre of what you are looking at.
+     *
+     * The bar then takes a round number whose length lands between 56 and 150
+     * pixels, which is why 250 m and 2 km are in the list: without them a
+     * mountain sits at a zoom where 100 m is 20 pixels and 500 m is off the
+     * side.
+     */
+    const ROUND_METRES = [50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 20000];
+    let lastScale = null;
+    const publishScale = (v, cam) => {
+      const fn = propsRef.current.onScale;
+      if (!fn) return;
+      const y = field.sample(field.cx, field.cz);
+      const a = project(field.cx - 500, y, field.cz, v, cam);
+      const b = project(field.cx + 500, y, field.cz, v, cam);
+      const perKm = Math.hypot(b.x - a.x, b.y - a.y);
+      if (!Number.isFinite(perKm) || perKm <= 0) return;
+      const perMetre = perKm / 1000;
+      let best = ROUND_METRES[0];
+      for (const m of ROUND_METRES) {
+        best = m;
+        if (m * perMetre >= 56) break;
+      }
+      const px = Math.round(best * perMetre);
+      if (lastScale && lastScale.metres === best && Math.abs(lastScale.px - px) < 2) return;
+      lastScale = { metres: best, px };
+      fn(lastScale);
+    };
+
     // ---- terrain ---------------------------------------------------------
     const drawTerrain = (v, cam, g) => {
       const { heights, at, shades, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
@@ -774,6 +825,116 @@ export default function FallbackTerrain({
         stroke(pts, colour, lift ? 1.2 : 1.9, dash);
         ctx.globalAlpha = 1;
       }
+    };
+
+    /**
+     * The name of a run, written along the run.
+     *
+     * A piste map names its pistes on the pistes. Ours named the junctions at
+     * either end and left the thing in between anonymous, so a skier looking
+     * at the mountain could see there was a red there and not that it was the
+     * Bettaforca.
+     *
+     * Only close in, and only where the line is long enough on screen to carry
+     * the word: zoomed out the whole network is thirty overlapping names and
+     * the mountain disappears under them. The text is laid along the segment
+     * of the line that runs most nearly horizontally, and flipped where that
+     * segment points left, because a name written upside down is worse than no
+     * name.
+     */
+    const drawRunNames = (v, cam, placed) => {
+      const g = propsRef.current.graph;
+      if (!g?.features?.length || v.zoom < 1.5) return placed;
+      const hasRoute = Boolean(propsRef.current.route?.features?.length);
+      ctx.font = "600 10px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      const hits = (box) =>
+        placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
+      const drawnNames = [];
+
+      /*
+       * One label per piste, on the best piece of it.
+       *
+       * A run is a dozen edges and every one of them carries the same name, so
+       * this groups them. Taking the first edge and giving up when the word did
+       * not fit on it was the first attempt, and it drew nothing: the first
+       * fragment of a piste is usually a fifty metre stub off a junction.
+       */
+      const byName = new Map();
+      for (const f of g.features) {
+        if (f.properties.kind !== "run" || !f.properties.name) continue;
+        const list = byName.get(f.properties.name) ?? [];
+        list.push(f);
+        byName.set(f.properties.name, list);
+      }
+
+      for (const [name, features] of byName) {
+        const w = ctx.measureText(name).width;
+        /*
+         * A whole piste fragment, not a link of it.
+         *
+         * OSM geometry is densely sampled: the longest single link between two
+         * consecutive vertices at full zoom is twenty-eight pixels, so looking
+         * for a link the word fits on found nothing at any zoom. What the word
+         * sits on is the chord of a fragment, and a fragment is a piece of
+         * piste between two junctions, which is exactly the unit a name
+         * belongs to.
+         *
+         * A fragment that doubles back has a short chord and a long path, and
+         * a word laid across its middle would sit off the snow, so the two
+         * lengths have to agree.
+         */
+        let best = null;
+        for (const feature of features) {
+          const pts = toScreen(feature.geometry.coordinates, v, cam);
+          if (pts.length < 2) continue;
+          const a = pts[0];
+          const b = pts[pts.length - 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const chord = Math.hypot(dx, dy);
+          if (chord < w + 12) continue;
+          let path = 0;
+          for (let i = 1; i < pts.length; i++) path += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+          if (path > chord * 1.35) continue; // a horseshoe, not a stretch
+          const flat = Math.abs(dy / (chord || 1));
+          const score = chord * (1.35 - flat);
+          if (!best || score > best.score) best = { pts, a, b, dx, dy, chord, score };
+        }
+        if (!best) continue;
+        // On the line, at its middle vertex, rather than at the chord's
+        // midpoint: on a piste that bends, the chord's middle is off the snow.
+        const pts = best.pts;
+        const mid = pts[Math.floor(pts.length / 2)];
+        const mx = mid.x;
+        const my = mid.y;
+        let angle = Math.atan2(best.dy, best.dx);
+        if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+
+        // A rough box, axis aligned, which is enough for the declutterer: an
+        // exact rotated hull would reject less and cost more than it saves.
+        const half = Math.max(Math.abs(Math.cos(angle)) * w, 14) / 2;
+        const box = { l: mx - half, r: mx + half, t: my - 8, b: my + 8 };
+        if (hits(box)) continue;
+        placed.push(box);
+
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(angle);
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = `rgba(255,255,255,${hasRoute ? 0.8 : 0.94})`;
+        ctx.strokeText(name, 0, 0);
+        ctx.fillStyle = hasRoute ? "rgba(11,26,36,0.6)" : "rgba(11,26,36,0.82)";
+        ctx.fillText(name, 0, 0);
+        ctx.restore();
+        drawnNames.push(name);
+      }
+      ctx.textBaseline = "alphabetic";
+      if (mapTest) window.__skisRunNames = drawnNames;
+      return placed;
     };
 
     const drawRoute = (v, cam) => {
@@ -1230,6 +1391,7 @@ export default function FallbackTerrain({
         dirty.current = false;
         const cam = fit(v);
         lastCam.current = cam;
+        publishScale(v, cam);
 
         const sky = ctx.createLinearGradient(0, 0, 0, height);
         sky.addColorStop(0, `rgb(${SKY_TOP.join(",")})`);
@@ -1295,6 +1457,9 @@ export default function FallbackTerrain({
         drawHuts(v, cam, boxes, { markersOnly: true });
         drawPlaces(v, cam, boxes, { only: "rest" });
         drawHuts(v, cam, boxes, { labelsOnly: true });
+        // Last, because a place is a better thing to know than a piste name,
+        // and there are far more piste names than there is room for.
+        drawRunNames(v, cam, boxes);
         drawPins(v, cam);
       }
       raf = requestAnimationFrame(frame);

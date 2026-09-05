@@ -2020,6 +2020,87 @@ if (feature("20. The mountain is labelled")) {
   await routed.context_.close();
 }
 
+// ===================== 28. THE RUNS HAVE THEIR NAMES ON THEM ==
+// A piste map names its pistes on the pistes. Ours named the junctions at
+// either end and left the run between them anonymous, so you could see there
+// was a red there and not that it was the Bettaforca.
+if (feature("28. The runs have their names on them")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  const names = () => page.evaluate(() => window.__skisRunNames ?? []);
+  const far = await names();
+  // Zoomed out the whole network is thirty overlapping names and the mountain
+  // disappears under them, so at rest there are none.
+  check("the mountain is not buried in piste names at rest", far.length === 0,
+    `${far.length} names`);
+
+  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(430); }
+  await page.waitForTimeout(800);
+  const near = await names();
+  check("zooming in writes them along the runs", near.length >= 5,
+    `${near.length}: ${near.slice(0, 4).join(", ")}`);
+  check("and they are the names the resort uses",
+    near.every((n) => typeof n === "string" && n.length > 1 && !/Point \d/.test(n)),
+    near.find((n) => !n || /Point \d/.test(n)) ?? "all real");
+  check("each piste is named once, not once per fragment",
+    new Set(near).size === near.length,
+    near.length - new Set(near).size + " duplicates");
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ===================== 27. HOW FAR IS THAT ==
+// A map with no scale on it is a picture. This is the one thing on the
+// mountain that answers "how far", and it has to keep answering it as the
+// camera moves rather than being a number printed once.
+if (feature("27. How far is that")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  // The resort screen, not the plan form: the form is a full page and there is
+  // no map behind it to put a scale on.
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  const read = () => page.evaluate(() => {
+    const el = document.querySelector(".mapscale");
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { label: el.textContent.trim(), px: Math.round(r.width), left: Math.round(r.left) };
+  });
+
+  const rest = await read();
+  check("there is a scale on the map", rest !== null, rest ? `${rest.label} over ${rest.px}px` : "none");
+  if (!rest) { await page.context_.close(); }
+  else {
+    check("it reads as a round distance", /^\d+(\.\d)? ?(m|km)$/.test(rest.label), rest.label);
+    // Long enough to measure against and short enough to fit: a two pixel bar
+    // and a bar off the side of the screen are both useless.
+    check("the bar is a usable length", rest.px >= 50 && rest.px <= 170, `${rest.px}px`);
+    check("and it is out of the way, bottom left", rest.left < 60, `${rest.left}px from the left`);
+
+    const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+    for (let i = 0; i < 4; i++) { await zoomIn.click(); await page.waitForTimeout(420); }
+    const close = await read();
+    check("zooming in makes the same bar mean less ground",
+      close && (close.metres ?? Number(close.label.replace(/[^\d.]/g, ""))) !== undefined &&
+      close.label !== rest.label,
+      `${rest.label} to ${close.label}`);
+    check("and it is still a usable length", close.px >= 50 && close.px <= 170, `${close.px}px`);
+    check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+}
+
 // ===================== 26. SOMEWHERE TO EAT, AND SOMEWHERE TO HIRE SKIS ==
 // Most of what a skier reads off a piste map is not junctions: it is the huts.
 // The app had every lift and every run on the mountain and not one restaurant.
