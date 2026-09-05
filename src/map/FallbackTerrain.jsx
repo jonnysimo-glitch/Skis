@@ -92,12 +92,34 @@ const DEPTH_SCALE = 1 / 3;
  * of paying for it: the cost is that a ridge under-occludes by at most its own
  * last quad, which nobody can see.
  *
- * What is left for this to cover is the buffer's resolution — three CSS pixels
- * of a surface receding at a grazing angle is a real distance — and it is a
- * fraction rather than a number of metres so that a small resort is not
+ * What is left for this to cover is the buffer's resolution — a line reads the
+ * depth pixel its three-CSS-pixel block centres on, which on a surface
+ * receding at a grazing angle is not quite the depth under the line — and it
+ * is a fraction rather than a number of metres so a small resort is not
  * measured with a big resort's ruler.
+ *
+ * Worth keeping small, and measured rather than guessed. Every metre of it is
+ * a metre of mountain that stops hiding things: at 0.005 the same view
+ * occluded 23 runs of 134 where 0.002 occludes 34, for no gain — the outward
+ * rounding was already covering what the extra slack was there for.
  */
-const DEPTH_BIAS_FRAC = 0.005;
+const DEPTH_BIAS_FRAC = 0.002;
+
+/**
+ * The 256 greys the depth buffer is written in, built once.
+ *
+ * Eight bits, and a lookup rather than a template string, both for the same
+ * reason: the depth pass is three and a half thousand fills a frame, and at
+ * that count what it costs is not the pixels, it is the per-quad work. A
+ * quarter-resolution buffer measured the same as a third-resolution one, which
+ * is what said so. Building `rgb(...)` per quad allocates a string and makes
+ * the canvas parse a colour, both of which the array removes.
+ *
+ * Eight bits is enough only because the value is rounded AWAY from the camera:
+ * see `far` below. Rounding to nearest would put the stored surface up to half
+ * a step in front of where it is, and a line on that surface behind it.
+ */
+const DEPTH_GREYS = Array.from({ length: 256 }, (_, i) => `rgb(${i},0,0)`);
 
 /**
  * How much of that blur survives once the camera is close.
@@ -508,11 +530,12 @@ export default function FallbackTerrain({
      * depth of the closest surface at every pixel — exactly what a line has to
      * beat to be visible.
      *
-     * Sixteen bits, split across red and green. Eight is 256 steps over ten
-     * kilometres of scene, or forty metres a step, and a line lies *on* the
-     * surface it is being tested against — at that quantisation the bias
-     * needed to stop it z-fighting with its own ground is wide enough to show
-     * runs through a ridge again.
+     * Eight bits in the red channel. That is forty metres a step over a scene
+     * ten kilometres deep, which would be far too coarse if a line were being
+     * compared against the surface it lies on — but each quad stores its
+     * furthest corner, rounded outward, so a line on that quad is in front of
+     * what the quad wrote by a whole quad's depth. The quantisation lands in
+     * the slack rather than on the comparison.
      */
     const depth = document.createElement("canvas");
     const depthCtx = depth.getContext("2d", { willReadFrequently: true });
@@ -915,24 +938,22 @@ export default function FallbackTerrain({
 
         if (dep) {
           // The same shape, in the same order, coloured by how far away it is.
-          // Sixteen bits big-endian across red and green; blue is left at zero
-          // and alpha at full, so "has any terrain been drawn here at all" is
-          // a test on alpha and open sky never occludes anything.
+          // Alpha stays at full wherever anything was drawn, so "is this sky"
+          // is a test on alpha and open sky never occludes anything.
           const t = Math.max(0, Math.min(1, (q.far - dMin) / depthSpan));
-          const n = Math.round(t * 65535);
+          // Ceil, not round. The stored depth has to be at or beyond the
+          // quad's furthest corner for a line drawn on that quad to survive
+          // the test; a value half a step nearer would cut the line into its
+          // own ground. Erring outward costs a quantum of under-occlusion,
+          // which is a fifth of a per cent of the scene.
+          const n = Math.ceil(t * 255);
           dep.beginPath();
           dep.moveTo(a.x, a.y);
           dep.lineTo(b.x, b.y);
           dep.lineTo(c.x, c.y);
           dep.lineTo(d.x, d.y);
-          dep.closePath();
-          dep.fillStyle = `rgb(${n >> 8},${n & 255},0)`;
+          dep.fillStyle = DEPTH_GREYS[n];
           dep.fill();
-          // Same reason as the stroke above: without it the seams between
-          // quads read as sky, and a run crossing one flickers into view.
-          dep.strokeStyle = dep.fillStyle;
-          dep.lineWidth = 1.2;
-          dep.stroke();
         }
       }
     };
@@ -951,8 +972,7 @@ export default function FallbackTerrain({
       if (px < 0 || py < 0 || px >= depthData.width || py >= depthData.height) return true;
       const i = (py * depthData.width + px) * 4;
       if (depthData.data[i + 3] === 0) return true; // sky
-      const ground = depthNear +
-        ((depthData.data[i] << 8) | depthData.data[i + 1]) / 65535 * depthSpan;
+      const ground = depthNear + (depthData.data[i] / 255) * depthSpan;
       return p.depth - depthBias <= ground;
     };
 
