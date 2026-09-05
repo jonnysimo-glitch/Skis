@@ -851,7 +851,13 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(20px) saturate(1.6);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  border-top: 1px solid var(--line);
+  /* Not --line. That token is a hairline for the dark surfaces, and this bar
+     is the one light surface in the app: #24394b under white reads as a drawn
+     black rule across the bottom of the mountain rather than as the edge of a
+     panel. What separates a raised light bar from what is behind it is the
+     shadow it casts, with the hairline only sharpening the top of it. */
+  border-top: 1px solid rgba(11, 26, 36, 0.07);
+  box-shadow: 0 -1px 12px rgba(11, 26, 36, 0.10);
   transition: transform 0.3s var(--ease-out), opacity 0.2s var(--ease-std);
 }
 .tabbar--hidden { transform: translateY(100%); opacity: 0; pointer-events: none; }

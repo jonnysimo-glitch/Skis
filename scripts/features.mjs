@@ -1298,11 +1298,18 @@ if (feature("14. The real map cannot leave the resort")) {
 // in a row zoomed the map and four put it at the ceiling. It surfaced as a
 // confusing pan-clamp failure rather than as itself.
 //
-// And the pistes are drawn over the terrain rather than draped into it, so a
-// run on the far side of a ridge is still visible. That is deliberate: on a
-// route planner the shape of the day has to be legible in one look, and half a
-// route hidden behind a mountain is not.
-if (feature("15. Gestures, and slopes drawn over the terrain")) {
+// And the mountain is solid. The pistes used to be painted over the finished
+// terrain with no depth test, so every run on the far side of a ridge drew
+// straight through it — at Kronplatz that is most of the network, and the map
+// read as an x-ray of the mountain rather than a view of it. The argument for
+// it was that the shape of the day should be legible in one look; what it
+// actually cost was knowing which of two crossing lines you were standing on.
+//
+// The invariant is a geometric one, so it is checked as one rather than by
+// sampling pixels. Looking straight down at a height field, nothing can be
+// behind anything: every point on the surface is visible from directly above.
+// Tip the camera over and a great deal has to disappear.
+if (feature("15. Gestures, and the mountain being solid")) {
   const page = await newPage(browser, { at: [9, 30] });
   await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });
@@ -1345,11 +1352,13 @@ if (feature("15. Gestures, and slopes drawn over the terrain")) {
     check("a real double tap still zooms", (await zoom()) > before + 0.1,
       `${before?.toFixed(2)} then ${(await zoom())?.toFixed(2)}`);
 
-    // ---- slopes over terrain ---------------------------------------------
+    // ---- the mountain is solid -------------------------------------------
     await toForm(page);
     await solve(page);
     await page.waitForSelector(".routecard", { timeout: 15000 });
     await page.waitForTimeout(1200);
+
+    const occlusion = () => page.evaluate(() => window.__skisOcclusion);
 
     /** Pixels close to the route casing colour, #2ac4ee. */
     const routePixels = () =>
@@ -1367,19 +1376,48 @@ if (feature("15. Gestures, and slopes drawn over the terrain")) {
         return n;
       });
 
+    // Straight down. Every point of a height field is visible from above it,
+    // so the depth test must reject nothing at all here — and if it does, the
+    // bias is too small and it is eating lines off their own ground rather
+    // than off a ridge, which is the failure that is invisible by eye.
+    await page.evaluate(() => window.__skisSetPitch(0));
+    await page.waitForTimeout(900);
+    const flat = await occlusion();
+    check("from straight above, the depth test hides nothing",
+      flat && flat.seen > 20 && flat.hidden === 0,
+      `${flat?.hidden} of ${flat?.seen} runs hidden`);
+    // A little clipping from directly above is the buffer's own resolution at
+    // the silhouette, not terrain in the way. A lot would be the bias again.
+    check("and clips almost nothing", flat && flat.clipped <= flat.seen * 0.12,
+      `${flat?.clipped} of ${flat?.seen} clipped`);
+
+    // Tipped over, the far side of the mountain is behind the mountain.
+    await page.evaluate(() => window.__skisSetPitch(62));
+    await page.waitForTimeout(900);
+    const tipped = await occlusion();
+    check("tipped over, the mountain hides what is behind it",
+      tipped && tipped.hidden + tipped.clipped > 0,
+      `${tipped?.hidden} hidden and ${tipped?.clipped} clipped of ${tipped?.seen}`);
+    // But not everything: a depth test that rejects the whole network is a
+    // sign convention the wrong way round, which looks like a clean map until
+    // you notice there is nothing on it.
+    check("and does not hide the near side too",
+      tipped && tipped.hidden < tipped.seen * 0.9,
+      `${tipped?.hidden} of ${tipped?.seen} hidden`);
+
     const front = await routePixels();
     check("the route is drawn on the mountain", front > 40, `${front} sampled pixels`);
 
-    // From the other side, terrain that was behind the route is now in front
-    // of it. A depth test would take a large bite out of the line here.
     await page.evaluate(() => window.__skisSetBearing(152));
     await page.waitForTimeout(1400);
     const bearing = await page.evaluate(() => window.__skisView?.bearing);
-    const back = await routePixels();
     check("orbiting actually turned the mountain", Math.abs((bearing ?? 0) + 28) > 25,
       `bearing ${bearing?.toFixed(0)}`);
-    check("and the route is still fully drawn from the far side",
-      back > front * 0.45, `${back} pixels against ${front} before`);
+    // Turned right round, some of the route has to survive: the near face is
+    // still the near face, whichever side of the mountain it is.
+    const back = await routePixels();
+    check("and the route is still on the mountain from the far side", back > 20,
+      `${back} pixels against ${front} before`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }

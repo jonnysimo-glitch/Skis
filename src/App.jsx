@@ -257,14 +257,31 @@ export default function App() {
    * than a per-session choice.
    */
   const [mapMode, setMapMode] = useState(() => {
-    const saved = load("mapMode");
-    return saved && (saved === "cutout" || hasMapKey) ? saved : "cutout";
+    /*
+     * Read under a new name, so the old preference does not outlive the reason
+     * for it.
+     *
+     * Until there was a key, Terrain was the only choice that worked and the
+     * other two were greyed out — so "cutout" in storage does not mean anyone
+     * preferred it, only that they tapped the one button that did anything.
+     * Honouring that would hide satellite from exactly the people who have
+     * been using the app longest.
+     */
+    const saved = load("mapMode2");
+    if (saved && (saved === "cutout" || hasMapKey)) return saved;
+    // Satellite when there is a key to serve it, because a photograph of the
+    // mountain is what a skier already knows how to read. The schematic
+    // terrain is honest about the shape of the ground and says nothing about
+    // where the trees stop or which bowl is the one you can see from the lift.
+    // Without a key it would be an empty grey pane, so then the terrain is not
+    // the preference, it is the only thing that works.
+    return hasMapKey ? "satellite" : "cutout";
   });
   const [layersOpen, setLayersOpen] = useState(false);
   const chooseMap = (next) => {
     setMapBroken(false);
     setMapMode(next);
-    save("mapMode", next);
+    save("mapMode2", next);
     setLayersOpen(false);
   };
   const [statusOpen, setStatusOpen] = useState(false);

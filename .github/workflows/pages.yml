@@ -1,0 +1,115 @@
+# Build the app and publish it to GitHub Pages.
+#
+# Deployed through the Pages artifact API rather than by committing the build
+# to the gh-pages branch, and the reason is the MapTiler key.
+#
+# A frontend map key is public by necessity — it is handed to every browser
+# that loads the map, and no amount of care changes that. What it must not be
+# is *committed*, because a key in git history outlives the deploy, survives a
+# rotation nobody remembers to do, and is scraped from public repositories by
+# people who do this for a living. Uploading an artifact publishes the built
+# bundle without writing it to a branch, so the key reaches the live site and
+# never reaches the repository.
+#
+# This replaces the hand-copied gh-pages branch, which could not carry a key
+# for that reason and so could only ever serve the schematic terrain. Pages
+# serves from a branch *or* from an artifact, never both, so the branch is
+# deliberately not updated by anything any more: two mechanisms disagreeing
+# shows up only as a 404, which is a miserable thing to debug.
+#
+# Requires, once: Settings -> Pages -> Source: GitHub Actions.
+# And the key at Settings -> Secrets and variables -> Actions, as
+# VITE_MAPTILER_KEY. Without it everything still builds and deploys, and the
+# map falls back to the terrain view.
+#
+# Restrict the key to this site's origin at cloud.maptiler.com. That is the
+# only protection that means anything for a key a browser can read.
+name: Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/monterosa-ski-app-aeb8ex
+    # None of these change the deployed site.
+    paths-ignore:
+      - '**.md'
+      - 'ios-setup/**'
+      - 'data/**'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One at a time, and never cancelled halfway: a cancelled Pages deployment can
+# leave the site on the old build with the new one stuck as in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The same gate the resort workflow uses. A broken solver should not
+      # reach a phone on a mountain.
+      - run: npm test
+
+      - name: Build
+        env:
+          # Project pages are served from /<repo>/, so every asset URL and the
+          # service worker scope need the prefix. Derived rather than typed, so
+          # renaming the repository cannot silently break the deploy.
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+        run: |
+          npm run build
+          # Pages serves 404.html for a path it has no file for. The app keeps
+          # its state in memory rather than in the URL, so this is only
+          # insurance against a stale bookmark — but a blank page on a phone in
+          # a lift queue is worth one copied file.
+          cp dist/index.html dist/404.html
+          # Without this Pages runs the output through Jekyll, which drops
+          # anything beginning with an underscore.
+          touch dist/.nojekyll
+
+      - name: Say whether satellite will work
+        env:
+          KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo 'MapTiler key present: Satellite and Winter map are live, and Satellite is the default.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '### No MapTiler key'
+              echo
+              echo 'Terrain works. Satellite and Winter map will show their "needs a key" state.'
+              echo 'Add `VITE_MAPTILER_KEY` under Settings -> Secrets and variables -> Actions, then re-run this workflow.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

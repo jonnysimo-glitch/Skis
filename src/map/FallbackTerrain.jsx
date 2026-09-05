@@ -34,8 +34,24 @@ const DIM_ACCENT = "rgba(42, 196, 238, 0.3)";
  * view of anything. MapLibre caps its own pitch for the same reason; this is
  * the equivalent for the schematic view.
  */
-/** How fast a flick bleeds off. 0.92 settles in about half a second at 60fps. */
-const GLIDE_DECAY = 0.92;
+/**
+ * How fast a flick bleeds off, as a time constant in milliseconds.
+ *
+ * This was 0.92 per frame, which is half a second at 60Hz and a quarter of one
+ * on a 120Hz phone — the same flick, a different map, decided by hardware
+ * nobody chose for its scrolling. Same curve as before at 60Hz, measured
+ * against the clock so it is that curve everywhere.
+ */
+const GLIDE_MS = 190;
+
+/**
+ * The two speeds that bound a fling, both in pixels per millisecond.
+ *
+ * Written as what they used to be at 60Hz, so the feel is unchanged and the
+ * arithmetic is checkable: 0.4 and 0.15 pixels in a 16.7ms frame.
+ */
+const FLING_MIN = 0.4 / 16.7;   // slower than this on release is not a flick
+const GLIDE_STOP = 0.15 / 16.7; // slower than this is a stop
 
 /**
  * How far to soften the terrain when compositing it, in CSS pixels.
@@ -50,6 +66,38 @@ const GLIDE_DECAY = 0.92;
  * the rock and the snow grain that make the surface read as ground.
  */
 const TERRAIN_BLUR = 1.9;
+
+/**
+ * Depth-buffer resolution, as a fraction of the canvas in CSS pixels.
+ *
+ * See the block by `depth` in the effect for why it is this coarse. The one
+ * artefact it buys is a line ending a pixel or two early where it disappears
+ * over a ridge, against a silhouette that is itself soft from the blur.
+ */
+const DEPTH_SCALE = 1 / 3;
+
+/**
+ * How far in front of the ground a line has to be to count as visible, as a
+ * fraction of the resort's own extent.
+ *
+ * Small, because the buffer does the real work: each quad stores the depth of
+ * its FURTHEST corner rather than its average, so a line sampled anywhere on
+ * that quad is in front of what the quad wrote and cannot hide itself. Getting
+ * that wrong is the whole difficulty of a depth test against a coarse mesh —
+ * a quad here is 167 metres of ground drawn flat, so on a steep face the
+ * surface a line is sampled from sits up to a hundred metres off the plane
+ * that represents it, times the 2.4 vertical exaggeration on top. A bias big
+ * enough to absorb that is big enough to show runs through a ridge, which is
+ * the bug this is fixing. Storing the far corner removes the problem instead
+ * of paying for it: the cost is that a ridge under-occludes by at most its own
+ * last quad, which nobody can see.
+ *
+ * What is left for this to cover is the buffer's resolution — three CSS pixels
+ * of a surface receding at a grazing angle is a real distance — and it is a
+ * fraction rather than a number of metres so that a small resort is not
+ * measured with a big resort's ruler.
+ */
+const DEPTH_BIAS_FRAC = 0.005;
 
 /**
  * How much of that blur survives once the camera is close.
@@ -73,6 +121,38 @@ const TERRAIN_BLUR = 1.9;
  * Never below half, or turning right round becomes four separate gestures.
  */
 const rotateRate = (zoom) => Math.max(0.5, Math.min(1, 1 / (1 + 0.08 * (zoom - 1))));
+
+/**
+ * And how much of a two finger drag becomes pitch, by zoom.
+ *
+ * The same argument as the bearing above, for the same reason: the refit
+ * multiplies a change of camera attitude, so the pitch that feels right with
+ * the whole mountain in frame throws the subject around when you are close.
+ *
+ * The base rate is lower than the 0.5 degrees per pixel this was using, which
+ * came from MapLibre. That number is right for MapLibre's 0 to 60 range; here
+ * the range runs to 84 and the terrain is vertically exaggerated on top of it,
+ * so the same pixel bought half as much again of a bigger travel. A hundred
+ * and fifty pixels — a comfortable two finger drag on a phone — went almost
+ * the whole way from flat to nearly ground level, which is the "it overdoes
+ * it" everyone means when they say the tilt is twitchy. At 0.35 that drag is
+ * half the range, so getting somewhere specific takes a movement rather than a
+ * flinch.
+ */
+const PITCH_RATE = 0.35;
+const pitchRate = (zoom) => PITCH_RATE * Math.max(0.45, Math.min(1, 1 / (1 + 0.09 * (zoom - 1))));
+
+/**
+ * How fast the zoom eases toward what a scroll or a button asked for, as a
+ * time constant in milliseconds rather than a fraction per frame.
+ *
+ * A fraction per frame is a different speed on every device. `zoom += gap *
+ * 0.14` is a 110ms ease at 60Hz and a 55ms one on a 120Hz iPhone, which is
+ * most of them now — so the animation this was tuned for is not the animation
+ * anyone with a recent phone was getting. Same curve, measured against the
+ * clock, so it is the same everywhere.
+ */
+const ZOOM_EASE_MS = 110;
 
 /*
  * More blur the closer you get, not less.
@@ -413,6 +493,33 @@ export default function FallbackTerrain({
     const offCtx = off.getContext("2d");
     const blur = document.createElement("canvas");
     const blurCtx = blur.getContext("2d");
+    /*
+     * A depth buffer, so the mountain is solid.
+     *
+     * The pistes used to be painted over the finished terrain with no depth
+     * test at all, which drew every run on the far side of the ridge straight
+     * through it. On a resort the size of Kronplatz that is most of the
+     * network: an x-ray of the mountain rather than a view of it, and no way
+     * to tell which of two crossing lines is the one under your skis.
+     *
+     * The terrain is already sorted back to front for the painter's algorithm,
+     * so the same pass fills each quad into this canvas with its depth as the
+     * colour. Nearer quads are drawn later and overwrite, which leaves the
+     * depth of the closest surface at every pixel — exactly what a line has to
+     * beat to be visible.
+     *
+     * Sixteen bits, split across red and green. Eight is 256 steps over ten
+     * kilometres of scene, or forty metres a step, and a line lies *on* the
+     * surface it is being tested against — at that quantisation the bias
+     * needed to stop it z-fighting with its own ground is wide enough to show
+     * runs through a ridge again.
+     */
+    const depth = document.createElement("canvas");
+    const depthCtx = depth.getContext("2d", { willReadFrequently: true });
+    let depthData = null;
+    let depthNear = 0;
+    let depthSpan = 1;
+    const depthBias = (fieldRef.current?.span ?? 0) * DEPTH_BIAS_FRAC;
     let dpr = 1;
 
     const resize = () => {
@@ -426,8 +533,19 @@ export default function FallbackTerrain({
       off.height = canvas.height;
       blur.width = canvas.width;
       blur.height = canvas.height;
+      // Deliberately coarse, and never scaled by the device pixel ratio.
+      // Rasterising the terrain a second time is the cost of the depth test,
+      // and area is what that costs: at a third of the linear size it is a
+      // ninth of the fill. An occlusion test does not need better — a ridge
+      // that hides a run is tens of pixels across, not one — and the readback
+      // afterwards is a ninth of the bytes too, which is the part that would
+      // otherwise stutter a drag.
+      depth.width = Math.max(1, Math.round(width * DEPTH_SCALE));
+      depth.height = Math.max(1, Math.round(height * DEPTH_SCALE));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
+      depthData = null;
       dirty.current = true;
     };
     resize();
@@ -646,7 +764,7 @@ export default function FallbackTerrain({
     };
 
     // ---- terrain ---------------------------------------------------------
-    const drawTerrain = (v, cam, g) => {
+    const drawTerrain = (v, cam, g, dep) => {
       const { heights, at, shades, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
@@ -754,6 +872,27 @@ export default function FallbackTerrain({
 
       quads.sort((p, q) => q.depth - p.depth); // painter's algorithm
       const dSpan = dMax - dMin || 1;
+      /*
+       * The far corner of every quad, and the range they span.
+       *
+       * A second pass rather than a field on each quad: it is a max over four
+       * numbers and the slab's faces get it for free, where storing it at
+       * construction would mean computing it in three places. The underside is
+       * pushed with a depth of Infinity to force it to the back of the sort,
+       * and its corners are real, so taking it from the corners also keeps the
+       * range finite.
+       */
+      let dFar = dMin;
+      for (const q of quads) {
+        let far = -Infinity;
+        for (const pt of q.pts) if (pt.depth > far) far = pt.depth;
+        q.far = far;
+        if (far > dFar) dFar = far;
+      }
+      // What the visibility test decodes back with. Published before the loop
+      // so a frame that draws nothing still leaves a usable scale.
+      depthNear = dMin;
+      depthSpan = dFar - dMin || 1;
       for (const q of quads) {
         const haze = Math.max(0, Math.min(1, (q.depth - dMin) / dSpan));
         // Flat means exactly that: one tone, no relief shading and no haze.
@@ -773,7 +912,81 @@ export default function FallbackTerrain({
         g.strokeStyle = fill; // hides seams between adjacent quads
         g.lineWidth = 0.6;
         g.stroke();
+
+        if (dep) {
+          // The same shape, in the same order, coloured by how far away it is.
+          // Sixteen bits big-endian across red and green; blue is left at zero
+          // and alpha at full, so "has any terrain been drawn here at all" is
+          // a test on alpha and open sky never occludes anything.
+          const t = Math.max(0, Math.min(1, (q.far - dMin) / depthSpan));
+          const n = Math.round(t * 65535);
+          dep.beginPath();
+          dep.moveTo(a.x, a.y);
+          dep.lineTo(b.x, b.y);
+          dep.lineTo(c.x, c.y);
+          dep.lineTo(d.x, d.y);
+          dep.closePath();
+          dep.fillStyle = `rgb(${n >> 8},${n & 255},0)`;
+          dep.fill();
+          // Same reason as the stroke above: without it the seams between
+          // quads read as sky, and a run crossing one flickers into view.
+          dep.strokeStyle = dep.fillStyle;
+          dep.lineWidth = 1.2;
+          dep.stroke();
+        }
       }
+    };
+
+    /**
+     * Is a projected point in front of the ground, or behind it?
+     *
+     * The whole test is one lookup: the buffer holds the depth of the nearest
+     * surface at every pixel, so anything further away than that is inside the
+     * mountain. Pixels no terrain reached are sky, and sky hides nothing.
+     */
+    const visible = (p) => {
+      if (!depthData) return true;
+      const px = Math.round(p.x * DEPTH_SCALE);
+      const py = Math.round(p.y * DEPTH_SCALE);
+      if (px < 0 || py < 0 || px >= depthData.width || py >= depthData.height) return true;
+      const i = (py * depthData.width + px) * 4;
+      if (depthData.data[i + 3] === 0) return true; // sky
+      const ground = depthNear +
+        ((depthData.data[i] << 8) | depthData.data[i + 1]) / 65535 * depthSpan;
+      return p.depth - depthBias <= ground;
+    };
+
+    /**
+     * Split a projected line at the points where it goes behind the mountain.
+     *
+     * Returned as runs of consecutive visible points rather than as a mask,
+     * because a stroke is drawn per run: joining across a hidden stretch would
+     * put a straight line over the ridge that hid it, which is the artefact
+     * this whole thing exists to remove.
+     *
+     * The endpoints of each run are nudged onto the midpoint of the link that
+     * crosses the silhouette. Without it a line stops at whichever sample
+     * happened to be last, which at OSM's spacing is up to thirty pixels short
+     * of the ridge and reads as a gap rather than as terrain in the way.
+     */
+    const visibleRuns = (pts) => {
+      const runs = [];
+      let run = null;
+      const mid = (p, q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+      for (let i = 0; i < pts.length; i++) {
+        if (visible(pts[i])) {
+          if (!run) {
+            run = [];
+            if (i > 0) run.push(mid(pts[i - 1], pts[i]));
+            runs.push(run);
+          }
+          run.push(pts[i]);
+        } else if (run) {
+          run.push(mid(pts[i - 1], pts[i]));
+          run = null;
+        }
+      }
+      return runs.filter((r) => r.length > 1);
     };
 
     // ---- lines on the surface -------------------------------------------
@@ -814,17 +1027,36 @@ export default function FallbackTerrain({
       // which is the one place a skier most wants to see what else is around.
       const alpha = hasRoute ? 0.62 : 1;
       const casing = hasRoute ? 0.6 : 0.9;
+      let seen = 0;
+      let hidden = 0;
+      let clipped = 0;
       for (const feature of propsRef.current.graph.features) {
         const pts = toScreen(feature.geometry.coordinates, v, cam);
         const lift = feature.properties.kind === "lift";
         const colour = lift ? LIFT_TINT : PISTE_TINT[feature.properties.difficulty] ?? LIFT_TINT;
         const dash = lift ? [3, 4] : null;
-        ctx.globalAlpha = casing;
-        stroke(pts, "rgba(255,255,255,0.95)", lift ? 2.6 : 3.4, dash);
-        ctx.globalAlpha = alpha;
-        stroke(pts, colour, lift ? 1.2 : 1.9, dash);
-        ctx.globalAlpha = 1;
+        // Per visible run, not per feature. A piste that crosses a ridge is
+        // two strokes with the ridge between them, and the casing has to be
+        // split the same way or it draws the missing stretch in white.
+        const runs = visibleRuns(pts);
+        if (mapTest) {
+          seen++;
+          if (!runs.length) hidden++;
+          else if (runs.length > 1 || runs[0].length < pts.length) clipped++;
+        }
+        for (const seg of runs) {
+          ctx.globalAlpha = casing;
+          stroke(seg, "rgba(255,255,255,0.95)", lift ? 2.6 : 3.4, dash);
+          ctx.globalAlpha = alpha;
+          stroke(seg, colour, lift ? 1.2 : 1.9, dash);
+          ctx.globalAlpha = 1;
+        }
       }
+      // How much of the network the mountain is standing in front of. A count
+      // rather than a pixel sample, so the check for it can say what it means:
+      // looking straight down at a height field nothing can be hidden, and at
+      // any real pitch a great deal is.
+      if (mapTest) window.__skisOcclusion = { seen, hidden, clipped };
     };
 
     /**
@@ -901,6 +1133,9 @@ export default function FallbackTerrain({
           if (path > chord * 1.35) continue; // a horseshoe, not a stretch
           const flat = Math.abs(dy / (chord || 1));
           const score = chord * (1.35 - flat);
+          // A fragment hidden behind a ridge is not a place to write its name:
+          // the word would float on bare snow with no line under it.
+          if (!visible(pts[Math.floor(pts.length / 2)])) continue;
           if (!best || score > best.score) best = { pts, a, b, dx, dy, chord, score };
         }
         if (!best) continue;
@@ -944,28 +1179,26 @@ export default function FallbackTerrain({
       // Scale the route line with the framing so it stays a first-class object
       // when zoomed out and does not become a stripe when zoomed in.
       const k = Math.max(0.62, Math.min(1.5, cam.f / (field.span * 0.9)));
+      // Split once, drawn four times. The route is four concentric strokes and
+      // every one of them has to break at the same place, or the casing draws
+      // the stretch the ridge is hiding.
       const lines = r.features.map((f) => ({
         props: f.properties,
-        pts: toScreen(f.geometry.coordinates, v, cam),
+        runs: visibleRuns(toScreen(f.geometry.coordinates, v, cam)),
       }));
+      const pass = (colour, lw, dash) => {
+        for (const l of lines) for (const seg of l.runs) stroke(seg, colour(l), lw, dash);
+      };
+      const dimmed = (l) => l.props.i < done;
       // Casing first, as one continuous object: the whole day reads at a glance.
+      pass((l) => (dimmed(l) ? "rgba(11,26,36,0.12)" : "rgba(11,26,36,0.28)"), 12 * k);
+      pass((l) => (dimmed(l) ? DIM_ACCENT : ACCENT_LINE), 9.5 * k);
+      pass((l) => (dimmed(l) ? "rgba(255,255,255,0.3)" : "#ffffff"), 7 * k);
       for (const l of lines) {
-        const dim = l.props.i < done;
-        stroke(l.pts, dim ? "rgba(11,26,36,0.12)" : "rgba(11,26,36,0.28)", 12 * k);
-      }
-      for (const l of lines) {
-        const dim = l.props.i < done;
-        stroke(l.pts, dim ? DIM_ACCENT : ACCENT_LINE, 9.5 * k);
-      }
-      for (const l of lines) {
-        const dim = l.props.i < done;
-        stroke(l.pts, dim ? "rgba(255,255,255,0.3)" : "#ffffff", 7 * k);
-      }
-      for (const l of lines) {
-        const dim = l.props.i < done;
-        ctx.globalAlpha = dim ? 0.35 : 1;
-        if (l.props.kind === "lift") stroke(l.pts, "#22323f", 2.4 * k, [5, 4]);
-        else stroke(l.pts, PISTE_COLOUR[l.props.difficulty] || "#7d95a5", 3.4 * k);
+        ctx.globalAlpha = dimmed(l) ? 0.35 : 1;
+        const lift = l.props.kind === "lift";
+        const colour = lift ? "#22323f" : PISTE_COLOUR[l.props.difficulty] || "#7d95a5";
+        for (const seg of l.runs) stroke(seg, colour, (lift ? 2.4 : 3.4) * k, lift ? [5, 4] : null);
         ctx.globalAlpha = 1;
       }
     };
@@ -1060,6 +1293,22 @@ export default function FallbackTerrain({
           return { n, s: project(x, field.sample(x, z), z, v, cam) };
         })
         .filter(({ s }) => s.x > -60 && s.x < width + 60 && s.y > -20 && s.y < height + 20)
+        /*
+         * Same rule as the pistes, with one exception.
+         *
+         * A junction name floating over a ridge it is not on is the most
+         * misleading thing on the map: it reads as a place up there. So a
+         * junction behind the mountain is behind the mountain.
+         *
+         * A base is not. Stafal, Champoluc and Alagna sit in deep valleys at
+         * the edges of the massif, so at any real pitch at least one of them
+         * is behind it — and the first version of this rule took all three
+         * off the map at once. "Your car is at Champoluc" is the problem this
+         * app exists to solve, and it cannot be solved by a map that will not
+         * say where Champoluc is. Physical honesty is worth a lot here and it
+         * is not worth that.
+         */
+        .filter(({ n, s }) => n.base || visible(s))
         .sort((a, b) => rank(a.n) - rank(b.n) || a.n.name.localeCompare(b.n.name));
 
       const hits = (box) =>
@@ -1196,7 +1445,21 @@ export default function FallbackTerrain({
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false } = {}) => {
       const list = propsRef.current.places ?? [];
       if (!list.length) return placed;
-      const named = v.zoom > 1.25;
+      /*
+       * Named at every zoom, not only close up.
+       *
+       * These were markers with no words under them until 1.25, which is past
+       * the view the app opens on — so the mountain showed a dozen identical
+       * orange discs and no way to tell a restaurant you want from one you
+       * do not. A pin whose name you cannot read is a pin that does not answer
+       * the question you tapped it for.
+       *
+       * What stopped it being soup is not the zoom gate, it is the
+       * declutterer: a name that will not fit without hitting one already
+       * down is dropped, so the far view names the few with room and zooming
+       * in brings back the rest. That is the same rule the place names use,
+       * and it is the rule that should have been carrying this all along.
+       */
       ctx.font = "600 10.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "alphabetic";
@@ -1210,13 +1473,14 @@ export default function FallbackTerrain({
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
         if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
+        // A restaurant on the far side of the mountain is behind the mountain.
+        if (!visible(s)) continue;
 
         const r = 6.4;
         const box = { l: s.x - r - 3, r: s.x + r + 3, t: s.y - r - 3, b: s.y + r + 3 };
         if (labelsOnly) {
           // The marker went down in the earlier pass; this one only has to
           // find room for the words.
-          if (!named) continue;
           const w = ctx.measureText(name).width;
           const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
           const ty = s.y + r + 12;
@@ -1241,6 +1505,17 @@ export default function FallbackTerrain({
       return placed;
     };
 
+    /**
+     * Start, finish, and where you are.
+     *
+     * Deliberately not depth tested, unlike everything else on the mountain.
+     * These are three markers, not a network, so they cannot make the map an
+     * x-ray — and they are the answers to "where am I" and "where is the car",
+     * which are the two questions worth not being able to lose. A position
+     * marker that vanishes because the ridge you just came over is between you
+     * and the camera is a worse map than one that admits the pin is behind
+     * something.
+     */
     const drawPins = (v, cam) => {
       const p = propsRef.current.pins;
       if (!p?.features?.length) return;
@@ -1322,29 +1597,76 @@ export default function FallbackTerrain({
     // the loop that reads them, rather than relying on the first frame landing
     // after the gesture block has run.
     /** Pixels per frame, smoothed, so one jittery sample cannot fling the map. */
+    /*
+     * How fast the thumb is moving, in pixels per MILLISECOND.
+     *
+     * Per millisecond and not per pointermove event, which is what this was.
+     * Per event happened to work, by a coincidence worth writing down: a
+     * pointermove carries less travel the more often it fires, so "pixels per
+     * event" times "events per second" came out at the right speed whatever
+     * the device — as long as the browser fired exactly one move per frame,
+     * which it does not have to and does not always do. Safari coalesces, and
+     * a phone under load skips. Then the two stop cancelling and a flick goes
+     * however far the hardware felt like.
+     *
+     * A speed and a frame time multiply to a distance on any device, which is
+     * the whole of it.
+     */
     const velocity = { x: 0, y: 0 };
+    let movedAt = 0;
     /** Remaining momentum after a flick. */
     const glide = { x: 0, y: 0 };
 
     // ---- loop ------------------------------------------------------------
+    // Scroll arrives faster than frames do; see the note on `wheel`.
+    let wheelDelta = 0;
+    let wheelPinch = false;
+    let wheelAt = null;
+    let lastFrameAt = 0;
     let raf = 0;
     let lastBearing = null;
     const frame = () => {
       const v = view.current;
-      const gap = v.targetZoom - v.zoom;
-      if (Math.abs(gap) > 0.001) {
-        v.zoom += gap * 0.14;
+
+      // One zoom per frame, from everything that has scrolled since the last
+      // one. targetZoom rather than zoom, so the easing below carries it.
+      if (wheelDelta && wheelAt) {
+        const rate = wheelPinch ? PINCH_RATE : WHEEL_RATE;
+        let scale = 2 / (1 + Math.exp(-Math.abs(wheelDelta * rate)));
+        if (wheelDelta > 0) scale = 1 / scale; // scrolling down zooms out
+        zoomAbout(v, scale, wheelAt.x, wheelAt.y);
+        wheelDelta = 0;
         dirty.current = true;
       }
 
-      if (Math.hypot(glide.x, glide.y) > 0.15) {
+      const now = performance.now();
+      // Capped, so a frame dropped to a background tab does not resolve the
+      // whole ease in one step and jump.
+      const dt = Math.min(64, lastFrameAt ? now - lastFrameAt : 16.7);
+      lastFrameAt = now;
+
+      const gap = v.targetZoom - v.zoom;
+      if (Math.abs(gap) > 0.001) {
+        v.zoom += gap * (1 - Math.exp(-dt / ZOOM_EASE_MS));
+        dirty.current = true;
+      }
+
+      if (Math.hypot(glide.x, glide.y) > GLIDE_STOP) {
         // A flick that reaches the edge is resisted rather than killed, so it
         // eases into the wall and springs back instead of stopping dead.
+        //
+        // Scaled by the frame time, because `glide` is a speed and this is the
+        // distance it covers. Applied raw it was a distance PER FRAME, so the
+        // same flick of the same thumb threw the map twice as far on a 120Hz
+        // phone as on a 60Hz one — and twice as far as anyone tuned it to go.
+        // Of everything here that overshoots, this is the one a person can
+        // feel, because it is the gesture they make most.
         const lim = v.panLimit;
-        v.panX = resist(v.panX, glide.x, lim?.x);
-        v.panY = resist(v.panY, glide.y, lim?.y);
-        glide.x *= GLIDE_DECAY;
-        glide.y *= GLIDE_DECAY;
+        v.panX = resist(v.panX, glide.x * dt, lim?.x);
+        v.panY = resist(v.panY, glide.y * dt, lim?.y);
+        const bleed = Math.exp(-dt / GLIDE_MS);
+        glide.x *= bleed;
+        glide.y *= bleed;
         dirty.current = true;
       } else if (glide.x || glide.y) {
         glide.x = 0;
@@ -1358,7 +1680,10 @@ export default function FallbackTerrain({
           const cap = axis === "panX" ? lim.x : lim.y;
           const over = Math.abs(v[axis]) - cap;
           if (over > 0.3) {
-            v[axis] -= Math.sign(v[axis]) * Math.max(0.5, over * 0.22);
+            // Same reason as the glide: a fraction of the overshoot per frame
+            // is a different spring on a different display.
+            const back = Math.max(0.5, over * 0.22) * Math.min(2, dt / 16.7);
+            v[axis] -= Math.sign(v[axis]) * Math.min(over, back);
             dirty.current = true;
           }
         }
@@ -1400,9 +1725,11 @@ export default function FallbackTerrain({
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, width, height);
 
-        // Terrain first, then everything on it. The pistes and the route are
-        // drawn over the surface rather than into it, so a run on the far side
-        // of a ridge stays visible — see section 15 in scripts/features.mjs.
+        // Terrain first, then everything on it — and depth-tested against it,
+        // so a run on the far side of a ridge is hidden by the ridge. Drawing
+        // the network over the finished surface made the mountain an x-ray of
+        // itself: at Kronplatz most of the network is behind something, and
+        // two lines crossing on screen gave no clue which one you were on.
         // The terrain is drawn as flat filled quads, so every one of the 3,600
         // is a single tone with a hard step to its neighbour, and close up it
         // reads as tiling rather than as ground. More quads is the obvious
@@ -1416,7 +1743,16 @@ export default function FallbackTerrain({
         offCtx.setTransform(1, 0, 0, 1, 0, 0);
         offCtx.clearRect(0, 0, off.width, off.height);
         offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawTerrain(v, cam, offCtx);
+        depthCtx.setTransform(1, 0, 0, 1, 0, 0);
+        depthCtx.clearRect(0, 0, depth.width, depth.height);
+        depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE, 0, 0);
+        drawTerrain(v, cam, offCtx, depthCtx);
+        // One readback for the frame. Per-point getImageData is the obvious
+        // way to write this and is orders of magnitude slower: every call
+        // synchronises with the compositor, and there are thousands of points.
+        depthData = depth.width && depth.height
+          ? depthCtx.getImageData(0, 0, depth.width, depth.height)
+          : null;
 
         // Blur it, then cut the blur back to the sharp shape.
         //
@@ -1444,19 +1780,25 @@ export default function FallbackTerrain({
         drawRoute(v, cam);
         /*
          * In the order a lost skier needs them: the valley bases, then the
-         * huts as markers, then the rest of the place names, then the huts'
-         * own names.
+         * huts as markers, then the huts' own names, then the junctions.
          *
-         * A name reserves a box six times the width of a marker. Running the
-         * huts last meant four of Monterosa's twenty-five were drawn at all,
-         * because the names had taken the mountain; running them first cost
-         * Stafal and Champoluc their labels, which is worse, because those are
-         * the names you read when you are working out where you are.
+         * A name reserves a box six times the width of a marker, so this
+         * ordering is what actually decides which names exist. The bases go
+         * first and always did — those are the names you read when you are
+         * working out where you are, and they are where the car is.
+         *
+         * The huts used to go last, behind the junctions, and the junctions
+         * took the mountain: what was left was a dozen identical orange discs
+         * with no words under them. A junction name is a label on a place you
+         * pass through; a restaurant name is a place you decide to go to, and
+         * you cannot decide between two markers that look the same. So the
+         * huts are named before the junctions now, and it is the junctions
+         * that come back as you zoom in.
          */
         const boxes = drawPlaces(v, cam, chromeBoxes(), { only: "bases" });
         drawHuts(v, cam, boxes, { markersOnly: true });
-        drawPlaces(v, cam, boxes, { only: "rest" });
         drawHuts(v, cam, boxes, { labelsOnly: true });
+        drawPlaces(v, cam, boxes, { only: "rest" });
         // Last, because a place is a better thing to know than a piste name,
         // and there are far more piste names than there is room for.
         drawRunNames(v, cam, boxes);
@@ -1663,7 +2005,6 @@ export default function FallbackTerrain({
     const ZOOM_START = 0.1;         // zoom levels, |log2(d / d0)|
     const ROTATE_ARC = 25;          // pixels of fingertip travel along the arc
     const PITCH_MIN_MOVE = 2;       // pixels before a finger counts as moving
-    const PITCH_RATE = 0.5;         // degrees of pitch per pixel of travel
     const SINGLE_TOUCH_GRACE = 100; // ms to wait for the second finger to move
     const isVertical = (dx, dy) => Math.abs(dy) > Math.abs(dx);
 
@@ -1692,6 +2033,7 @@ export default function FallbackTerrain({
       glide.y = 0;
       velocity.x = 0;
       velocity.y = 0;
+      movedAt = 0;
 
       if (pointers.size === 1) {
         const now = performance.now();
@@ -1718,8 +2060,14 @@ export default function FallbackTerrain({
         const dy = c.y - gesture.y;
         v.panX = resist(v.panX, dx, v.panLimit?.x);
         v.panY = resist(v.panY, dy, v.panLimit?.y);
-        velocity.x = velocity.x * 0.7 + dx * 0.3;
-        velocity.y = velocity.y * 0.7 + dy * 0.3;
+        // Clamped below at half a millisecond: coalesced moves can arrive with
+        // the same timestamp, and dividing by zero puts an infinity into the
+        // average that never washes out.
+        const now = performance.now();
+        const span = Math.max(0.5, movedAt ? now - movedAt : 16.7);
+        movedAt = now;
+        velocity.x = velocity.x * 0.7 + (dx / span) * 0.3;
+        velocity.y = velocity.y * 0.7 + (dy / span) * 0.3;
       } else if (pointers.size >= 2) {
         const pts = [...pointers.values()];
         const { dist, angle } = spread();
@@ -1797,7 +2145,7 @@ export default function FallbackTerrain({
         if (gesture.tilting) {
           const dy =
             ((pts[0].y - gesture.last[0].y) + (pts[1].y - gesture.last[1].y)) / 2;
-          v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - dy * PITCH_RATE));
+          v.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, v.pitch - dy * pitchRate(v.zoom)));
         } else {
           if (gesture.rotating) {
             // Minus, and it matters. Screen y points down, so atan2 between the
@@ -1835,6 +2183,7 @@ export default function FallbackTerrain({
         // a stale value from before it flicked the map on release.
         velocity.x = 0;
         velocity.y = 0;
+        movedAt = 0;
         return;
       }
       view.current.dragging = false;
@@ -1849,7 +2198,7 @@ export default function FallbackTerrain({
       // Let go mid-flick and the map should keep going and settle, the way it
       // does in every map app. Without this a drag stops dead under your
       // thumb, which is the single thing that makes a map feel cheap.
-      if (wasPanning && Math.hypot(velocity.x, velocity.y) > 0.4) {
+      if (wasPanning && Math.hypot(velocity.x, velocity.y) > FLING_MIN) {
         glide.x = velocity.x;
         glide.y = velocity.y;
         dirty.current = true;
@@ -1872,12 +2221,45 @@ export default function FallbackTerrain({
     const SAFARI_GESTURES = ["gesturestart", "gesturechange", "gestureend"];
     const swallow = (e) => e.preventDefault();
 
+    /**
+     * Scroll to zoom, taken from MapLibre's scroll handler rather than guessed.
+     *
+     * What was here applied a flat 8% per event and ignored `deltaY` entirely,
+     * which is wrong in three separate ways and they compound:
+     *
+     * A mouse notch is one event, so a notch moved 8% — barely anything. A
+     * trackpad flick is a stream of thirty or forty small events, and each one
+     * took its own full 8%: half a second of two-finger scroll is 1.08^40,
+     * about seventeen times, straight into the clamp. Same code, same
+     * gesture, and it was an order of magnitude too slow on one device and
+     * two too fast on the other.
+     *
+     * `deltaMode` was ignored, so Firefox — which reports lines, about 3 per
+     * notch, where Chrome reports 100 pixels — behaved differently again.
+     *
+     * And the trackpad-pinch branch, `1 - deltaY * 0.01`, goes to zero at a
+     * delta of 100 and negative past it. A firm pinch multiplied the zoom by a
+     * negative number and the map snapped to the far stop.
+     *
+     * So: normalise the delta to pixels, accumulate it, and apply it once per
+     * rendered frame. Frequency stops mattering, which is the whole fix — what
+     * you get depends on how far you scrolled, not on how many events your
+     * hardware decided to send. The sigmoid is MapLibre's: smooth from no
+     * movement, and a single frame can never do more than double or halve.
+     */
+    const WHEEL_LINE = 40;      // pixels per line, MapLibre's own constant
+    const WHEEL_PAGE = 400;
+    const WHEEL_RATE = 1 / 450; // a mouse notch, which is a coarse instrument
+    const PINCH_RATE = 1 / 100; // a trackpad pinch, which is a deliberate size
     const wheel = (e) => {
       e.preventDefault();
-      const v = view.current;
+      let d = e.deltaY;
+      if (e.deltaMode === 1) d *= WHEEL_LINE;
+      else if (e.deltaMode === 2) d *= WHEEL_PAGE;
+      wheelDelta += d;
       // Trackpad pinch arrives as a wheel event with ctrlKey set.
-      const factor = e.ctrlKey ? 1 - e.deltaY * 0.01 : e.deltaY > 0 ? 0.92 : 1.08;
-      zoomAbout(v, factor, e.clientX, e.clientY);
+      wheelPinch = e.ctrlKey;
+      wheelAt = { x: e.clientX, y: e.clientY };
       dirty.current = true;
     };
 

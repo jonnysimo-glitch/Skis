@@ -345,56 +345,58 @@ worker, and no MapLibre — a `file://` page has an opaque origin, so its tile
 workers cannot start. The schematic terrain and everything else works. GPS is
 unavailable for the same reason and the app says so.
 
-**GitHub Pages.** Note that Pages on a **private** repo needs a paid GitHub
-plan; on the free plan the Source setting is replaced by an upgrade prompt.
-Make the repo public, or use Vercel/Netlify, whose free tiers deploy private
-repos.
-
-The `gh-pages` branch carries a prebuilt copy of the site, so there is no CI in
-the way. Once Pages is available, turn it on:
-
-**Settings → Pages → Source: Deploy from a branch → `gh-pages` / `(root)`**
-
-Then it is live at
+**GitHub Pages**, at
 
     https://jonnysimo-glitch.github.io/Skis/
 
-To publish a new build:
+Every push to the working branch builds and deploys it; see below for the two
+settings that need to be right once. To build the same thing locally:
 
 ```bash
 VITE_BASE=/Skis/ npm run build
-# copy dist/ onto the gh-pages branch, keeping .nojekyll and 404.html
 ```
 
-There is deliberately no Actions workflow. Pages can serve *either* from a
-branch *or* from an Actions artifact, never both, and having one of each meant
-the setting in the repo silently decided which of two mechanisms was live —
-with a 404 as the only symptom when they disagreed. One mechanism, no CI, and
-the served bytes are the ones the test suite ran against.
+### Why the deploy is a workflow and not a branch
 
-**What that costs: the deployed site has no MapTiler key.** A frontend map key
-is public by necessity — every browser that loads the map is handed it — but it
-must not be *committed*, because a key in git history outlives the deploy and
-is scraped from public repositories by people who do this for a living. A
-branch-served site is a committed build, so the two cannot both be true. The
-`gh-pages` copy is therefore built with the key absent: Terrain works, and
-Satellite and Winter map show their "needs a key" state.
+It was a branch, and could not stay one, because of the MapTiler key.
 
-Getting satellite onto a public URL means picking one of two things, and both
-are a change to how this deploys:
+A frontend map key is public by necessity — every browser that loads the map is
+handed it. What it must not be is *committed*: a key in git history outlives
+the deploy, survives a rotation nobody remembers to do, and is scraped from
+public repositories by people who do this for a living. A branch-served site is
+a committed build, so a branch deploy can never carry one, and the site could
+only ever show the schematic terrain with Satellite greyed out.
 
-- **Actions artifact.** Add `VITE_MAPTILER_KEY` under Settings → Secrets and
-  variables → Actions, build in a workflow, upload the result. The key reaches
-  the site and never reaches a commit. Costs the simplicity above, and needs
-  Settings → Pages → Source switched to GitHub Actions — get that wrong and the
-  symptom is the 404 described above.
-- **A host that reads env vars at build time**, Vercel or Netlify. Same
-  property, no branch to keep in step, and it deploys a private repo on the
-  free tier.
+`.github/workflows/pages.yml` builds with `VITE_MAPTILER_KEY` from a repository
+secret and uploads the result as a Pages artifact. The key reaches the live site
+and never reaches the repository.
 
-Either way, restrict the key to the origins the app is served from, at
-cloud.maptiler.com, before it is live. That is the protection that actually
-holds for a key a browser can read.
+Two settings, once. Until they are set, Pages keeps serving whatever is on the
+`gh-pages` branch — a hand-copied, keyless build — and the workflow's deploy
+step fails with a red X saying Pages is not configured for Actions. That is the
+transition, not a fault. After the switch the branch is dead and nothing writes
+to it.
+
+
+1. **Settings → Secrets and variables → Actions → New repository secret**,
+   named `VITE_MAPTILER_KEY`.
+2. **Settings → Pages → Source: GitHub Actions.**
+
+Get the second one wrong and the symptom is a 404 with nothing to explain it:
+Pages serves from a branch *or* from an artifact, never both, and the setting
+silently decides which. That ambiguity is why this was a branch in the first
+place. It is worth the key.
+
+Without the secret everything still builds and deploys; the map falls back to
+the terrain view, which is the documented behaviour and is tested.
+
+Restrict the key to this site's origin at cloud.maptiler.com. For a key a
+browser can read, that is the only protection that means anything.
+
+Note that Pages on a **private** repo needs a paid GitHub plan; on the free
+plan the Source setting is replaced by an upgrade prompt. Make the repo public,
+or use Vercel/Netlify, whose free tiers deploy private repos and read the key
+from a build environment variable in the same way.
 
 **Locally**, which is the certain path:
 
