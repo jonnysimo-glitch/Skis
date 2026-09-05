@@ -848,16 +848,21 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   padding-bottom: var(--safe-bottom);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  /* Not --line. That token is a hairline for the dark surfaces, and this bar
-     is the one light surface in the app: #24394b under white reads as a drawn
-     black rule across the bottom of the mountain rather than as the edge of a
-     panel. What separates a raised light bar from what is behind it is the
-     shadow it casts, with the hairline only sharpening the top of it. */
-  border-top: 1px solid rgba(11, 26, 36, 0.07);
-  box-shadow: 0 -1px 12px rgba(11, 26, 36, 0.10);
+  /* Dark, like every other panel in the app.
+     It was white — the one light surface anywhere, sitting under a dark resort
+     bar at the other end of the same screen. That inconsistency is also what
+     made the separator look wrong: --line is a hairline drawn for dark
+     surfaces, and under white it reads as a black rule across the bottom of
+     the mountain. On a dark bar the hairline belongs to the bar again, and it
+     goes the other way — a light edge catching the light, not a dark one
+     drawn on. */
+  background: rgba(11, 22, 32, 0.86);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  /* Deeper than it was, because it is now separating dark from a bright
+     mountain rather than white from one. */
+  box-shadow: 0 -1px 18px rgba(4, 12, 20, 0.34);
   transition: transform 0.3s var(--ease-out), opacity 0.2s var(--ease-std);
 }
 .tabbar--hidden { transform: translateY(100%); opacity: 0; pointer-events: none; }
@@ -872,7 +877,13 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   letter-spacing: 0.01em;
   transition: color 0.14s var(--ease-std);
 }
-.tabbar__tab[aria-current="page"] { color: var(--accent); font-weight: 600; }
+/* --accent-ink, not --accent. The token this used is a BACKGROUND colour —
+   its own comment says white text passes AA on it — and it was standing on a
+   white bar, where a dark blue is exactly right. On the dark bar it is a dark
+   blue on dark: measured at 2.41:1 against the bar composited over snow, well
+   under the 4.5 it needs. --accent-ink exists for precisely this, accent
+   coloured text on the dark surface, and comes out at 7.0. */
+.tabbar__tab[aria-current="page"] { color: var(--accent-ink); font-weight: 600; }
 .tabbar__tab:active { opacity: 0.6; }
 
 /* ---------------------------------------------------------------- maps -- */

@@ -1654,17 +1654,63 @@ if (feature("31. A drag holds the ground")) {
    * horizon, a pixel at the top is many times the ground of a pixel at the
    * bottom, and dragging up the screen is the movement that exposes it.
    */
-  await page.evaluate(() => window.__skisSetPitch(78));
+  await page.evaluate(() => window.__skisSetPitch(70));
   await page.waitForTimeout(700);
 
-  const start = { x: box.x + box.w * 0.5, y: box.y + box.h * 0.62 };
-  const groundBefore = await page.evaluate(([sx, sy]) => window.__skisGroundAt(sx, sy), [start.x, start.y]);
+  /*
+   * Somewhere with ground under it, found rather than assumed.
+   *
+   * A fixed fraction of the canvas was the first version and it grabs sky:
+   * tipped over, the mountain is a band across the middle of the frame and
+   * most of the picture is not it. That mattered only once the grab became a
+   * ray cast — the search it replaced answered every pixel, sky included, with
+   * the nearest point on the mountain, so a test starting on sky quietly
+   * measured something else.
+   */
+  const start = await page.evaluate(([bx, by, bw, bh]) => {
+    for (let iy = 3; iy < 10; iy++) {
+      for (let ix = 3; ix < 10; ix++) {
+        const x = bx + (bw * (ix + 0.5)) / 12;
+        const y = by + (bh * (iy + 0.5)) / 12;
+        if (window.__skisGroundAt(x, y)) return { x, y };
+      }
+    }
+    return null;
+  }, [box.x, box.y, box.w, box.h]);
+
+  const groundBefore = start
+    ? await page.evaluate(([sx, sy]) => window.__skisGroundAt(sx, sy), [start.x, start.y])
+    : null;
   check("there is ground under the starting point", groundBefore !== null,
-    groundBefore ? `${groundBefore.lat.toFixed(4)},${groundBefore.lon.toFixed(4)}` : "sky");
+    groundBefore ? `${groundBefore.lat.toFixed(4)},${groundBefore.lon.toFixed(4)}` : "no ground in the middle of the frame");
 
   if (!groundBefore) {
     await page.context_.close();
   } else {
+    /*
+     * The first move must not move the map more than the finger did.
+     *
+     * This is the fault as it was reported — "it's super fast as soon as I
+     * touch" — and it is a different failure from the one below. Holding the
+     * ground means correcting the map each frame so the grabbed point sits
+     * under the thumb, and the grab used to land tens of pixels away from the
+     * thumb: a search that minimised screen distance over the whole height
+     * field, which is not unimodal on a mountain, so it settled in the wrong
+     * basin. The whole of that error was applied on the first move, before the
+     * finger had gone anywhere.
+     */
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    const before = await at(groundBefore.lon, groundBefore.lat);
+    await page.mouse.move(start.x + 2, start.y);
+    await page.waitForTimeout(120);
+    const after = await at(groundBefore.lon, groundBefore.lat);
+    const lurch = before && after ? Math.hypot(after.x - before.x - 2, after.y - before.y) : Infinity;
+    check("touching the map does not throw it", lurch < 12,
+      `${Number.isFinite(lurch) ? lurch.toFixed(0) : "?"}px of movement for a 2px touch`);
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+
     const end = { x: start.x - 26, y: start.y - 95 };
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
@@ -1824,9 +1870,36 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
    * strictly less detailed.
    */
   const surface = () => page.evaluate(() => window.__skisSurface);
+
+  /*
+   * Standing still, even the far view is painted from the imagery.
+   *
+   * At the framing the app opens on a quad is about five pixels of screen for
+   * 167 metres of ground, and one flat colour for it throws away most of what
+   * the photograph knows. Painting them all costs 26,000 cells and doubles the
+   * frame — which is fine for a picture and ruinous for a drag, so the fine
+   * pass is the one that runs once the camera stops.
+   */
   const far = await surface();
-  check("far out, one colour a quad is all the blur would keep anyway",
-    far && far.textured === 0, `${far?.textured ?? "?"} quads subdivided of ${far?.flat ?? "?"}`);
+  check("standing still, the far view is painted from the imagery too",
+    far && far.textured > far.flat, `${far?.textured} of ${far?.textured + far?.flat} quads subdivided`);
+
+  // And moving, it is not — or a drag is paying for detail nobody can study
+  // while throwing the mountain around.
+  const moving = await page.evaluate(async () => {
+    const c = document.querySelector("canvas[aria-label*='Terrain view']");
+    const r = c.getBoundingClientRect();
+    // Turn the mountain and read the surface on the very next frame, before
+    // anything has had time to settle.
+    window.__skisSetBearing(40);
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    void r;
+    return window.__skisSurface;
+  });
+  check("but moving, it falls back to one colour a quad",
+    moving && moving.textured < far.textured / 4,
+    `${moving?.textured} subdivided mid-turn against ${far?.textured} at rest`);
+  await page.waitForTimeout(1200);
 
   // One notch per frame: the wheel handler accumulates within a frame and its
   // sigmoid caps a single frame at doubling, so a synchronous burst is one.

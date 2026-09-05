@@ -103,17 +103,27 @@ const DEPTH_SCALE = 1 / 2;
 const DEPTH_STEP = 1;
 
 /**
- * How big a photographed quad has to get on screen before it is painted from
- * the imagery at more than one colour, and how far that can go.
+ * How big a photographed quad has to be before it is painted from the imagery
+ * at more than one colour — one number for while the camera is moving and a
+ * finer one for when it has stopped.
  *
- * Twelve pixels a cell, because the terrain is composited through a two to
- * three pixel blur and there is nothing to be gained by painting detail the
- * blur will remove. The ceiling is what stops a quad that fills the screen at
- * maximum zoom asking for a thousand cells on its own; four by four is enough
- * to turn a block into a picture, and past that the limit is the imagery's own
- * resolution rather than the mesh's.
+ * Two numbers because the answer really is different. At the framing the app
+ * opens on, a quad is about five pixels: one flat colour for 167 metres of
+ * ground, where the screen could show five by five. Painting all of them at
+ * three pixels a cell fixes that and costs 26,000 cells and 119ms a frame,
+ * against 60 — fine for a picture, ruinous for a drag.
+ *
+ * So the drag gets the cheap one and the picture gets the fine one, redrawn
+ * once when the camera comes to rest. Nobody is studying the ground while
+ * throwing the mountain around, and nobody is dragging while looking at a
+ * still map, so neither number is ever the wrong one at the moment it applies.
+ *
+ * The ceiling stops a quad that fills the screen at maximum zoom asking for a
+ * thousand cells on its own. Four by four turns a block into a picture, and
+ * past that the limit is the imagery's resolution rather than the mesh's.
  */
-const SUBDIVIDE_PX = 12;
+const SUBDIVIDE_MOVING = 12;
+const SUBDIVIDE_RESTING = 3;
 const SUBDIVIDE_MAX = 4;
 
 /**
@@ -148,7 +158,7 @@ const HUT_ZOOM_POWER = 1.7;
  * whole map across the screen between two frames. Past this it is not a
  * correction any more and the plain screen-space delta is the safer answer.
  */
-const GRAB_MAX_JUMP = 260;
+const GRAB_MAX_JUMP = 120;
 
 /**
  * How far in front of the ground a line has to be to count as visible, as a
@@ -1300,8 +1310,8 @@ export default function FallbackTerrain({
         if (skin && q.photo) {
           const wide = Math.max(Math.abs(b.x - a.x), Math.abs(c.x - d.x));
           const tall = Math.max(Math.abs(d.y - a.y), Math.abs(c.y - b.y));
-          const n = Math.max(1, Math.min(SUBDIVIDE_MAX,
-            Math.round(Math.max(wide, tall) / SUBDIVIDE_PX)));
+          const n = Math.max(1, Math.min(SUBDIVIDE_MAX, Math.round(
+            Math.max(wide, tall) / (drawFine ? SUBDIVIDE_RESTING : SUBDIVIDE_MOVING))));
           if (n > 1) {
             drawTextured(g, q, n, haze, dx, dz, minX, minZ);
             if (mapTest) { textured++; cells += n * n; }
@@ -2078,6 +2088,11 @@ export default function FallbackTerrain({
     // When the camera last moved, so the detail request can wait for it to
     // stop. Zero once the request for that resting place has gone out.
     let settleAt = 0;
+    // Whether the frame about to be drawn is the still one. Set by the settle
+    // below, cleared as soon as it has been drawn — a fine redraw must not
+    // restart the settle clock, or it asks for another one for ever.
+    let wantFine = false;
+    let drawFine = false;
     let raf = 0;
     let lastBearing = null;
     const frame = () => {
@@ -2169,6 +2184,8 @@ export default function FallbackTerrain({
       // thing to do at 60Hz on a phone in a pocket on a chairlift.
       if (dirty.current) {
         dirty.current = false;
+        drawFine = wantFine;
+        wantFine = false;
         const cam = fit(v);
         lastCam.current = cam;
         publishScale(v, cam);
@@ -2262,11 +2279,21 @@ export default function FallbackTerrain({
         // somewhere else. Restart the clock rather than reporting mid-gesture:
         // a drag would otherwise fire a request a frame, for boxes nobody is
         // looking at by the time they arrive.
-        settleAt = now;
+        //
+        // Unless this WAS the still frame, which must not restart it: the
+        // settle asks for a redraw, and a redraw that restarts the clock asks
+        // for another settle, for ever.
+        if (!drawFine) settleAt = now;
+        drawFine = false;
       } else if (settleAt && now - settleAt > DETAIL_SETTLE_MS) {
         settleAt = 0;
         const want = propsRef.current.onDetail;
         if (want && lastCam.current) want(visibleGround(v, lastCam.current));
+        // And paint it once more, properly, now that nothing is moving.
+        if (propsRef.current.imagery) {
+          wantFine = true;
+          dirty.current = true;
+        }
       }
       raf = requestAnimationFrame(frame);
     };
@@ -2317,40 +2344,109 @@ export default function FallbackTerrain({
     const groundUnder = (v, sx, sy) => {
       const f = fieldRef.current;
       const cam = lastCam.current;
-      const proj = projectRef.current;
-      if (!f || !cam || !proj) return null;
-      let lo = { x: f.minX, z: f.minZ };
-      let hi = { x: f.maxX, z: f.maxZ };
-      let best = null;
-      for (let pass = 0; pass < 3; pass++) {
-        const N = pass === 0 ? 28 : 12;
-        for (let i = 0; i <= N; i++) {
-          for (let j = 0; j <= N; j++) {
-            const x = lo.x + ((hi.x - lo.x) * i) / N;
-            const z = lo.z + ((hi.z - lo.z) * j) / N;
-            const y = f.sample(x, z);
-            const p = proj(x, y, z, v, cam);
-            const d = Math.hypot(p.x - sx, p.y - sy);
-            if (!best || d < best.d) best = { x, y, z, d };
-          }
-        }
-        const rx = (hi.x - lo.x) / 10;
-        const rz = (hi.z - lo.z) / 10;
-        lo = { x: best.x - rx, z: best.z - rz };
-        hi = { x: best.x + rx, z: best.z + rz };
+      if (!f || !cam) return null;
+
+      /*
+       * The screen position, inverted exactly, and then a ray cast at the
+       * ground.
+       *
+       * What this replaces searched the whole height field for the point whose
+       * projection landed nearest the finger, refining three times. It is the
+       * obvious way to write it and it is wrong for a reason worth keeping:
+       * screen distance is not unimodal over a mountain. A screen position
+       * corresponds to every point along one ray, which on a mountain means
+       * the visible surface AND everything hidden behind ridges — so a coarse
+       * pass can settle in the wrong basin and every refinement afterwards
+       * digs further into it. Measured: 26 pixels of error at the framing the
+       * app opens on, 104 at a steep pitch, 250 at worst. That error was
+       * landing on the first frame of every drag, as a jump.
+       *
+       * A ray has a first hit and nothing ambiguous about it. `toUnit` is a
+       * perspective projection with the camera a fixed distance back along the
+       * view axis, so for any depth the world point projecting to this pixel
+       * is a closed form — the rotation and the pitch are two 2x2s, both of
+       * determinant one, and both invert. March out along the ray, take the
+       * first step that is underground, bisect.
+       */
+      const u = (sx - cam.ox) / cam.f;
+      const w0 = (sy - cam.oy) / cam.f;
+      const b = (v.bearing * Math.PI) / 180;
+      const p = (v.pitch * Math.PI) / 180;
+      const cp = Math.cos(p);
+      const sp = Math.sin(p);
+      const cb = Math.cos(b);
+      const sb = Math.sin(b);
+
+      /** The world point on this pixel's ray at a given depth. */
+      const along = (d) => {
+        const w = f.span * 1.45 + d;
+        const rx = u * w;
+        const vy = w0 * w;
+        // Inverting sy = -rz·cos p - py·sin p and depth = rz·sin p - py·cos p.
+        const rz = -cp * vy + sp * d;
+        const py = -sp * vy - cp * d;
+        return {
+          x: rx * cb + rz * sb + f.cx,
+          z: -rx * sb + rz * cb + f.cz,
+          // py is in the exaggerated space the projection works in.
+          y: py / VERT_EXAGGERATION + f.cy,
+        };
+      };
+
+      /** How far above the ground the ray is at a depth; negative is inside. */
+      const clearance = (d) => {
+        const q = along(d);
+        if (q.x < f.minX || q.x > f.maxX || q.z < f.minZ || q.z > f.maxZ) return null;
+        return q.y - f.sample(q.x, q.z);
+      };
+
+      // Never right up against the camera, where w approaches zero and the ray
+      // sweeps the whole scene between two steps.
+      const near = -f.span * 1.3;
+      const far = f.span * 2.2;
+      const steps = 120;
+      let prevD = null;
+      let prevC = null;
+      let hit = null;
+      for (let i = 0; i <= steps; i++) {
+        const d = near + ((far - near) * i) / steps;
+        const c = clearance(d);
+        if (c === null) { prevD = null; prevC = null; continue; }
+        if (prevC !== null && prevC > 0 && c <= 0) { hit = [prevD, d]; break; }
+        prevD = d;
+        prevC = c;
       }
-      return best;
+      // No crossing: the pixel is sky. Nothing to hold, and saying so is
+      // better than answering with the nearest point on a ray that never
+      // touched the ground — a drag anchored to that would move the map by
+      // whatever the sky happens to be over. A drag starting on sky falls back
+      // to moving the picture, which is the right thing for a grab that did
+      // not grab anything.
+      if (!hit) return null;
+      let [lo, hi] = hit;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        const c = clearance(mid);
+        if (c === null) break;
+        if (c > 0) lo = mid;
+        else hi = mid;
+      }
+      const q = along((lo + hi) / 2);
+      // Snapped onto the surface: the ray is within a hair of it by now, and
+      // anything drawn at this point has to sit on the ground rather than a
+      // fraction under it.
+      return { x: q.x, z: q.z, y: f.sample(q.x, q.z) };
     };
 
     /*
      * Cast shadows, switchable, for the checks only.
      *
-     * Whether a shadow reached the screen cannot be answered by looking at one
-     * picture. The snow palette is blue-leaning to begin with, so "count the
-     * blue pixels" put two thirds of a sunlit mountain in shadow, and no
-     * threshold separates the two populations because they overlap. Rendering
-     * the same view twice and subtracting does separate them, and there is no
-     * other way to ask.
+     * Whether a shadow reached the screen cannot be answered from one picture.
+     * The snow palette is blue-leaning to begin with, so "count the blue
+     * pixels" put two thirds of a sunlit mountain in shadow, and no threshold
+     * separates the two populations because they overlap. Rendering the same
+     * view twice and subtracting does separate them, and there is no other way
+     * to ask.
      */
     let shadowsOn = true;
     if (mapTest && typeof window !== "undefined") {
@@ -2372,6 +2468,10 @@ export default function FallbackTerrain({
 
     const startGesture = () => {
       const c = centroid();
+      const grabbed = groundUnder(view.current, c.x, c.y);
+      const grabAt = grabbed && lastCam.current && projectRef.current
+        ? projectRef.current(grabbed.x, grabbed.y, grabbed.z, view.current, lastCam.current)
+        : null;
       const sp = pointers.size >= 2 ? spread() : {};
       const pts = [...pointers.values()];
       gesture = {
@@ -2402,7 +2502,12 @@ export default function FallbackTerrain({
         // What the finger or fingers are resting on. Found once here rather
         // than every frame: rotation pivots on it, and a one-finger drag holds
         // it under the thumb.
-        anchor: groundUnder(view.current, c.x, c.y),
+        anchor: grabbed,
+        // How far the grab landed from the thumb, which is the search's own
+        // error and has to be subtracted rather than corrected away. See the
+        // note in `move`.
+        grabDX: grabAt ? c.x - grabAt.x : 0,
+        grabDY: grabAt ? c.y - grabAt.y : 0,
       };
     };
 
@@ -2578,13 +2683,28 @@ export default function FallbackTerrain({
         const cam = lastCam.current;
         const proj = projectRef.current;
         if (held && cam && proj) {
-          const now2 = proj(held.x, held.y, held.z, v, cam);
-          if (Number.isFinite(now2.x) && Number.isFinite(now2.y)) {
-            const gapX = c.x - now2.x;
-            const gapY = c.y - now2.y;
-            // Only believe it while the correction is the size of a drag. A
-            // grab that has swung behind the camera projects a long way off
-            // and would fling the map across the screen in one frame.
+          const at = proj(held.x, held.y, held.z, v, cam);
+          if (Number.isFinite(at.x) && Number.isFinite(at.y)) {
+            /*
+             * Measured from where the grab landed, not from the thumb.
+             *
+             * `groundUnder` searches the height field and returns the nearest
+             * point it sampled, which is tens of metres from the one truly
+             * under the finger — a real distance on screen. Taking the gap
+             * between the thumb and that point as a correction made the FIRST
+             * move of every drag apply the whole search error at once: touch
+             * the map and it jumps, before you have moved at all.
+             *
+             * The offset is recorded when the finger goes down and held for
+             * the gesture, so the first move corrects by nothing and every
+             * move after it tracks exactly. Which point was grabbed stops
+             * mattering; only that the same one stays under the thumb.
+             */
+            const gapX = c.x - gesture.grabDX - at.x;
+            const gapY = c.y - gesture.grabDY - at.y;
+            // A grab swung behind the camera projects a long way off, and
+            // correcting to it would throw the map across the screen between
+            // two frames. Past this it is not a correction.
             if (Math.hypot(gapX, gapY) < GRAB_MAX_JUMP) {
               dx = gapX;
               dy = gapY;
