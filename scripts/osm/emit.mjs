@@ -125,7 +125,7 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
   };
 }
 
-export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], report, fetchedAt }) {
+export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], terrain = null, report, fetchedAt }) {
   const nodeKeys = Object.keys(NODES);
   const keyWidth = Math.max(...nodeKeys.map((k) => k.length)) + 2;
   const nameWidth = Math.max(...nodeKeys.map((k) => quote(NODES[k].name).length)) + 1;
@@ -277,7 +277,22 @@ export const SHORT_NAMES = ${JSON.stringify(meta.shortNames || {}, null, 2)};
  * scripts/resorts/${id}.json at build time, so adding a resort does not mean
  * hand-typing a camera position.
  */
-export const META = ${JSON.stringify(registryEntry({ id, config: meta, NODES, LIFTS, RUNS }), null, 2)};
+${terrain ? `/**
+ * The shape of the ground, ${terrain.n} by ${terrain.n} samples of real
+ * elevation over the box below.
+ *
+ * The map used to build its terrain by interpolating between the altitudes of
+ * the graph's own nodes, which for a whole resort is under a hundred points.
+ * That does not make a mountain: the valleys fill in and every ridge no lift
+ * crosses is missing. This is the same elevation every gradient in the graph
+ * is measured from, sampled on a grid, so the terrain is the actual mountain
+ * and the ground around it is real ground rather than invented ground.
+ *
+ * Int16 metres, base64, decoded once when the resort loads.
+ */
+export const TERRAIN = ${JSON.stringify(terrain)};
+
+` : ""}export const META = ${JSON.stringify(registryEntry({ id, config: meta, NODES, LIFTS, RUNS }), null, 2)};
 
 /**
  * Lift kinds a skier can also ride down.

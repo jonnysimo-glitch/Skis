@@ -59,6 +59,14 @@ export let buildEdges = builtIn.buildEdges;
  * than something to throw over.
  */
 export let PLACES = builtIn.PLACES || [];
+/**
+ * The shape of the ground, as a baked grid of real elevation.
+ *
+ * Null for the hand-typed graph, which predates the pipeline and has no DEM
+ * behind it — the terrain falls back to interpolating between node altitudes
+ * there, which is what every resort used to do.
+ */
+export let TERRAIN = builtIn.TERRAIN || null;
 
 /** Which resort these bindings currently describe. */
 export const activeResortId = () => current.id;
@@ -87,6 +95,7 @@ export function setActiveResort(id, module) {
   DIFFICULTY_RANK = module.DIFFICULTY_RANK;
   buildEdges = module.buildEdges;
   PLACES = module.PLACES || [];
+  TERRAIN = module.TERRAIN || null;
   return current.id;
 }
 

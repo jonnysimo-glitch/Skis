@@ -16,7 +16,7 @@ import { readFile, writeFile, readdir } from "node:fs/promises";
 import { fetchResort, query } from "./osm/overpass.mjs";
 import { build } from "./osm/graph.mjs";
 import { prune, check } from "./osm/validate.mjs";
-import { elevationFor } from "./osm/elevation.mjs";
+import { elevationFor, bakeTerrain } from "./osm/elevation.mjs";
 import { emit } from "./osm/emit.mjs";
 import { writeRegistry } from "./osm/registry.mjs";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
@@ -129,7 +129,34 @@ async function buildOne(id) {
     return false;
   }
 
-  const module = emit({ id, meta: config, ...graph, fetchedAt: osm.fetchedAt });
+  /*
+   * The ground the mountain sits on, baked in.
+   *
+   * Over a box wider than the graph, because the point of it is context: a
+   * resort's nodes are strung along the pistes, so a box drawn tight around
+   * them is a sliver with the valley bases on its edge, and the mountain looks
+   * like it was cut out of something rather than standing in something. Sixty
+   * per cent of the span on every side is enough to see where the valleys go.
+   *
+   * Clamped to the config bbox, which is what the elevation tiles were fetched
+   * for — asking outside it would sample nothing and bake a cliff.
+   */
+  const lats = Object.values(graph.NODES).map((n) => n.lat);
+  const lons = Object.values(graph.NODES).map((n) => n.lon);
+  const padLon = (Math.max(...lons) - Math.min(...lons)) * 0.6;
+  const padLat = (Math.max(...lats) - Math.min(...lats)) * 0.6;
+  const box = [
+    Math.max(config.bbox[0], Math.min(...lons) - padLon),
+    Math.max(config.bbox[1], Math.min(...lats) - padLat),
+    Math.min(config.bbox[2], Math.max(...lons) + padLon),
+    Math.min(config.bbox[3], Math.max(...lats) + padLat),
+  ];
+  const terrain = bakeTerrain(box, elevation, 160);
+  console.log(`  terrain     ${terrain.n}x${terrain.n} samples over ` +
+    `${((box[2] - box[0]) * 78).toFixed(1)}x${((box[3] - box[1]) * 111).toFixed(1)}km, ` +
+    `${Math.round(terrain.data.length / 1024)}KB`);
+
+  const module = emit({ id, meta: config, ...graph, terrain, fetchedAt: osm.fetchedAt });
   if (flag("dry")) {
     console.log(`\n  dry run, ${module.split("\n").length} lines not written`);
     return true;

@@ -37,11 +37,11 @@ const MONTEROSA = { west: 7.77, east: 8.02, south: 45.82, north: 45.95 };
 const PAGANELLA = { west: 10.99, east: 11.06, south: 46.11, north: 46.19 };
 
 for (const [name, b] of [["monterosa", MONTEROSA], ["paganella", PAGANELLA]]) {
-  const z = zoomFor(b, 4);
+  const z = zoomFor(b, 8);
   const t = tilesFor(b, z);
   const across = t.x1 - t.x0 + 1;
   const down = t.y1 - t.y0 + 1;
-  check(`${name}: the zoom keeps it under the tile ceiling`, across <= 4 && down <= 4,
+  check(`${name}: the zoom keeps it under the tile ceiling`, across <= 8 && down <= 8,
     `${across} by ${down} at z${z}`);
   // A resort that fits in one tile has been zoomed too far out to be worth
   // fetching: the whole mountain would be a dozen pixels of the picture.
@@ -55,16 +55,24 @@ for (const [name, b] of [["monterosa", MONTEROSA], ["paganella", PAGANELLA]]) {
 
 // A small resort should be photographed closer than a big one, or the ceiling
 // is being applied as a fixed zoom and half the point is lost.
-check("a smaller resort gets a closer zoom", zoomFor(PAGANELLA, 4) >= zoomFor(MONTEROSA, 4),
-  `paganella z${zoomFor(PAGANELLA, 4)}, monterosa z${zoomFor(MONTEROSA, 4)}`);
+check("a smaller resort gets a closer zoom", zoomFor(PAGANELLA, 8) >= zoomFor(MONTEROSA, 8),
+  `paganella z${zoomFor(PAGANELLA, 8)}, monterosa z${zoomFor(MONTEROSA, 8)}`);
 
 // Ground resolution has to beat the mesh, or the drape cannot show anything
 // the drawn terrain does not already.
 {
-  const z = zoomFor(MONTEROSA, 4);
+  const z = zoomFor(MONTEROSA, 8);
   const mPerPx = (40075017 * Math.cos((45.88 * Math.PI) / 180)) / (2 ** z * 512);
-  check("and one texture pixel is finer than one terrain quad", mPerPx < 167,
-    `${mPerPx.toFixed(0)}m a pixel against a 167m quad`);
+  /*
+   * Finer than a texture CELL, not finer than a quad.
+   *
+   * A quad is painted from the photograph at up to four by four now, so the
+   * thing the imagery has to beat is a cell — about forty metres — and beating
+   * a quad was the old, much weaker bar. This is the number that decides
+   * whether the base mosaic looks like a photograph or like a blur.
+   */
+  check("and one texture pixel is finer than one texture cell", mPerPx < 42,
+    `${mPerPx.toFixed(0)}m a pixel against a 42m cell`);
 }
 
 console.log("\nTHE URL");

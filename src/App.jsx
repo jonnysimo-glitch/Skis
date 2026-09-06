@@ -9,7 +9,7 @@
  * navigation model — there is no page transition, because the mountain is the
  * thing you are always looking at.
  */
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Sheet from "./ui/Sheet.jsx";
 import FallbackTerrain from "./map/FallbackTerrain.jsx";
@@ -20,9 +20,6 @@ import { FIELD_PAD } from "./map/field.js";
 // out. If the chunk cannot be fetched at all — offline before it was ever
 // cached, or a failed deploy — resolve to nothing rather than throwing: the
 // schematic terrain is already on screen and simply stays there.
-const MapCanvas = lazy(() =>
-  import("./map/MapCanvas.jsx").catch(() => ({ default: () => null }))
-);
 
 import HomeScreen from "./screens/HomeScreen.jsx";
 import StatsScreen from "./screens/StatsScreen.jsx";
@@ -89,10 +86,25 @@ const MAX_SNAP_METRES = 6000;
  * rather than hidden — a feature you cannot find is worse than one you cannot
  * yet use.
  */
+/*
+ * Two ways to see the same mountain, and no way to see a different one.
+ *
+ * There was a third, "Winter map", which swapped in MapLibre and MapTiler's
+ * basemap — a whole other map, with its own labels, its own camera and its own
+ * idea of where the pistes are, and none of the huts, run names or scale bar
+ * this app spends its time on. It was the original plan and the satellite
+ * drape made it pointless: what anyone wants from a photographic map is this
+ * mountain photographed, not somewhere else entirely. So the choice is which
+ * skin goes on our own cut-out, which is the only thing it should ever have
+ * been.
+ *
+ * This supersedes the MapLibre approach in CLAUDE.md. The 3D requirement it
+ * was there to satisfy is met by the cut-out, which orbits real terrain built
+ * from real elevation and now carries the photography too.
+ */
 const MAP_CHOICES = [
   { id: "cutout", name: "Terrain" },
   { id: "satellite", name: "Satellite", needsKey: true },
-  { id: "world", name: "Winter map", needsKey: true },
 ];
 
 /** What the layer control calls a map, for anything else that has to say it. */
@@ -236,7 +248,6 @@ export default function App() {
   // ---- map ----------------------------------------------------------------
   const mapControl = useRef(null);
   const [mapBroken, setMapBroken] = useState(false);
-  const [mapLive, setMapLive] = useState(false);
   const [noteOpen, setNoteOpen] = useState(!load("seenMapNote"));
   const [sheetHeight, setSheetHeight] = useState(0);
   /**
@@ -325,8 +336,8 @@ export default function App() {
    * So only the winter map is somewhere else now. Satellite stays on the
    * terrain renderer and changes the colour of the ground.
    */
-  const wantWorld = mapMode === "world";
-  const showSchematic = !wantWorld || mapBroken || !mapLive;
+  // The cut-out is the map now, in both skins, so it is always the one drawn.
+  const showSchematic = true;
 
   /*
    * The satellite tiles for whichever mountain is on screen.
@@ -467,14 +478,6 @@ export default function App() {
     };
     return () => { delete window.__skisSetMapMode; };
   }, []);
-  // MapLibre spawns its own workers for tile parsing, which cannot be
-  // constructed from a file:// page's opaque origin. It would fail four times
-  // over and then hit the watchdog, so on file:// go straight to the schematic
-  // — which is the whole point of having one.
-  const canRunMapLibre =
-    typeof location === "undefined" || location.protocol !== "file:";
-  const tryMapLibre = onMountain && wantWorld && !mapBroken && canRunMapLibre;
-
   const chosen = routes[pickIndex] || null;
   const shownRoute =
     screen === "choose" ? routes[previewIndex] || routes[0] || null : chosen;
@@ -911,25 +914,6 @@ export default function App() {
 
   const MapLayer = (
     <>
-      {tryMapLibre && (
-        <Suspense fallback={null}>
-          <MapCanvas
-            resort={resort}
-            graph={graphGeo}
-            route={routeGeo}
-            pins={pins}
-            focus={focus}
-            imagery={mapMode === "satellite" ? "satellite" : "winter"}
-            doneThrough={focus?.doneThrough ?? -1}
-            onReady={() => setMapLive(true)}
-            onFail={() => {
-              setMapBroken(true);
-              setMapLive(false);
-            }}
-            controlRef={mapLive ? mapControl : { current: null }}
-          />
-        </Suspense>
-      )}
       {onMountain && showSchematic && (
         <FallbackTerrain
           route={routeGeo}
@@ -1084,7 +1068,7 @@ export default function App() {
       {exploring && <PlanButton onPlan={() => setScreen("plan")} />}
 
       {noteOpen && mapShowing && !chromeHidden && (
-        mapBroken && (wantWorld || mapMode === "satellite") ? (
+        mapBroken && mapMode === "satellite" ? (
         <div className="mapnote" style={{ bottom: chromeBottom + (mapScale ? SCALE_CLEARANCE : 0) }}>
           <Info width="16" height="16" style={{ flex: "none" }} />
           {/* Named the way the layer control names them. "The world map"

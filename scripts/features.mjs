@@ -1561,8 +1561,64 @@ if (feature("32. The places arrive as you get closer")) {
   check("but never none, or the mountain has nothing on it", far.length >= 1,
     `${far.length}`);
 
-  const zoomIn = async (steps) => {
-    for (let n = 0; n < steps; n++) {
+  /*
+   * And they hold still while the mountain turns.
+   *
+   * Every decision about a marker is a hard threshold on a shared resource:
+   * is it behind the ridge, does its box collide with one already down, is it
+   * inside this zoom's budget. So one genuine change cascades — a marker
+   * crosses a silhouette and frees its box, which lets a second in, which
+   * takes the room a third was using — and the mountain shimmers with three
+   * changes for every real one.
+   *
+   * Fading them was the first attempt and it treats the symptom. What stops it
+   * is reserving an incumbent's box before any newcomer is considered, so an
+   * arrival waits for room rather than evicting someone. Measured over a slow
+   * turn: 36 appearances and disappearances before, 8 after, with the same
+   * number of places on screen throughout — so it is churn that went, not
+   * content.
+   */
+  const churn = await page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    let prev = new Set((window.__skisPlaces ?? []).map((p) => p.name));
+    let flips = 0;
+    let total = 0;
+    const frames = 40;
+    for (let i = 0; i < frames; i++) {
+      window.__skisSetBearing(-28 + i * 0.8);
+      await wait();
+      const now = new Set((window.__skisPlaces ?? []).map((p) => p.name));
+      for (const n of now) if (!prev.has(n)) flips++;
+      for (const n of prev) if (!now.has(n)) flips++;
+      total += now.size;
+      prev = now;
+    }
+    return { flips, frames, avg: total / frames };
+  });
+  check("and they hold still while the mountain turns",
+    churn.flips <= churn.frames / 3,
+    `${churn.flips} appearances or disappearances over ${churn.frames} frames`);
+  // Holding still by showing nothing would satisfy that perfectly.
+  check("without holding still by showing nothing", churn.avg >= 2,
+    `${churn.avg.toFixed(1)} on the mountain on average`);
+  // Put the mountain back where it was: the checks below compare against the
+  // opening view, and a turn leaves a different set of places facing you.
+  await page.evaluate(() => window.__skisSetBearing(-28));
+  await page.waitForTimeout(1000);
+
+  /*
+   * Zoom to a level, not by a number of notches.
+   *
+   * A notch is a fixed ratio, so "four notches in" was only ever shorthand for
+   * a zoom level — and it stopped meaning the same view the moment the terrain
+   * was baked from real elevation over a box half again as wide. The resort
+   * fills less of the frame at rest now, so four notches no longer reaches a
+   * valley and the count went down rather than up.
+   */
+  const zoomTo = async (want) => {
+    for (let n = 0; n < 20; n++) {
+      const at = await page.evaluate(() => window.__skisView?.zoom ?? 1);
+      if (at >= want) break;
       await page.$eval(SEL, (c) => {
         const r = c.getBoundingClientRect();
         c.dispatchEvent(new WheelEvent("wheel", {
@@ -1574,12 +1630,41 @@ if (feature("32. The places arrive as you get closer")) {
     await page.waitForTimeout(1200);
   };
 
-  await zoomIn(4);
-  const mid = await places();
-  check("more of them once a valley fills the screen", mid.length > far.length,
-    `${mid.length} against ${far.length}`);
+  /*
+   * The share of what is in frame, not the count.
+   *
+   * Zooming in shows less mountain, so fewer places are in front of you at all
+   * — the raw count can fall while the tiering works perfectly. What should
+   * rise is the proportion of the places you can see that are marked: far out
+   * a handful of the visible ones, close up all of them.
+   *
+   * The count was the first version of this and it passed until the terrain
+   * was baked from real elevation over a wider box. That changed how much
+   * resort a zoom level holds, and the check started failing on a behaviour
+   * that had not changed — which is the tell that it was measuring the wrong
+   * thing all along.
+   */
+  const inFrame = () => page.evaluate(() => {
+    const all = window.__skisAllPlaces ?? [];
+    const c = document.querySelector("canvas[aria-label*='Terrain view']");
+    const r = c.getBoundingClientRect();
+    let n = 0;
+    for (const [, , lat, lon] of all) {
+      const p = window.__skisProject(lon, lat);
+      if (p && p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height) n++;
+    }
+    return n;
+  });
+  const farShare = far.length / Math.max(1, await inFrame());
 
-  await zoomIn(5);
+  await zoomTo(3);
+  const mid = await places();
+  const midShare = mid.length / Math.max(1, await inFrame());
+  check("a bigger share of what is in front of you once closer",
+    midShare > farShare,
+    `${(midShare * 100) | 0}% of those in frame, against ${(farShare * 100) | 0}% far out`);
+
+  await zoomTo(10);
   const near = await places();
   // Not "more again". Past a point, zooming in shows FEWER, because the frame
   // holds less mountain and most places have left it — which is right, and an

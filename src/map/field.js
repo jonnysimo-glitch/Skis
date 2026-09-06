@@ -101,11 +101,20 @@ export const SKIRT = 0.17;
  * How far the terrain mesh reaches beyond the outermost node, as a fraction of
  * the resort's extent.
  *
- * Exported because it is not only this file's business any more: the satellite
- * drape has to fetch imagery for the same box, and a drape narrower than the
- * mesh leaves a ring of painted snow around a photograph.
+ * Wide, now that the ground out there is real. A resort's nodes are strung
+ * along its pistes, so a box drawn tight around them is a sliver with the
+ * valley bases sitting on its edge — Champoluc and Alagna read as tucked into
+ * a hillside rather than at the bottom of one, and there is no sense of what
+ * the mountain rises out of. It used to be tight for a good reason: beyond the
+ * nodes there was nothing to interpolate from, so more box was more invented
+ * ground. Baked elevation removes that, and the pipeline bakes 60% past the
+ * nodes for exactly this.
+ *
+ * Exported because it is not only this file's business: the satellite drape
+ * fetches imagery for the same box, and a drape narrower than the mesh leaves
+ * a ring of painted snow around a photograph.
  */
-export const FIELD_PAD = 0.24;
+export const FIELD_PAD = 0.55;
 
 /**
  * The slab's faces.
@@ -178,8 +187,42 @@ export function slabFor(field) {
  * Inverse-distance interpolation through the node altitudes, roughened with
  * noise so it reads as terrain rather than a drape over thirteen poles.
  */
-export function buildField(nodes, makeProjector) {
+/**
+ * A sampler over a baked elevation grid, in the projector's own metres.
+ *
+ * The grid is stored in lat/lon because that is what it was sampled from and
+ * what makes it checkable; the terrain is built in projected metres. This
+ * bridges the two, bilinearly, and answers null outside the box so the caller
+ * can fall back rather than reading a clamped edge for miles.
+ */
+function grid(terrain, proj) {
+  const bytes = typeof atob === "function"
+    ? Uint8Array.from(atob(terrain.data), (c) => c.charCodeAt(0))
+    : Uint8Array.from(Buffer.from(terrain.data, "base64"));
+  const h = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+  const { n, west, south, east, north } = terrain;
+  return (x, z) => {
+    const { lat, lon } = proj.unproject(x, z);
+    const fx = ((lon - west) / (east - west)) * (n - 1);
+    // Rows run north to south, the way the grid was baked.
+    const fy = ((north - lat) / (north - south)) * (n - 1);
+    if (!(fx >= 0 && fx <= n - 1 && fy >= 0 && fy <= n - 1)) return null;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const x1 = Math.min(n - 1, x0 + 1);
+    const y1 = Math.min(n - 1, y0 + 1);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    return (
+      (h[y0 * n + x0] * (1 - tx) + h[y0 * n + x1] * tx) * (1 - ty) +
+      (h[y1 * n + x0] * (1 - tx) + h[y1 * n + x1] * tx) * ty
+    );
+  };
+}
+
+export function buildField(nodes, makeProjector, terrain = null) {
   const proj = makeProjector();
+  const real = terrain ? grid(terrain, proj) : null;
   const pts = Object.values(nodes).map((n) => {
     const { x, z } = proj.project(n.lat, n.lon);
     return { x, z, alt: n.alt };
@@ -228,10 +271,28 @@ export function buildField(nodes, makeProjector) {
       // Ridged noise (1 - |2n-1|) gives crests rather than dunes, which is
       // what makes an interpolated blob read as a mountain range.
       const ridge = (sc) => 1 - Math.abs(2 * fbm(x / sc, z / sc) - 1);
-      const h =
-        idw(x, z) +
-        430 * (ridge(cell * 9) - 0.5) +
-        170 * (ridge(cell * 4) - 0.5);
+      /*
+       * Real elevation where there is any, and the old invention where there
+       * is not.
+       *
+       * The fallback is the interpolation this replaces: inverse distance
+       * between the graph's own node altitudes, roughened with ridged noise to
+       * stop it reading as a set of blobs. It was the best available when the
+       * only heights in the app were the ones on the lift stations, and it is
+       * a guess — seventy-seven points for the whole of Monterosa, so the
+       * valleys fill in and any ridge no lift crosses is simply absent.
+       *
+       * With a baked grid none of that applies and none of it should be added:
+       * noise on top of real ground is inventing detail over measurement, and
+       * at ten metres a sample the ground has more of its own than the noise
+       * ever had.
+       */
+      const measured = real ? real(x, z) : null;
+      const h = measured !== null && Number.isFinite(measured)
+        ? measured
+        : idw(x, z) +
+          430 * (ridge(cell * 9) - 0.5) +
+          170 * (ridge(cell * 4) - 0.5);
       heights[at(i, j)] = h;
       lo = Math.min(lo, h);
       hi = Math.max(hi, h);

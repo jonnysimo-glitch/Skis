@@ -12,7 +12,7 @@
  * construction: there is nothing to fetch.
  */
 import { useEffect, useRef } from "react";
-import { NODES as ACTIVE_NODES, PLACES as ACTIVE_PLACES, activeProjector } from "../active-resort.js";
+import { NODES as ACTIVE_NODES, PLACES as ACTIVE_PLACES, TERRAIN as ACTIVE_TERRAIN, activeProjector } from "../active-resort.js";
 import { shortName } from "../lib/places.js";
 import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
@@ -179,11 +179,14 @@ const PLACE_FADE_MS = 220;
  * was drawn. In practice the mountain is centred and the pan is bounded, so
  * that strip is nearly always sky; this is the wall for when it is not.
  *
- * A redraw every hundred and forty pixels of drag, instead of one every frame,
- * is the whole saving. Lower and the saving goes; much higher and a fast flick
- * shows the strip.
+ * A redraw every eighty pixels of drag, instead of one every frame, is the
+ * whole saving — and eighty rather than a hundred and forty because the margin
+ * below has to match it, and the margin is rasterised area on every redraw.
+ * Measured: at 140 a turn costs 113ms and a drag 34; at 80, 100 and 35; at 50
+ * the drag's worst frame jumps to 111 because redraws start landing inside the
+ * gesture. Eighty is where both are cheap.
  */
-const PAN_REUSE_MAX = 140;
+const PAN_REUSE_MAX = 80;
 
 /**
  * How far past the canvas the terrain is drawn, in CSS pixels.
@@ -204,7 +207,7 @@ const PAN_REUSE_MAX = 140;
  * anything a slide can expose was already painted — and costs one extra band
  * of rasterising on the redraws, not on the frames in between.
  */
-const TERRAIN_MARGIN = 140;
+const TERRAIN_MARGIN = 80;
 
 /**
  * How many mountain places to show, as `count = base * zoom ** power`.
@@ -623,6 +626,8 @@ export default function FallbackTerrain({
   // which mountain it is drawing still draws the right one.
   nodes = ACTIVE_NODES,
   places = ACTIVE_PLACES,
+  // The baked elevation grid for this resort, if it has one.
+  terrain = ACTIVE_TERRAIN,
   makeProjector = activeProjector,
   // A satellite drape, or null for the drawn surface. See src/map/imagery.js.
   imagery = null,
@@ -648,9 +653,11 @@ export default function FallbackTerrain({
   // Rebuilt when the mountain changes, or a new resort would be drawn with the
   // previous one's terrain and slab.
   const builtFor = useRef(null);
-  if (!fieldRef.current || builtFor.current !== nodes) {
-    builtFor.current = nodes;
-    fieldRef.current = buildField(nodes, makeProjector);
+  const nodesFor = useRef(null);
+  if (!fieldRef.current || builtFor.current !== terrain || nodesFor.current !== nodes) {
+    builtFor.current = terrain;
+    nodesFor.current = nodes;
+    fieldRef.current = buildField(nodes, makeProjector, terrain);
   }
 
   // A screen change re-frames the camera on something new, so any pan the user
@@ -2026,6 +2033,25 @@ export default function FallbackTerrain({
      * frames barely changes and one that is genuinely gone leaves properly.
      * A pop is a thing the eye is built to catch; a fade of this length is not.
      */
+    /*
+     * Which places had a marker last frame, and where.
+     *
+     * The fade alone did not stop the flicker, because the fade treats the
+     * symptom. The cause is that every decision here is a hard threshold on a
+     * shared resource: a marker crosses a silhouette and frees its box, which
+     * lets a second one in, which takes the room a third was using. One
+     * genuine change cascades into three, every frame, and the mountain
+     * shimmers.
+     *
+     * Sticky placement breaks the cascade. A place that had a marker gets its
+     * box reserved before any newcomer is considered, so an arrival can never
+     * evict an incumbent — it waits for room. The order stops depending on
+     * which pixel a silhouette happened to cross this frame, and starts
+     * depending on what was already on the mountain, which is what someone
+     * looking at it expects.
+     */
+    let heldPlaces = new Set();
+
     const fades = new Map();
     const fadeOf = (key, want, dt) => {
       const from = fades.get(key) ?? (want ? 1 : 0);
@@ -2084,7 +2110,14 @@ export default function FallbackTerrain({
         placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
 
       const drawn = [];
-      for (const [full, kind, lat, lon, alt] of list) {
+      // Incumbents first, then everyone else, both in altitude order. Two
+      // passes over one list rather than a sort with a "was it showing" key,
+      // because the second pass has to see the boxes the first one reserved.
+      const order = [
+        ...list.filter(([full]) => heldPlaces.has(full)),
+        ...list.filter(([full]) => !heldPlaces.has(full)),
+      ];
+      for (const [full, kind, lat, lon, alt] of order) {
         // The names pass only names what the markers pass drew. Without this
         // the budget applied to markers and not to labels, so past it a place
         // got its name written on the mountain with no marker under it.
@@ -2132,10 +2165,11 @@ export default function FallbackTerrain({
         }
         if (!wanted) continue;
 
-        drawn.push({ name, kind, alt, ...box });
+        drawn.push({ name, full, kind, alt, ...box });
         hutsDrawn.add(full);
         if (drawn.length >= budget) break;
       }
+      if (!labelsOnly) heldPlaces = new Set(drawn.map((d) => d.full));
       if (mapTest && !labelsOnly) {
         window.__skisPlaces = drawn;
         // Everything the resort has, so a check can ask whether what got shown

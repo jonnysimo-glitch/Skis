@@ -35,14 +35,17 @@ export const latToTileY = (lat, z) => {
 /**
  * The zoom that covers a bounding box in at most `maxTiles` tiles each way.
  *
- * Coarse on purpose. A quad is 167 metres across and gets one colour, so
- * anything finer than about fifty metres a pixel is detail this cannot show —
- * and every extra zoom level is four times the requests, over a mountain
- * connection, for a picture nobody can see. The ceiling is what stops a large
- * resort asking for a hundred tiles; the floor is what stops a tiny one
- * fetching a single tile of the whole Alps.
+ * Not coarse any more. It was, on the reasoning that a quad gets one colour so
+ * nothing finer than the quad could show — but a quad is painted from the
+ * photograph at up to four by four now, and the base mosaic is what a resort
+ * looks like before anything else arrives. Eight tiles a side is sixty-four
+ * requests and a few megabytes, which is a real cost on a mountain connection
+ * and worth it: it is four times the linear resolution of what it replaced.
+ *
+ * The ceiling still stops a large resort asking for hundreds; the floor stops
+ * a tiny one fetching a single tile of the whole Alps.
  */
-export function zoomFor(bounds, maxTiles = 4, min = 8, max = 14) {
+export function zoomFor(bounds, maxTiles = 8, min = 8, max = 17) {
   for (let z = max; z > min; z--) {
     const w = Math.floor(lonToTileX(bounds.east, z)) - Math.floor(lonToTileX(bounds.west, z)) + 1;
     // South minus north, not the other way round. The tile grid counts down
@@ -102,7 +105,7 @@ export const templateTile = (template, key) => (z, x, y) =>
  * photography would be worse than one not covered at all, so a single tile
  * that will not load takes the whole drape down.
  */
-export async function loadImagery({ bounds, urlFor, maxTiles = 4, load = loadImage, atMost = 18 }) {
+export async function loadImagery({ bounds, urlFor, maxTiles = 8, load = loadImage, atMost = 18 }) {
   if (!bounds || !urlFor) return null;
   const z = Math.min(atMost, zoomFor(bounds, maxTiles, 8, Math.max(9, atMost)));
   const t = tilesFor(bounds, z);

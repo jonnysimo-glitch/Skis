@@ -123,3 +123,47 @@ export async function elevationFor(bbox, { offline = false } = {}) {
   at.missing = missing;
   return at;
 }
+
+/**
+ * The shape of the ground, baked into a grid the app can carry.
+ *
+ * Until now the terrain a skier looks at was interpolated from the altitudes
+ * of the graph's own nodes — seventy-seven points for the whole of Monterosa.
+ * Inverse-distance weighting between seventy-seven points does not make a
+ * mountain, it makes a set of smooth blobs with the lift stations on top: the
+ * valleys fill in, so Champoluc and Alagna read as tucked into a hillside
+ * rather than at the bottom of one, and every ridge that no lift happens to
+ * cross is simply absent.
+ *
+ * The elevation is already here. It is what every gradient in the graph is
+ * measured from, it is cached on disk, and it is ten metres a pixel. Baking a
+ * grid of it into the resort module means the terrain is the actual mountain,
+ * and it is what makes a wider cut-out worth having: more ground is more real
+ * ground rather than more invented ground.
+ *
+ * Int16 metres, base64. A resort's grid is tens of thousands of samples and
+ * writing them as JSON numbers costs five bytes each; two bytes each and one
+ * string costs a third of that, and elevation in metres has no business being
+ * a float.
+ */
+export function bakeTerrain(bbox, at, n = 160) {
+  const [w, s, e, no] = bbox;
+  const out = new Int16Array(n * n);
+  for (let iy = 0; iy < n; iy++) {
+    // North to south down the rows, the way the eventual grid is indexed.
+    const lat = no - ((no - s) * iy) / (n - 1);
+    for (let ix = 0; ix < n; ix++) {
+      const lon = w + ((e - w) * ix) / (n - 1);
+      const h = at(lat, lon);
+      out[iy * n + ix] = Math.round(Number.isFinite(h) ? h : 0);
+    }
+  }
+  return {
+    n,
+    west: w,
+    south: s,
+    east: e,
+    north: no,
+    data: Buffer.from(out.buffer).toString("base64"),
+  };
+}
