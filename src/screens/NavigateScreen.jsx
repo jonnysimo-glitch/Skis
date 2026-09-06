@@ -63,30 +63,49 @@ const nowMinutes = () => {
  * one gesture a pocket cannot produce: fabric presses, it does not press
  * steadily for a third of a second and then let go.
  *
- * The progress ring is not decoration — a control that ignores a tap has to
- * say why, or it reads as broken.
+ * The progress fill is not decoration — a control that ignores a tap has to
+ * say why, or it reads as broken. It was not enough on its own: the fill only
+ * exists while a finger is down, so a tap showed a flash of nothing and the
+ * first person to use this on a mountain reported the button as not working.
+ * There is a word on it before the press now, and a line that says what
+ * happened after one that was too short.
  */
 const HOLD_MS = 320;
+/** How long "keep holding" stays up after a press that did not get there. */
+const NUDGE_MS = 1600;
 
 function HoldButton({ className, onHold, label, children }) {
   const [held, setHeld] = useState(0);
+  const [missed, setMissed] = useState(false);
   const timer = useRef(null);
+  const nudge = useRef(null);
   const started = useRef(0);
 
   const stop = () => {
     if (timer.current) cancelAnimationFrame(timer.current);
     timer.current = null;
+    // Let go before it filled. Say so, rather than leaving a button that
+    // simply did nothing — this is the whole failure mode.
+    if (started.current && performance.now() - started.current < HOLD_MS) {
+      setMissed(true);
+      clearTimeout(nudge.current);
+      nudge.current = setTimeout(() => setMissed(false), NUDGE_MS);
+    }
+    started.current = 0;
     setHeld(0);
   };
 
   const begin = (event) => {
     // Ignore a secondary click and anything that is not a primary press.
     if (event.button != null && event.button !== 0) return;
+    setMissed(false);
+    clearTimeout(nudge.current);
     started.current = performance.now();
     const tick = () => {
       const progress = Math.min(1, (performance.now() - started.current) / HOLD_MS);
       setHeld(progress);
       if (progress >= 1) {
+        started.current = 0;
         stop();
         onHold();
         return;
@@ -96,11 +115,11 @@ function HoldButton({ className, onHold, label, children }) {
     timer.current = requestAnimationFrame(tick);
   };
 
-  useEffect(() => stop, []);
+  useEffect(() => () => { stop(); clearTimeout(nudge.current); }, []);
 
   return (
     <button
-      className={`${className} btn--hold`}
+      className={`${className} btn--hold${missed ? " btn--hold-missed" : ""}`}
       aria-label={`${label}. Press and hold.`}
       onPointerDown={begin}
       onPointerUp={stop}
@@ -112,6 +131,12 @@ function HoldButton({ className, onHold, label, children }) {
     >
       <span className="btn__hold" style={{ transform: `scaleX(${held})` }} aria-hidden="true" />
       <span className="btn__holdlabel">{children}</span>
+      {/* Said out loud only when a press fell short: the rest of the time the
+          word "hold" under the label is enough, and role="status" would
+          otherwise announce it on every render. */}
+      <span className="btn__holdhint" aria-live="polite">
+        {missed ? "Keep holding" : "Hold"}
+      </span>
     </button>
   );
 }

@@ -33,19 +33,23 @@ export const latToTileY = (lat, z) => {
 };
 
 /**
- * The zoom that covers a bounding box in at most `maxTiles` tiles each way.
+ * The finest zoom that covers a bounding box within a tile budget.
  *
- * Not coarse any more. It was, on the reasoning that a quad gets one colour so
- * nothing finer than the quad could show — but a quad is painted from the
- * photograph at up to four by four now, and the base mosaic is what a resort
- * looks like before anything else arrives. Eight tiles a side is sixty-four
- * requests and a few megabytes, which is a real cost on a mountain connection
- * and worth it: it is four times the linear resolution of what it replaced.
+ * The budget is a TOTAL, not a count per axis, and that is the whole point of
+ * the shape of this. Per axis, eight tiles is anything from eight requests to
+ * sixty-four depending on how square the resort happens to be, so the two that
+ * pay for a finer zoom are the ones that need it least: Monterosa is long and
+ * thin, fits six by three, and was being held at 26 metres a pixel while
+ * Paganella — nearly square, and a third of the size — got six. A total lets
+ * the long thin one spend its allowance on resolution.
  *
- * The ceiling still stops a large resort asking for hundreds; the floor stops
- * a tiny one fetching a single tile of the whole Alps.
+ * Ninety-six tiles is a few megabytes over a mountain connection, once, and
+ * cached for the airplane mode this app promises. It is worth it: it halves
+ * the metres per pixel on the two resorts that were coarsest.
+ *
+ * `maxSide` is still there underneath, so no single row can be enormous.
  */
-export function zoomFor(bounds, maxTiles = 8, min = 8, max = 17) {
+export function zoomFor(bounds, budget = 96, min = 8, max = 17, maxSide = 24) {
   for (let z = max; z > min; z--) {
     const w = Math.floor(lonToTileX(bounds.east, z)) - Math.floor(lonToTileX(bounds.west, z)) + 1;
     // South minus north, not the other way round. The tile grid counts down
@@ -54,7 +58,7 @@ export function zoomFor(bounds, maxTiles = 8, min = 8, max = 17) {
     // negative, every ceiling check trivially true, and this function a
     // constant that always returned the maximum zoom.
     const h = Math.floor(latToTileY(bounds.south, z)) - Math.floor(latToTileY(bounds.north, z)) + 1;
-    if (w <= maxTiles && h <= maxTiles) return z;
+    if (w * h <= budget && w <= maxSide && h <= maxSide) return z;
   }
   return min;
 }
@@ -105,9 +109,9 @@ export const templateTile = (template, key) => (z, x, y) =>
  * photography would be worse than one not covered at all, so a single tile
  * that will not load takes the whole drape down.
  */
-export async function loadImagery({ bounds, urlFor, maxTiles = 8, load = loadImage, atMost = 18 }) {
+export async function loadImagery({ bounds, urlFor, budget = 96, load = loadImage, atMost = 18 }) {
   if (!bounds || !urlFor) return null;
-  const z = Math.min(atMost, zoomFor(bounds, maxTiles, 8, Math.max(9, atMost)));
+  const z = Math.min(atMost, zoomFor(bounds, budget, 8, Math.max(9, atMost)));
   const t = tilesFor(bounds, z);
 
   let images;

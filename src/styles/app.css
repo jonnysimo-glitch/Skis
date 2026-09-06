@@ -678,12 +678,20 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .banner__s { font-size: var(--t-subhead); opacity: 0.66; margin-top: var(--s-1); line-height: 1.35; }
 
 /* A caution rather than a headline: something the user must read once and can
-   then get on with. Warm against an otherwise cold palette so it reads as a
-   note about the real world and not as part of the chrome. */
+   then get on with.
+
+   This was warm — amber panel, amber text — on the reasoning that a note about
+   the real world should not read as part of the chrome. In use it read as an
+   alarm instead: a strip of orange is the loudest thing on a cold blue screen,
+   and "live closures are not connected yet" does not deserve to be. It sits on
+   the app's own surface now and gets its weight from the icon and the label,
+   the way .banner--note beneath it always has. What is left of the warm colour
+   is the places that are one value rather than a paragraph — a clock running
+   past the last lift, a field that was rejected. */
 .banner--warn {
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  color: var(--warn);
+  background: var(--note-bg);
+  border: 1px solid var(--note-line);
+  color: var(--ink);
   display: flex; gap: var(--s-3); align-items: flex-start;
   padding: var(--s-4);
 }
@@ -710,13 +718,13 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .warn:not(:last-child), .info:not(:last-child) { margin-bottom: var(--s-4); }
 .warn__acts { display: flex; gap: var(--s-2); margin-top: var(--s-3); }
-.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
-.warn__icon { color: var(--warn); flex: none; margin-top: 1px; }
+.warn { background: var(--note-bg); border: 1px solid var(--note-line); }
+.warn__icon { color: var(--ink-4); flex: none; margin-top: 1px; }
 .warn__t {
   display: block;
   font-size: var(--t-caption-2); font-weight: 700;
   letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--warn);
+  color: var(--ink);
 }
 .warn__p { display: block; font-size: var(--t-footnote); color: var(--ink-2); margin-top: var(--s-1); line-height: 1.4; }
 .info { background: var(--surface-2); color: var(--ink-2); }
@@ -1188,7 +1196,16 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-size: var(--t-footnote);
   color: var(--ink-2);
   margin-top: var(--s-1);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* Two lines, not one with an ellipsis. This column is narrowed by the badge
+     and the grade chip either side of it, so a quarter of the legs measured
+     across four resorts truncated — "then ski Pistone Betta to Above
+     Sant'Anna" needed 275px and had 190. Where the next run is going is the
+     one thing this line is for. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .nav__grade {
   flex: none; align-self: flex-start;
@@ -1336,8 +1353,8 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
    row the message was squeezed to five lines by a button that would not
    shrink, and the whole banner ate the map. */
 .nav__over {
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
+  background: var(--note-bg);
+  border: 1px solid var(--note-line);
   border-radius: var(--r-md);
   padding: var(--s-3);
   margin-bottom: var(--s-2);
@@ -1348,7 +1365,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   font-size: var(--t-footnote); line-height: 1.35;
   color: var(--ink);
 }
-.nav__over > svg { color: var(--warn); margin-top: 1px; }
+.nav__over > svg { color: var(--ink-4); margin-top: 1px; }
 .nav__over > p { grid-column: 2; }
 .nav__overx {
   grid-column: 3;
@@ -1357,10 +1374,10 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   min-width: var(--tap); min-height: var(--tap);
   margin: calc(var(--tap) / -2 + 9px) calc(var(--s-2) * -1) calc(var(--tap) / -2 + 9px) 0;
   display: grid; place-items: center;
-  color: var(--warn);
+  color: var(--ink-3);
   border-radius: 50%;
 }
-.nav__overx:active { background: rgba(154, 91, 18, 0.12); }
+.nav__overx:active { background: rgba(255, 255, 255, 0.10); }
 
 /* Two buttons on one row when running late.
    The re-plan is sized to its own label and the primary takes what is left,
@@ -1389,11 +1406,11 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .btn--nav-warn {
   background: #fff;
   color: var(--accent);
-  border: 1px solid var(--warn-line);
+  border: 1px solid var(--note-line);
   padding: 0 var(--s-3);
   white-space: nowrap;
 }
-.btn--nav-warn:active { background: var(--warn-bg); }
+.btn--nav-warn:active { background: var(--note-bg); }
 
 /* Read aloud, never drawn. For headings that a sighted user gets from the
    picture instead. */
@@ -1577,6 +1594,23 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   align-items: center;
   gap: var(--s-2);
 }
+/* The word that stops this reading as a button that ignored you.
+   Small and under the label, so it is an affordance at rest rather than an
+   instruction; it grows and brightens for a moment after a press that was too
+   short, which is the only time anyone needs to be told twice. */
+.btn__holdhint {
+  position: relative;
+  display: block;
+  margin-top: 1px;
+  font-size: var(--t-caption-2);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.62;
+  transition: opacity 0.18s var(--ease-std);
+}
+.btn--hold-missed .btn__holdhint { opacity: 1; }
+.btn--hold { flex-direction: column; gap: 0; line-height: 1.15; }
 /* A quiet variant sits on the map rather than on the accent, so the fill has
    to be dark to show up at all. */
 .btn--nav-quiet .btn__hold { background: rgba(7, 20, 29, 0.16); }

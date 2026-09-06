@@ -128,8 +128,20 @@ const DEPTH_STEP = 1;
  * the photograph for the middle of those.
  *
  * The ceiling stops a quad that fills the screen at maximum zoom asking for a
- * thousand cells on its own. Four by four turns a block into a picture, and
- * past that the limit is the imagery's resolution rather than the mesh's.
+ * thousand cells on its own.
+ *
+ * It was four, on the reasoning that four by four turns a block into a picture
+ * and past that the imagery is the limit. That is true at the framing the app
+ * opens on and false everywhere else, because a quad is a fixed piece of
+ * ground: at zoom eight a cell is sixty screen pixels, four by four leaves
+ * fifteen-pixel squares of one colour, and the photograph is back to being
+ * blocks exactly where someone is looking hardest at the ground.
+ *
+ * Twenty-four now, and the total work is bounded by the viewport rather than
+ * by the ceiling: cells cost the visible area over SUBDIVIDE_PX squared,
+ * which on a phone is about twenty thousand however far in you are. That was
+ * always the intent and it only became true once quads off the sides of the
+ * screen stopped being drawn at all.
  */
 /**
  * Progressive refinement.
@@ -148,20 +160,23 @@ const MESH_STRIDE = 2;
 /** How still the camera has to be before the fine pass is worth starting. */
 const MESH_SETTLE_MS = 140;
 
+/**
+ * The zoom at which the mountain starts naming things rather than marking
+ * them: the runs along their own line, and the huts under their markers.
+ *
+ * One number for both because they are the same decision. Far out, a name is
+ * a word floating over ground too small to place it on; close enough to read
+ * the ground, a marker with no word under it is a question rather than an
+ * answer.
+ */
+const NAME_ZOOM = 1.5;
+
 const SUBDIVIDE_PX = 4;
-const SUBDIVIDE_MAX = 4;
+const SUBDIVIDE_MAX = 24;
 
 /** How far a texture cell reaches past its own edge, as a fraction of a cell. */
 const OVERLAP = 0.06;
 
-/**
- * How long the camera has to be still before asking for sharper imagery.
- *
- * Long enough that a drag, a pinch and the glide that follows one are a single
- * request rather than sixty. Short enough that it arrives while the person is
- * still looking at the thing they zoomed in on.
- */
-const DETAIL_SETTLE_MS = 420;
 
 /**
  * How long a mountain place takes to appear or disappear, in milliseconds.
@@ -475,8 +490,23 @@ const ZOOM_MAX = 16;
  * give past that.
  */
 const OVERSCROLL = 0.06;
-/** How much of a frame you may pan beyond the subject's own overflow. */
-const PAN_REACH = 0.45;
+/**
+ * How much of a frame you may pan beyond the subject's own overflow.
+ *
+ * Most of one, not half. At 0.45 the wall sat 193 pixels from centre on a
+ * 430 pixel canvas — shorter than an ordinary thumb drag, so a normal pan ran
+ * into the resistance and sprang back every single time. What that feels like
+ * is not an edge, it is the map skipping: you push, it stops giving, you let
+ * go, it moves on its own. The wall is meant to be reachable at the end of a
+ * deliberate throw and invisible the rest of the time.
+ *
+ * Still self-limiting. The other half of `reach` bounds it at half the
+ * subject, so at the extreme the mountain's own edge is at the middle of the
+ * screen and there is always a quarter of a frame of it left.
+ */
+const PAN_REACH = 0.8;
+/** And how far past half the subject, as a fraction of a frame. */
+const PAN_BEYOND = 0.22;
 /**
  * The block.
  *
@@ -545,41 +575,22 @@ const mix = (a, b, t) => [
  * mountain has no such lines on it.
  */
 /**
- * What the ground is made of, by height.
+ * Snow. That is all the ground is made of.
  *
- * A starting point only. Steepness overrides it below, because a wall is rock
- * at any altitude and a shelf holds snow well down the mountain, and that is
- * the difference between terrain that reads as ground and terrain that reads
- * as a painted contour map.
- */
-const BANDS = [
-  // Winter, not summer. Even the valley floor is under snow with stands of
-  // spruce through it, so the low band is a snowy forest rather than a green
-  // one: this is a ski map and a green valley reads as the wrong season.
-  [0.00, [116, 134, 130]], // snowy forest
-  [0.26, [156, 172, 174]], // thinning trees
-  [0.44, [196, 208, 213]], // treeline and scree
-  [0.60, [222, 232, 238]], // old snow
-  [0.78, [238, 244, 249]], // firn
-  [1.00, [250, 252, 254]], // snowfield
-];
-
-/**
- * Bare rock, for a face too steep to hold snow.
+ * There was a height ramp here — snowy forest in the valley, thinning trees,
+ * treeline, scree, firn, snowfield — with a steepness override that turned the
+ * walls to rock. It was a lot of machinery for a decision that turns out to be
+ * simpler: a skier looking at the drawn terrain wants to read the shape of the
+ * mountain, and a photograph of what the ground is made of is what the
+ * satellite skin is for. Two ways of saying the same thing competed, and the
+ * ramp lost — it put a green-grey wash over the valleys and a grey scar down
+ * every wall, and the relief had to compete with both.
  *
- * Lighter than rock actually is. From a distance an alpine face is dusted and
- * half lit, and a true rock grey turned every ridge into a black scar.
+ * So the surface is one snow white, and every bit of shape in it comes from
+ * the hillshade, the cast shadow and the wind grain. That is also the honest
+ * rendering: this is a winter map, and in winter it is all under snow.
  */
-const ROCK = [148, 142, 138];
-/**
- * Where the snow gives out. Above ROCK_TO the face is bare.
- *
- * These are steepness after the vertical exaggeration, which is the right
- * reference: what should look like rock is what looks steep on screen. Set at
- * 0.42 the mountain came out mostly rock and read as a summer photograph.
- */
-const ROCK_FROM = 0.62;
-const ROCK_TO = 0.88;
+const SNOW = [246, 249, 252];
 
 /**
  * Low sun on snow is warm where it lands and blue where it does not.
@@ -605,21 +616,8 @@ function inShadow(c, shadow) {
   return mix(c, [c[0] * 0.60, c[1] * 0.69, c[2] * 0.87], shadow);
 }
 
-function surfaceColour(alt, lo, hi, shade, haze, steep = 0, grain = 0, shadow = 0) {
-  const t = Math.max(0, Math.min(1, (alt - lo) / (hi - lo || 1)));
-  let k1 = BANDS.length - 1;
-  while (k1 > 1 && BANDS[k1 - 1][0] > t) k1--;
-  const [t0, c0] = BANDS[k1 - 1];
-  const [t1, c1] = BANDS[k1];
-  const f = (t - t0) / (t1 - t0 || 1);
-  let c = mix(c0, c1, f * f * (3 - 2 * f)); // smoothstep, so the joins vanish
-
-  // Steep ground is rock. The grain moves the threshold about, so the snow
-  // line is ragged rather than a contour, which is what it looks like from a
-  // helicopter and never looks like on a map.
-  const edge = Math.max(0, Math.min(1,
-    (steep - (ROCK_FROM + grain * 0.16)) / (ROCK_TO - ROCK_FROM)));
-  c = mix(c, ROCK, edge * edge * (3 - 2 * edge));
+function surfaceColour(shade, haze, grain = 0, shadow = 0) {
+  let c = SNOW;
 
   // Warm in the light, blue in the shade, rather than one grey multiplier.
   const k = 0.52 + 0.80 * shade;
@@ -708,9 +706,6 @@ export default function FallbackTerrain({
   makeProjector = activeProjector,
   // A satellite drape, or null for the drawn surface. See src/map/imagery.js.
   imagery = null,
-  // Called with the ground in frame and how finely it wants photographing,
-  // once the camera has come to rest. See `visibleGround`.
-  onDetail,
   onScale,
 }) {
   const canvasRef = useRef(null);
@@ -723,7 +718,7 @@ export default function FallbackTerrain({
   const dirty = useRef(true);
   const lastCam = useRef(null);
   const projectRef = useRef(null);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onDetail, onScale });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onScale });
   const mapTest =
     typeof window !== "undefined" && window.location.search.includes("maptest=1");
 
@@ -748,7 +743,7 @@ export default function FallbackTerrain({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onDetail, onScale };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onScale };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -1091,8 +1086,17 @@ export default function FallbackTerrain({
       // traversal rule, which already handled zoom correctly, opened up from
       // the tenth of a frame it used to allow to nearly half of one.
       const reach = (span, avail) =>
-        Math.min((f * span) / 2, Math.max(0, f * span - avail) / 2 + avail * PAN_REACH) +
-        avail * OVERSCROLL;
+        Math.min(
+          // Half the subject, plus a slice of frame. Half alone is the rule
+          // "you can bring any point of the resort to the middle of the
+          // screen", which is principled and, at rest, 189 pixels on a phone:
+          // shorter than a thumb drag, so every ordinary pan ended in the
+          // rubber band. The slice lets the resort's edge travel past the
+          // middle instead, and at that extreme there is still a third of a
+          // frame of mountain in shot.
+          (f * span) / 2 + avail * PAN_BEYOND,
+          Math.max(0, f * span - avail) / 2 + avail * PAN_REACH
+        ) + avail * OVERSCROLL;
       const limitX = reach(spanU, availW);
       const limitY = reach(spanV, availH);
       // Only hard clamped when the finger is off the glass. While dragging the
@@ -1165,70 +1169,6 @@ export default function FallbackTerrain({
       fn(lastScale);
     };
 
-    /**
-     * What ground is on screen, and how finely it needs photographing.
-     *
-     * The drape starts as one mosaic of the whole resort, which is all that
-     * can be prefetched: a ski area is a dozen kilometres across, and covering
-     * that at the half-metre a building needs would be ten thousand tiles. So
-     * the base layer is coarse by necessity, and close up it is blocks.
-     *
-     * The way out is the one every map uses — fetch detail for what is
-     * actually in frame. Zoomed in, that is a few hundred metres of mountain,
-     * which fits in the same handful of tiles at a zoom four or five levels
-     * finer. This reports the box and the resolution; the fetching is the
-     * app's business, not the renderer's.
-     *
-     * Reported on the vertex grid rather than the corners of the viewport,
-     * because the ground on screen is whatever part of a tilted, rotated
-     * height field lands there, and that is not a rectangle in any space this
-     * has a formula for.
-     */
-    const visibleGround = (v, cam) => {
-      const { heights, at, minX, maxX, minZ, maxZ } = field;
-      const dx = (maxX - minX) / GRID;
-      const dz = (maxZ - minZ) / GRID;
-      let x0 = Infinity;
-      let x1 = -Infinity;
-      let z0 = Infinity;
-      let z1 = -Infinity;
-      // Every fourth vertex: this runs when the camera stops, and the answer
-      // feeds a choice between whole zoom levels.
-      for (let i = 0; i <= GRID; i += 4) {
-        for (let j = 0; j <= GRID; j += 4) {
-          const x = minX + dx * i;
-          const z = minZ + dz * j;
-          const p = project(x, heights[at(i, j)], z, v, cam);
-          if (p.x < 0 || p.y < 0 || p.x > width || p.y > height) continue;
-          if (x < x0) x0 = x;
-          if (x > x1) x1 = x;
-          if (z < z0) z0 = z;
-          if (z > z1) z1 = z;
-        }
-      }
-      // Nothing in frame, or a sliver: fall back to the whole mountain rather
-      // than asking for imagery of a point.
-      if (!Number.isFinite(x0) || x1 - x0 < dx || z1 - z0 < dz) return null;
-      // A margin, so a small pan does not immediately fall off the edge of
-      // what was fetched.
-      const padX = (x1 - x0) * 0.15;
-      const padZ = (z1 - z0) * 0.15;
-      const a = field.proj.unproject(x0 - padX, z0 - padZ);
-      const b = field.proj.unproject(x1 + padX, z1 + padZ);
-      const y = field.sample(field.cx, field.cz);
-      const pa = project(field.cx - 500, y, field.cz, v, cam);
-      const pb = project(field.cx + 500, y, field.cz, v, cam);
-      const perKm = Math.hypot(pb.x - pa.x, pb.y - pa.y);
-      if (!Number.isFinite(perKm) || perKm <= 0) return null;
-      return {
-        west: Math.min(a.lon, b.lon),
-        east: Math.max(a.lon, b.lon),
-        south: Math.min(a.lat, b.lat),
-        north: Math.max(a.lat, b.lat),
-        metresPerPixel: 1000 / perKm,
-      };
-    };
-
     // ---- terrain ---------------------------------------------------------
     /*
      * The photographed colour of every quad, worked out once.
@@ -1245,7 +1185,7 @@ export default function FallbackTerrain({
       const drape = propsRef.current.imagery;
       if (!drape) return null;
       if (photoFor === drape) return photo;
-      const { at, minX, maxX, minZ, maxZ } = field;
+      const { minX, maxX, minZ, maxZ } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
       const out = new Array(GRID * GRID);
@@ -1269,9 +1209,9 @@ export default function FallbackTerrain({
      * projected corners rather than from projecting each one, which is both
      * far cheaper and exactly what tiles the quad without seams. It is not
      * perspective-correct — the true mapping is a homography and this is its
-     * affine approximation — but the error over 167 metres at the zoom where
+     * affine approximation — but the error over one quad at the zoom where
      * subdivision starts is a fraction of a pixel, and the alternative is
-     * projecting sixteen more points per quad to remove something nobody can
+     * projecting hundreds more points per quad to remove something nobody can
      * see.
      *
      * The hillshade is the quad's, not the cell's. Slope is a property of the
@@ -1279,7 +1219,7 @@ export default function FallbackTerrain({
      * the lighting continuous across the cell boundaries, where varying it
      * would draw a grid on the mountain.
      */
-    const drawTextured = (g, q, n, haze, dx, dz, minX, minZ) => {
+    const drawTextured = (g, q, nu, nw, haze, dx, dz, minX, minZ) => {
       const drape = propsRef.current.imagery;
       const [a, b, c, d] = q.pts;
       // p(s,t): s runs a→b along the mesh's i, t runs a→d along its j.
@@ -1299,13 +1239,14 @@ export default function FallbackTerrain({
        * the last row and column spill by a fraction of a pixel onto ground the
        * quad's own edge stroke already covers.
        */
-      const bleed = OVERLAP / n;
-      for (let u = 0; u < n; u++) {
-        const s0 = u / n;
-        const s1 = Math.min(1 + bleed, (u + 1) / n + bleed);
-        for (let w = 0; w < n; w++) {
-          const t0 = w / n;
-          const t1 = Math.min(1 + bleed, (w + 1) / n + bleed);
+      const bleedU = OVERLAP / nu;
+      const bleedW = OVERLAP / nw;
+      for (let u = 0; u < nu; u++) {
+        const s0 = u / nu;
+        const s1 = Math.min(1 + bleedU, (u + 1) / nu + bleedU);
+        for (let w = 0; w < nw; w++) {
+          const t0 = w / nw;
+          const t1 = Math.min(1 + bleedW, (w + 1) / nw + bleedW);
           const { lat, lon } = field.proj.unproject(
             minX + dx * (q.gi + (s0 + s1) / 2),
             minZ + dz * (q.gj + (t0 + t1) / 2)
@@ -1341,7 +1282,7 @@ export default function FallbackTerrain({
      * two and refining cannot move the camera.
      */
     const drawTerrain = (v, cam, g, dep, step = 1) => {
-      const { heights, at, shades, shadows, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
+      const { heights, at, shades, shadows, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
       const skin = photoGrid();
@@ -1476,7 +1417,6 @@ export default function FallbackTerrain({
             photo: skin ? skin[i * GRID + j] : null,
             shade: shades[qAt(i, j)],
             shadow: shadows && shadowsOn ? shadows[qAt(i, j)] : 0,
-            steep: steeps[qAt(i, j)],
             grain: grains[qAt(i, j)],
           });
         }
@@ -1643,18 +1583,37 @@ export default function FallbackTerrain({
          * subdividing it would interpolate between two numbers it made up.
          */
         if (skin && q.photo) {
-          const wide = Math.max(Math.abs(b.x - a.x), Math.abs(c.x - d.x));
-          const tall = Math.max(Math.abs(d.y - a.y), Math.abs(c.y - b.y));
-          const n = Math.max(1, Math.min(SUBDIVIDE_MAX,
-            Math.round(Math.max(wide, tall) / SUBDIVIDE_PX)));
+          /*
+           * Each axis gets its own count, and that is the difference between
+           * work that scales with the screen and work that does not.
+           *
+           * One n for both was the first version, taken from the longer side.
+           * A quad seen obliquely projects long and thin — two hundred pixels
+           * down the slope and six across — and squaring the long side asked
+           * for two and a half thousand cells to cover twelve hundred pixels.
+           * At zoom ten that was a hundred and thirty-seven thousand cells a
+           * frame and 444ms, for a picture that is 236,000 pixels. Per axis it
+           * is the area over SUBDIVIDE_PX squared, which is what it should
+           * always have been.
+           *
+           * Edge lengths, not extents along x and y: the old measure took the
+           * x span of one edge and the y span of the other, which is neither
+           * edge and goes to zero for a quad lying along a diagonal.
+           */
+          const lenU = Math.max(Math.hypot(b.x - a.x, b.y - a.y),
+            Math.hypot(c.x - d.x, c.y - d.y));
+          const lenW = Math.max(Math.hypot(d.x - a.x, d.y - a.y),
+            Math.hypot(c.x - b.x, c.y - b.y));
+          const nu = Math.max(1, Math.min(SUBDIVIDE_MAX, Math.round(lenU / SUBDIVIDE_PX)));
+          const nw = Math.max(1, Math.min(SUBDIVIDE_MAX, Math.round(lenW / SUBDIVIDE_PX)));
           // The biggest area of the photograph painted as one colour, which is
           // what "does the drape reach the screen" actually asks. Whether the
           // resolution comes from the mesh or from subdividing it is an
           // implementation detail; how coarse the result is, is not.
-          if (mapTest) patch = Math.max(patch, Math.max(wide, tall) / n);
-          if (n > 1) {
-            drawTextured(g, q, n, haze, dx, dz, minX, minZ);
-            if (mapTest) { textured++; cells += n * n; }
+          if (mapTest) patch = Math.max(patch, Math.max(lenU / nu, lenW / nw));
+          if (nu > 1 || nw > 1) {
+            drawTextured(g, q, nu, nw, haze, dx, dz, minX, minZ);
+            if (mapTest) { textured++; cells += nu * nw; }
             continue;
           }
         }
@@ -1666,7 +1625,7 @@ export default function FallbackTerrain({
           // so the edge of the imagery is a change of texture and not a cliff.
           : q.photo
             ? photoColour(q.photo, q.shade, haze, q.shadow)
-            : surfaceColour(q.alt, lo, hi, q.shade, haze, q.steep, q.grain, q.shadow);
+            : surfaceColour(q.shade, haze, q.grain, q.shadow);
         g.beginPath();
         g.moveTo(a.x, a.y);
         g.lineTo(b.x, b.y);
@@ -1849,7 +1808,7 @@ export default function FallbackTerrain({
      */
     const drawRunNames = (v, cam, placed) => {
       const g = propsRef.current.graph;
-      if (!g?.features?.length || v.zoom < 1.5) return placed;
+      if (!g?.features?.length || v.zoom < NAME_ZOOM) return placed;
       const hasRoute = Boolean(propsRef.current.route?.features?.length);
       ctx.font = "600 10px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -2285,6 +2244,9 @@ export default function FallbackTerrain({
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false, spoken = null } = {}) => {
       const all = propsRef.current.places ?? [];
       if (!all.length) return placed;
+      // Named at the same zoom the runs are, and marked from further out.
+      if (labelsOnly && v.zoom < NAME_ZOOM) return placed;
+      const named = [];
       /*
        * How many places are worth showing, and which ones, by how close you
        * are.
@@ -2360,11 +2322,25 @@ export default function FallbackTerrain({
         const r = 6.4;
         const box = { l: s.x - r - 3, r: s.x + r + 3, t: s.y - r - 3, b: s.y + r + 3 };
         if (labelsOnly) {
-          // The marker went down in the earlier pass; this one only has to
-          // find room for the words.
+          /*
+           * The marker went down in the earlier pass; this one only has to
+           * find room for the words.
+           *
+           * Which it never did. The marker's own box runs to s.y + 9.4 and the
+           * label's box started at s.y + 8.4 — a one pixel overlap, so every
+           * hut name in the app collided with the disc it belonged to and was
+           * dropped, in every resort, at every zoom, since the day the markers
+           * were added. Nothing looked broken: the markers were there and the
+           * budget and the fade all worked, so it read as a design that had
+           * simply chosen not to write the names.
+           *
+           * Cleared by four pixels rather than by exempting the marker from
+           * the test, because a name touching its own disc looks like a
+           * mistake even when it is deliberate.
+           */
           const w = ctx.measureText(name).width;
           const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
-          const ty = s.y + r + 12;
+          const ty = s.y + r + 17;
           const label = { l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 10, b: ty + 3 };
           const fits = !hits(label);
           const solid = fadeOf(`n:${full}`, fits, frameDt);
@@ -2378,6 +2354,7 @@ export default function FallbackTerrain({
           ctx.fillStyle = "rgba(11,26,36,0.78)";
           ctx.fillText(name, tx, ty);
           ctx.globalAlpha = 1;
+          if (fits) named.push(name);
           continue;
         }
         // The box is reserved on the decision, not on the fade: a marker on its
@@ -2413,6 +2390,7 @@ export default function FallbackTerrain({
         spoken?.add(name);
         if (drawn.length >= budget) break;
       }
+      if (mapTest && labelsOnly) window.__skisPlaceNames = named;
       if (!labelsOnly) heldPlaces = new Set(drawn.map((d) => d.full));
       if (mapTest && !labelsOnly) {
         window.__skisPlaces = drawn;
@@ -2575,7 +2553,6 @@ export default function FallbackTerrain({
     let lastFrameAt = 0;
     // When the camera last moved, so the detail request can wait for it to
     // stop. Zero once the request for that resting place has gone out.
-    let settleAt = 0;
     /*
      * The camera the terrain in `blur` was drawn with, and how far the current
      * one has slid from it.
@@ -2876,16 +2853,6 @@ export default function FallbackTerrain({
         // and there are far more piste names than there is room for.
         drawRunNames(v, cam, boxes);
         drawPins(v, cam, pins);
-        // The view moved, so whatever detail was asked for is now for
-        // somewhere else. Restart the clock rather than reporting mid-gesture:
-        // a drag would otherwise fire a request a frame, for boxes nobody is
-        // looking at by the time they arrive.
-        settleAt = now;
-      } else if (settleAt && now - settleAt > DETAIL_SETTLE_MS) {
-        settleAt = 0;
-        const want = propsRef.current.onDetail;
-        if (want && lastCam.current) want(visibleGround(v, lastCam.current));
-
       }
 
       /*
@@ -3205,8 +3172,8 @@ export default function FallbackTerrain({
      *   band(x) = c x / (1 + c x / D)      band(0) = 0, band'(0) = c, band(inf) = D
      *   band^-1(y) = y / (c (1 - y / D))
      */
-    const OVERSHOOT = 0.34;
-    const OVERSHOOT_MAX = 0.22;
+    const OVERSHOOT = 0.26;
+    const OVERSHOOT_MAX = 0.12;
     const resist = (cur, d, lim, frame) => {
       const next = cur + d;
       if (lim == null || Math.abs(next) <= lim) return next;

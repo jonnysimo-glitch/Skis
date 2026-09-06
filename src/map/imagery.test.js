@@ -36,13 +36,28 @@ const MONTEROSA = { west: 7.77, east: 8.02, south: 45.82, north: 45.95 };
 // Andalo, which is small.
 const PAGANELLA = { west: 10.99, east: 11.06, south: 46.11, north: 46.19 };
 
+/*
+ * The budget is a total, not a count per axis.
+ *
+ * Per axis, "eight tiles" is anything from eight requests to sixty-four
+ * depending on how square the resort happens to be — so the long thin ones
+ * paid for a coarse zoom they did not need, and this checked a ceiling that
+ * two very different fetches both sat under.
+ */
+const BUDGET = 96;
 for (const [name, b] of [["monterosa", MONTEROSA], ["paganella", PAGANELLA]]) {
-  const z = zoomFor(b, 8);
+  const z = zoomFor(b, BUDGET);
   const t = tilesFor(b, z);
   const across = t.x1 - t.x0 + 1;
   const down = t.y1 - t.y0 + 1;
-  check(`${name}: the zoom keeps it under the tile ceiling`, across <= 8 && down <= 8,
-    `${across} by ${down} at z${z}`);
+  check(`${name}: the zoom keeps it inside the tile budget`, across * down <= BUDGET,
+    `${across} by ${down} = ${across * down} at z${z}, budget ${BUDGET}`);
+  // And spends most of it, or the budget is not doing anything. One zoom
+  // finer would have to break it.
+  const finer = tilesFor(b, z + 1);
+  check(`${name}: and spends it, rather than stopping short`,
+    (finer.x1 - finer.x0 + 1) * (finer.y1 - finer.y0 + 1) > BUDGET,
+    `z${z + 1} would be ${(finer.x1 - finer.x0 + 1) * (finer.y1 - finer.y0 + 1)} tiles`);
   // A resort that fits in one tile has been zoomed too far out to be worth
   // fetching: the whole mountain would be a dozen pixels of the picture.
   check(`${name}: and not so far out that the resort is a smudge`, across * down >= 2,
@@ -55,24 +70,26 @@ for (const [name, b] of [["monterosa", MONTEROSA], ["paganella", PAGANELLA]]) {
 
 // A small resort should be photographed closer than a big one, or the ceiling
 // is being applied as a fixed zoom and half the point is lost.
-check("a smaller resort gets a closer zoom", zoomFor(PAGANELLA, 8) >= zoomFor(MONTEROSA, 8),
-  `paganella z${zoomFor(PAGANELLA, 8)}, monterosa z${zoomFor(MONTEROSA, 8)}`);
+check("a smaller resort gets a closer zoom", zoomFor(PAGANELLA, BUDGET) >= zoomFor(MONTEROSA, BUDGET),
+  `paganella z${zoomFor(PAGANELLA, BUDGET)}, monterosa z${zoomFor(MONTEROSA, BUDGET)}`);
 
 // Ground resolution has to beat the mesh, or the drape cannot show anything
 // the drawn terrain does not already.
 {
-  const z = zoomFor(MONTEROSA, 8);
+  const z = zoomFor(MONTEROSA, BUDGET);
   const mPerPx = (40075017 * Math.cos((45.88 * Math.PI) / 180)) / (2 ** z * 512);
   /*
    * Finer than a texture CELL, not finer than a quad.
    *
-   * A quad is painted from the photograph at up to four by four now, so the
-   * thing the imagery has to beat is a cell — about forty metres — and beating
-   * a quad was the old, much weaker bar. This is the number that decides
-   * whether the base mosaic looks like a photograph or like a blur.
+   * A quad is painted from the photograph in four-pixel cells, so the thing
+   * the imagery has to beat is a cell rather than a quad — the old, much
+   * weaker bar. Twenty metres rather than the forty this asked for at GRID 72:
+   * the mesh is 144 across now, so a cell is half the ground it was. This is
+   * the number that decides whether the mosaic looks like a photograph or
+   * like a blur.
    */
-  check("and one texture pixel is finer than one texture cell", mPerPx < 42,
-    `${mPerPx.toFixed(0)}m a pixel against a 42m cell`);
+  check("and one texture pixel is finer than one texture cell", mPerPx < 20,
+    `${mPerPx.toFixed(0)}m a pixel against a 20m cell`);
 }
 
 console.log("\nTHE URL");

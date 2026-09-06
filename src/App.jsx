@@ -364,10 +364,6 @@ export default function App() {
    * is already on screen.
    */
   const [drape, setDrape] = useState(null);
-  const [detail, setDetail] = useState(null);
-  // The last box asked for, so a settle that lands where the previous one did
-  // does not fetch it again. A ref, because changing it must not re-render.
-  const askedFor = useRef(null);
   useEffect(() => {
     if (mapMode !== "satellite" || !hasMapKey || !resort) {
       setDrape(null);
@@ -422,61 +418,27 @@ export default function App() {
     return () => { live = false; };
   }, [mapMode, resort]);
 
-  // A new resort or a change of map is a different mountain to photograph.
-  useEffect(() => {
-    setDetail(null);
-    askedFor.current = null;
-  }, [mapMode, resort]);
-
   /*
-   * Sharper imagery for whatever is in frame, once the camera stops.
+   * One mosaic, fetched once, and it does not change again.
    *
-   * The base mosaic covers the whole resort and can only be coarse: a dozen
-   * kilometres at the half-metre a building needs is ten thousand tiles. Close
-   * up that is blocks, which is the point at which a photograph stops looking
-   * like one — and close up is exactly when someone is trying to see what the
-   * ground does.
+   * There was a second layer here: after the camera came to rest, the ground
+   * in frame was re-photographed at whatever zoom the screen could show, and
+   * the sampler preferred it wherever it reached. On paper that is the right
+   * trade — a dozen kilometres at the half-metre a building needs is ten
+   * thousand tiles, and the ground in frame when you are zoomed in is a few
+   * hundred metres.
    *
-   * Zoomed in, though, the ground in frame is a few hundred metres, and that
-   * fits in the same handful of tiles four or five zoom levels finer. So the
-   * detail layer is the same fetch against a smaller box, and the sampler
-   * below prefers it wherever it reaches.
+   * In the hand it reads as the map recalibrating. A second after you stop,
+   * the mountain you were looking at is replaced by a sharper one; move again
+   * and it goes soft; stop somewhere else and it sharpens differently. Nothing
+   * is wrong and it still feels like something is.
+   *
+   * So the resolution goes into the one mosaic instead, paid for by budgeting
+   * tiles as a total rather than per axis, and the picture is the same picture
+   * from the moment it lands. What is lost is the very deepest zoom, where the
+   * imagery now runs out before the screen does.
    */
-  const onDetail = useCallback(async (want) => {
-    if (!want || mapMode !== "satellite" || !hasMapKey) return;
-    const key = [want.west, want.south, want.east, want.north]
-      .map((n) => n.toFixed(4)).join(",");
-    if (askedFor.current === key) return;
-    askedFor.current = key;
-    const { loadImagery, templateTile, checkerTile, zoomForResolution } =
-      await import("./map/imagery.js");
-    const params = new URLSearchParams(window.location.search);
-    const synthetic = params.get("maptest") === "1" && params.get("tiles");
-    const image = await loadImagery({
-      bounds: want,
-      urlFor: synthetic ? checkerTile : templateTile(SATELLITE_URL, MAPTILER_KEY),
-      // No finer than the screen can show. Asking for more is bytes over a
-      // mountain connection for detail that is averaged away on arrival.
-      atMost: zoomForResolution((want.north + want.south) / 2, want.metresPerPixel),
-    });
-    // A failure here is not worth a message. The base mosaic is still on the
-    // ground and the only difference is that it stays soft.
-    if (image && askedFor.current === key) setDetail(image);
-  }, [mapMode]);
-
-  /*
-   * The two layers as one thing to sample.
-   *
-   * Detail first, base behind it, because the detail layer covers only what
-   * was in frame when it was asked for — pan away and the edges of the
-   * mountain fall back to the coarse mosaic rather than to nothing, and the
-   * next settle fetches the new box.
-   */
-  const skin = useMemo(() => {
-    if (!drape) return null;
-    if (!detail) return drape;
-    return { at: (lat, lon) => detail.at(lat, lon) ?? drape.at(lat, lon) };
-  }, [drape, detail]);
+  const skin = drape;
   // With the button gone this is the only way into the world map, and it has
   // to stay reachable: the code still ships, so it still has to stay walled in
   // to the resort. Opt-in via ?maptest=1, like the other hooks.
@@ -951,7 +913,6 @@ export default function App() {
           block
           viewportTop={navigating ? NAV_HEAD_H : 0}
           imagery={skin}
-          onDetail={onDetail}
           onScale={setMapScale}
         />
       )}

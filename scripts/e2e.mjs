@@ -633,7 +633,15 @@ try {
     // Held, not clicked: see reachNext. And prove the guard first, because a
     // control that ignores a pocket press is the point of it.
     {
-      const before = await page.$eval(".nav__foot .btn", (n) => n.textContent.trim());
+      /*
+       * The leg, not the label.
+       *
+       * This compared the button's text before and after, which is the same
+       * thing right up until the button learns to answer a tap — it says
+       * "Keep holding" for a moment now, because a control that silently
+       * ignores you reads as broken and someone reported it as exactly that.
+       * What must not change is which leg you are on.
+       */
       const box = await (await page.$(".nav__foot .btn")).boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
@@ -641,8 +649,11 @@ try {
       await page.mouse.up();
       await page.waitForTimeout(350);
       check("a stray tap does not advance a leg",
-        (await page.$eval(".nav__foot .btn", (n) => n.textContent.trim())) === before,
-        before);
+        (await page.$eval(".nav__do", (n) => n.textContent)) === firstInstruction,
+        await page.$eval(".nav__do", (n) => n.textContent.trim()));
+      check("and it says why, rather than doing nothing at all",
+        /keep holding/i.test(await page.$eval(".nav__foot .btn", (n) => n.textContent)),
+        (await page.$eval(".nav__foot .btn", (n) => n.textContent.trim())).replace(/\s+/g, " "));
     }
     await reachNext(page);
     check("but holding it does", /Reached|Finish/.test(await page.$eval(".nav__foot .btn", (n) => n.textContent)));
