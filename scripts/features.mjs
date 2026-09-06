@@ -4205,6 +4205,148 @@ if (feature("36. Every name arrives the same way")) {
   await page.context_.close();
 }
 
+// ===================== 38. EVERY TIER OF LABEL, THE SAME WAY ==
+/*
+ * There are five kinds of writing on this map and they were built at different
+ * times, so they behaved differently. The place markers were taught to fade
+ * and hold; the run names and the route pins were not, and were fixed; the
+ * names of the places themselves — Punta Jolanda, Stafal, Bedemi — still
+ * popped, because that tier never went through the fade at all and had no
+ * patience for a name grazing a ridge.
+ *
+ * So this does not test one tier. It enumerates them, and holds every one to
+ * the same three rules: nothing changes faster than the fade allows, nothing
+ * is switched off by crossing a zoom, and each tier actually has something to
+ * show. A sixth tier added without a fade fails here rather than shipping.
+ */
+if (feature("38. Every tier of label, the same way")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  // Every alpha hook on the map, by the name a person would use for it.
+  const TIERS = {
+    "the names of the places": "__skisLabelLit",
+    "the run names": "__skisRunLit",
+    "the mountain huts": "__skisPlaceLit",
+    "the hut names": "__skisPlaceNameLit",
+  };
+
+  /*
+   * Sampled across the two things that make labels come and go — zooming in
+   * through the naming threshold, and turning the mountain — because they fail
+   * differently. A zoom cliff switches a whole tier at once; a turn sweeps
+   * individual labels behind ridges and under each other.
+   */
+  await page.evaluate((tiers) => {
+    window.__skisTrace = [];
+    const tick = () => {
+      const frame = { t: window.__skisFadeClock ?? 0 };
+      for (const [label, hook] of Object.entries(tiers)) {
+        frame[label] = Object.fromEntries(
+          (window[hook] ?? []).map((r) => [r.name ?? r.full, r.alpha]));
+      }
+      window.__skisTrace.push(frame);
+      window.__skisTraceId = requestAnimationFrame(tick);
+    };
+    tick();
+  }, TIERS);
+
+  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(400); }
+  await page.waitForTimeout(700);
+  await page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    for (let k = 0; k < 24; k++) { window.__skisSetBearing(-30 + k * 1.6); await wait(); }
+  });
+  // And back out through the threshold, which is the direction that used to
+  // freeze a tier's fades at full and make the NEXT crossing pop.
+  const zoomOut = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
+  for (let i = 0; i < 5; i++) { await zoomOut.click(); await page.waitForTimeout(400); }
+  await page.waitForTimeout(700);
+
+  const report = await page.evaluate((args) => {
+    cancelAnimationFrame(window.__skisTraceId);
+    const [tiers, fadeMs] = args;
+    const out = {};
+    for (const label of Object.keys(tiers)) {
+      const trace = window.__skisTrace ?? [];
+      let jumps = 0;
+      let biggest = 0;
+      let worst = "";
+      let seen = 0;
+      for (let i = 1; i < trace.length; i++) {
+        // The renderer's own clock: it repaints when something moved, not on
+        // the sampler's cadence, so one redraw can span several samples and
+        // legitimately move a fade further than wall time suggests.
+        const dt = trace[i].t - trace[i - 1].t;
+        const allowed = Math.min(1, dt / fadeMs) + 0.08;
+        const a = trace[i - 1][label] ?? {};
+        const b = trace[i][label] ?? {};
+        seen = Math.max(seen, Object.keys(b).length);
+        for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+          const d = Math.abs((b[k] ?? 0) - (a[k] ?? 0));
+          if (d > biggest) { biggest = d; worst = k; }
+          if (d > allowed) jumps++;
+        }
+      }
+      out[label] = { jumps, biggest: Math.round(biggest * 100) / 100, worst, seen };
+    }
+    return out;
+  }, [TIERS, 260]);
+
+  for (const [label, r] of Object.entries(report)) {
+    // Both halves matter. Zero jumps across zero labels is a tier that never
+    // drew anything, which is how this check would pass by doing nothing.
+    check(`${label} fade rather than pop`, r.seen >= 2 && r.jumps === 0,
+      `${r.jumps} steps over ${r.seen} labels, biggest ${r.biggest} (${r.worst || "none"})`);
+  }
+
+  /*
+   * And the pin labels, which are measured differently on purpose.
+   *
+   * There are only ever three — start, finish, and where you are — so a tier
+   * average is meaningless and the interesting question is whether the words
+   * beside them fade. They need a planned route to exist at all.
+   */
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await page.click("text=Find routes");
+  await page.waitForSelector(".routecard", { timeout: 25000 });
+  await page.click(".routecard");
+  await page.waitForTimeout(1800);
+  const pins = await page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const seen = new Set();
+    let jumps = 0;
+    let prev = Object.fromEntries((window.__skisPinLit ?? []).map((p) => [p.name, p.alpha]));
+    let last = window.__skisFadeClock ?? 0;
+    for (let k = 0; k < 24; k++) {
+      window.__skisSetBearing(-30 + k * 1.6);
+      await wait();
+      const now = Object.fromEntries((window.__skisPinLit ?? []).map((p) => [p.name, p.alpha]));
+      const clock = window.__skisFadeClock ?? 0;
+      const allowed = Math.min(1, (clock - last) / 260) + 0.08;
+      last = clock;
+      for (const k2 of new Set([...Object.keys(prev), ...Object.keys(now)])) {
+        seen.add(k2);
+        if (Math.abs((now[k2] ?? 0) - (prev[k2] ?? 0)) > allowed) jumps++;
+      }
+      prev = now;
+    }
+    return { jumps, seen: seen.size };
+  });
+  check("the labels beside the route pins fade rather than pop",
+    pins.seen >= 1 && pins.jumps === 0, `${pins.jumps} steps over ${pins.seen} pins`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ===================== 37. A CONNECTOR IS NOT A PISTE ==
 // Kronplatz's Ried is six kilometres of piste that OSM leaves 250 m short of
 // the gondola that serves it, so the whole run was being pruned as somewhere

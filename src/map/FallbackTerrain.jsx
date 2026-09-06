@@ -256,6 +256,15 @@ const RUN_NAME_OCCLUSION_MS = 1100;
  * before it gives up its spot, where a newcomer would tolerate none.
  */
 const INCUMBENT_SLACK = 7;
+/**
+ * How far outside the frame a label is still worth keeping, in pixels.
+ *
+ * Wide enough that a label has room to fade out completely after it has left
+ * the screen, so nothing is ever removed at full strength and nothing arrives
+ * at it. Everything drawn in this band is off canvas and costs a measure and a
+ * discarded fill.
+ */
+const EDGE_BAND = 220;
 
 /**
  * How far the map may slide before the terrain has to be drawn again rather
@@ -2384,16 +2393,54 @@ export default function FallbackTerrain({
       const candidates = list
         .filter(([, n]) => n.named !== false)
         .sort((a, b) => rank(a[1]) - rank(b[1]))
-        .filter(([, n]) => {
-          if (spoken.has(n.name)) return false;
-          spoken.add(n.name);
-          return true;
-        })
+        /*
+         * A name another tier is writing is faded out here, not dropped here.
+         *
+         * Which tier owns a name is not fixed: Belvedere at Monterosa is a
+         * rifugio and a junction, so the hut layer claims it while it has room
+         * for its marker and hands it back the moment it loses one. Filtering
+         * the loser out of the list meant its fade was never asked for, so it
+         * froze at full and the word jumped between the two positions — a full
+         * alpha step, the largest pop left on the map.
+         *
+         * Kept in the list with `taken` set instead, so it fades out where it
+         * was while the other tier fades it in where it is going.
+         */
         .map(([, n]) => {
-          const { x, z } = field.proj.project(n.lat, n.lon);
-          return { n, s: project(x, field.sample(x, z), z, v, cam) };
+          const taken = spoken.has(n.name);
+          if (!taken) spoken.add(n.name);
+          return [n, taken];
         })
-        .filter(({ s }) => s.x > -60 && s.x < width + 60 && s.y > -20 && s.y < height + 20)
+        .map(([n, taken]) => {
+          const { x, z } = field.proj.project(n.lat, n.lon);
+          return { n, taken, s: project(x, field.sample(x, z), z, v, cam) };
+        })
+        /*
+         * The screen edge is a fade too, with a band to fade in.
+         *
+         * Culling at sixty pixels made a label leaving the frame vanish at full
+         * strength — invisible in itself, since it is off the screen, except
+         * that it comes back the same way and the last one out is the first one
+         * in. Turning the mountain sweeps names across both edges constantly,
+         * and it was the largest remaining pop on the map after the fades went
+         * in everywhere else.
+         *
+         * So the cull moves well outside the frame and leaving the frame merely
+         * stops the label being wanted. It fades out over the band, off canvas,
+         * where nothing is drawn that anyone can see.
+         */
+        .filter(({ n, s }) => {
+          const near = s.x > -EDGE_BAND && s.x < width + EDGE_BAND
+            && s.y > -EDGE_BAND && s.y < height + EDGE_BAND;
+          // Far enough out to be genuinely gone: no position to fade at, so the
+          // fade is reset and it arrives from nothing next time.
+          if (!near) fades.set(`l:${n.name}`, 0);
+          return near;
+        })
+        .map((c) => ({
+          ...c,
+          onScreen: c.s.x > -30 && c.s.x < width + 30 && c.s.y > -20 && c.s.y < height + 20,
+        }))
         /*
          * Same rule as the pistes, with one exception.
          *
@@ -2409,14 +2456,44 @@ export default function FallbackTerrain({
          * say where Champoluc is. Physical honesty is worth a lot here and it
          * is not worth that.
          */
-        .filter(({ n, s }) => n.base || visible(s))
+        /*
+         * Kept when it is behind the mountain, and faded out there instead.
+         *
+         * Dropping it from the list took the label off between two frames, and
+         * a junction grazes a silhouette constantly as the view turns: "Punta
+         * Jolanda doesn't have the disappearing timed out". So the test becomes
+         * a flag the fade reads, with the same patience a place marker gets —
+         * a name is only really behind the mountain once it has been behind it
+         * for a while.
+         */
+        .map((c) => ({
+          ...c,
+          behind: c.n.base
+            ? false
+            : steady(`lo:${c.n.name}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS),
+        }))
         .sort((a, b) => rank(a.n) - rank(b.n) || a.n.name.localeCompare(b.n.name));
+      // The sort above reads `.n`, so it has to come after the projection; the
+      // rank filter above it reads the entry pair. Both orders matter and both
+      // have been got wrong here before.
 
+      /*
+       * No encroachment allowance here, unlike the run names.
+       *
+       * A run name has one place to go — the middle of its piste — so it needed
+       * hysteresis to stop two of them trading that one patch. A place name has
+       * four: under the dot, over it, and out to either side. That is the
+       * stronger anti-churn mechanism and it costs nothing, where the slack
+       * costs a few pixels of overlap — and these names are the ones the map
+       * must never let touch, because two of them are often the same place
+       * under two spellings sitting on top of each other.
+       */
       const hits = (box) =>
         placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
 
       const drawn = [];
-      for (const { n, s } of candidates) {
+      const lit = mapTest ? [] : null;
+      for (const { n, s, behind, taken, onScreen } of candidates) {
         const w = ctx.measureText(n.name).width;
         // Four places to put it, in order of preference. Dropping a name on the
         // first collision cost Champoluc every time, because the zoom buttons
@@ -2443,8 +2520,27 @@ export default function FallbackTerrain({
           y = spot.y;
           break;
         }
-        if (!box) continue;
-        placed.push(box);
+        /*
+         * Boxed in on all four sides, or behind the mountain: fade out where it
+         * was rather than stop being drawn.
+         *
+         * The preferred spot is the position to leave from. It may be under
+         * something for the quarter second it takes to go, which is a far
+         * smaller cost than the label blinking — and it is on its way out, so
+         * it is the fainter of the two the whole time.
+         */
+        const room = Boolean(box);
+        if (!box) {
+          const cx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, spots[0].x));
+          box = { l: cx - w / 2 - 3, r: cx + w / 2 + 3, t: spots[0].y - 12, b: spots[0].y + 4 };
+          tx = cx;
+          y = spots[0].y;
+        }
+        const keep = room && !behind && !taken && onScreen;
+        const solid = fadeOf(`l:${n.name}`, keep, frameDt);
+        if (solid <= 0.02) continue;
+        if (keep) placed.push(box);
+        ctx.globalAlpha = solid;
 
         ctx.beginPath();
         ctx.arc(s.x, s.y, 3.4, 0, Math.PI * 2);
@@ -2460,7 +2556,9 @@ export default function FallbackTerrain({
         ctx.strokeText(n.name, tx, y);
         ctx.fillStyle = n.base ? "#0b1a24" : "rgba(11,26,36,0.7)";
         ctx.fillText(n.name, tx, y);
-        drawn.push({ name: n.name, ...box });
+        ctx.globalAlpha = 1;
+        lit?.push({ name: n.name, alpha: Math.round(solid * 100) / 100 });
+        if (keep) drawn.push({ name: n.name, ...box });
       }
       // Canvas text leaves no DOM to assert against, so the placement is
       // published for the feature suite. Same gate as the camera hooks.
@@ -2468,6 +2566,7 @@ export default function FallbackTerrain({
         // Two passes now, so this accumulates rather than replaces: the bases
         // are drawn before the hut markers and everything else after them.
         window.__skisLabels = only === "rest" ? [...(window.__skisLabels ?? []), ...drawn] : drawn;
+        window.__skisLabelLit = only === "rest" ? [...(window.__skisLabelLit ?? []), ...lit] : lit;
       }
       return placed;
     };
@@ -2597,6 +2696,7 @@ export default function FallbackTerrain({
     const lastOn = new Map();
     /** When each run name was last written, so an incumbent keeps its spot. */
     const namedAt = new Map();
+
     /** When each place was last drawn, and how long it has been hidden. */
     const shownAt = new Map();
     const hiddenSince = new Map();
@@ -2648,9 +2748,19 @@ export default function FallbackTerrain({
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false, spoken = null } = {}) => {
       const all = propsRef.current.places ?? [];
       if (!all.length) return placed;
-      // Named at the same zoom the runs are, and marked from further out.
-      if (labelsOnly && v.zoom < NAME_ZOOM) return placed;
+      /*
+       * Named at the same zoom the runs are, and marked from further out.
+       *
+       * A fade, not a cliff — the same fix the run names needed. Returning
+       * early below the threshold switched every hut name off between two
+       * frames and froze its fade at full, so the next crossing popped too.
+       * Below the threshold the pass keeps running while anything is still on
+       * screen, and stops once the last one has gone.
+       */
+      const namesOn = v.zoom >= NAME_ZOOM;
+      if (labelsOnly && !namesOn && !anyFading("n:")) return placed;
       const named = [];
+      const nameLit = mapTest ? [] : null;
       /*
        * How many places are worth showing, and which ones, by how close you
        * are.
@@ -2793,7 +2903,7 @@ export default function FallbackTerrain({
           const label = { l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 10, b: ty + 3 };
           // A name goes when its marker goes, at the same speed, rather than
           // being cut the moment the marker loses its slot.
-          const fits = hutsDrawn.has(full) && !hits(label);
+          const fits = namesOn && hutsDrawn.has(full) && !hits(label);
           const solid = fadeOf(`n:${full}`, fits, frameDt);
           if (fits) placed.push(label);
           if (solid <= 0.02) continue;
@@ -2805,6 +2915,7 @@ export default function FallbackTerrain({
           ctx.fillStyle = "rgba(11,26,36,0.78)";
           ctx.fillText(name, tx, ty);
           ctx.globalAlpha = 1;
+          nameLit?.push({ name, alpha: Math.round(solid * 100) / 100 });
           if (fits) named.push(name);
           continue;
         }
@@ -2869,7 +2980,10 @@ export default function FallbackTerrain({
         window.__skisPlaceWhy = why;
         window.__skisPlaceLit = lit;
       }
-      if (mapTest && labelsOnly) window.__skisPlaceNames = named;
+      if (mapTest && labelsOnly) {
+        window.__skisPlaceNames = named;
+        window.__skisPlaceNameLit = nameLit;
+      }
       if (!labelsOnly) lastShownCount = drawn.length;
       if (mapTest && !labelsOnly) {
         window.__skisPlaces = drawn;
