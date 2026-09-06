@@ -26,6 +26,25 @@ import { runMinutes, liftMinutes as cableMinutes, BOARDING_MINUTES } from "../..
 /** How close a mountain restaurant has to be to count as lunch at that node. */
 const RIFUGIO_METRES = 120;
 
+/**
+ * One name out of an OSM name tag.
+ *
+ * OSM allows a semicolon-separated list where one element stands for several
+ * things, and a lift station that serves two lines carries both: Latemar's
+ * Obereggen station is tagged `Obereggen;Passo di Pampeago - Reiterjoch`. That
+ * went through verbatim, so the runs named after where they go came out as
+ * "Obereggen;Passo di Pampeago - Reiterjoch to Obereggen" and navigation read
+ * it out to a skier on a chairlift.
+ *
+ * The first value is the one to keep: OSM's convention is most-common-first,
+ * and it is the name on the sign at the station.
+ */
+export const label = (name) => {
+  if (typeof name !== "string") return name;
+  const first = name.split(";")[0].trim();
+  return first || name.trim();
+};
+
 /** Metres between two lat/lon points. */
 export function metres(aLat, aLon, bLat, bLon) {
   const R = 6371000;
@@ -187,7 +206,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     .filter((el) => el.tags && (
       el.tags.tourism === "alpine_hut" || el.tags.tourism === "wilderness_hut" ||
       el.tags.amenity === "restaurant" || el.tags.amenity === "cafe"))
-    .map((el) => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags.name }))
+    .map((el) => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: label(el.tags.name) }))
     .filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lon));
 
   /**
@@ -209,7 +228,7 @@ export function build(osm, { tolerance = 45, elevation }) {
   const places = elements
     .filter((el) => el.tags?.name && KIND(el.tags))
     .map((el) => ({
-      name: el.tags.name,
+      name: label(el.tags.name),
       kind: KIND(el.tags),
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
@@ -360,7 +379,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     }
 
     counter++;
-    const base = best ? slug(best.tags.name) : `p${counter}`;
+    const base = best ? slug(label(best.tags.name)) : `p${counter}`;
     let key = base;
     let n = 2;
     while (NODES[key]) key = `${base}${n++}`;
@@ -371,7 +390,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     const rifugio = huts.some((h) => metres(lat, lon, h.lat, h.lon) <= RIFUGIO_METRES);
 
     NODES[key] = {
-      name: best?.tags.name || `Point ${counter}`,
+      name: label(best?.tags.name) || `Point ${counter}`,
       lat: Math.round(lat * 1e5) / 1e5,
       lon: Math.round(lon * 1e5) / 1e5,
       alt,
@@ -398,7 +417,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     const length = wayLength(el.geometry);
     LIFTS.push({
       from, to,
-      name: el.tags.name || el.tags["aerialway:name"] || NODES[to].name,
+      name: label(el.tags.name || el.tags["aerialway:name"]) || NODES[to].name,
       kind: LIFT_KIND[el.tags.aerialway],
       minutes: liftMinutes(el, length),
       metres: Math.round(length),
@@ -419,12 +438,12 @@ export function build(osm, { tolerance = 45, elevation }) {
     // `piste:name` instead, and some are signed only by number. Reading just
     // `name` threw away nineteen real names — Seewiese, Arndt, Plateau, Sonne
     // — and replaced them with a pair of junction names.
-    const signed =
+    const signed = label(
       el.tags.name ||
       el.tags["piste:name"] ||
       (el.tags["piste:ref"] || el.tags["piste:number"]
         ? `Piste ${el.tags["piste:ref"] || el.tags["piste:number"]}`
-        : null);
+        : null));
     if (!signed) report.unnamedRuns++;
 
     // Split the way wherever it passes through a graph node, so a run that

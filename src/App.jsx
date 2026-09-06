@@ -134,6 +134,17 @@ const PLAN_BUTTON_H = 52;
  */
 const SCALE_CLEARANCE = 32;
 
+/**
+ * How tall the map control stack is: five 48pt buttons and four 4px gaps.
+ *
+ * Keep in step with .maptools and --tap. It is here because the stack has to
+ * fit in the map that is actually showing — a strip too short for it does not
+ * clip the bottom button, it slides the top one off the top of the screen.
+ */
+const MAPTOOLS_H = 5 * 48 + 4 * 4;
+/** And still clear the resort bar floating at the top of the map. */
+const MAPTOOLS_HEADROOM = 96;
+
 
 
 /**
@@ -636,7 +647,20 @@ export default function App() {
   // detail up to read the numbers started the descent with no compass, no
   // recentre and no zoom — for the whole run. What does hide them on this
   // screen is the route list, which covers the map they control.
-  const chromeHidden = navigating ? navExpanded : sheetHeight > viewportH * 0.74;
+  /*
+   * Hidden when there is no room for it, measured rather than guessed.
+   *
+   * This was a fraction of the viewport — hide the chrome once the sheet is
+   * past 74% of it. That is the right idea with the wrong yardstick: what the
+   * controls need is the strip of map left above the sheet, and five 48pt
+   * buttons need 208 pixels of it. The summary sheet leaves 185 and came in at
+   * 72%, so the stack stayed and ran off the top of the screen, over a slice
+   * of map with its own labels cut in half by the sheet edge.
+   */
+  const mapStrip = viewportH - chromeBottom;
+  const chromeHidden = navigating
+    ? navExpanded
+    : mapStrip < MAPTOOLS_H + MAPTOOLS_HEADROOM;
 
   // ---- actions ------------------------------------------------------------
 

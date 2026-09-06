@@ -735,6 +735,11 @@ export default function FallbackTerrain({
       const s2 = projectRef.current(x, f.sample(x, z), z, view.current, lastCam.current);
       return { x: s2.x, y: s2.y };
     };
+    // Every point the route passes through, so a check can ask whether the
+    // camera framed all of it or only most of it. The route is a prop, read at
+    // call time rather than captured.
+    window.__skisRoutePts = () =>
+      (propsRef.current.route?.features ?? []).flatMap((f) => f.geometry.coordinates);
     // The solved camera: focal length and centring. The blur that dissolves
     // the facets is a function of how big a mesh cell is on screen, which is a
     // function of f, so a test that wants to check the softening scales has to
@@ -1873,7 +1878,7 @@ export default function FallbackTerrain({
       return boxes;
     };
 
-    const drawPlaces = (v, cam, placed, { only = null } = {}) => {
+    const drawPlaces = (v, cam, placed, { only = null, spoken = new Set() } = {}) => {
       const list = Object.entries(propsRef.current.nodes ?? {})
         .filter(([, n]) => (only === "bases" ? n.base : only === "rest" ? !n.base : true));
       if (!list.length) return placed;
@@ -1893,9 +1898,6 @@ export default function FallbackTerrain({
       // sat forty pixels above it. The canvas fills the viewport, so client
       // rects are already in the coordinates used here.
 
-      const pinned = new Set(
-        (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
-      );
       /**
        * Two kinds of label real data produced that should never be drawn.
        *
@@ -1908,15 +1910,22 @@ export default function FallbackTerrain({
        * of the piste beside it, a junction ten metres on — so "Passo dei
        * Salati" and "Gabiet" each came out twice, side by side, which reads as
        * a bug rather than as detail. The best-ranked one keeps the name.
+       *
+       * `spoken` is the frame's, not this call's. It used to be local, and
+       * this runs twice a frame — once for the valley bases and once for
+       * everything else — so a name that was a base at one end and a junction
+       * at the other got through both times. Latemar drew "Gardonè" twice
+       * twenty pixels apart and "Monte Agnello" twice, Kronplatz drew "Miara"
+       * twice. It arrives seeded with the pin names and the huts add theirs to
+       * it as they are drawn, so one name is written on the mountain once
+       * whichever layer says it.
        */
       // Labels come from the graph's own `named` flag rather than from
       // guessing at the text: an unnamed junction now carries a readable
       // description ("Above Gabiet", "Olen junction") so the plan form can
       // offer it, and none of those belong on the mountain as a label.
-      const spoken = new Set();
-
       const candidates = list
-        .filter(([, n]) => !pinned.has(n.name) && n.named !== false)
+        .filter(([, n]) => n.named !== false)
         .sort((a, b) => rank(a[1]) - rank(b[1]))
         .filter(([, n]) => {
           if (spoken.has(n.name)) return false;
@@ -2140,7 +2149,7 @@ export default function FallbackTerrain({
     };
     let fadingPlaces = false;
 
-    const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false } = {}) => {
+    const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false, spoken = null } = {}) => {
       const all = propsRef.current.places ?? [];
       if (!all.length) return placed;
       /*
@@ -2241,7 +2250,21 @@ export default function FallbackTerrain({
         // The box is reserved on the decision, not on the fade: a marker on its
         // way out still owns its room until it has gone, or the one replacing
         // it arrives on top of it.
-        const wanted = !hits(box);
+        /*
+         * Whole, or not at all.
+         *
+         * The cull above is on the marker's centre with twenty pixels of
+         * slack, so a place near the edge drew a disc sliced by the canvas —
+         * "Soleil" at Monterosa came out as a crescent nine pixels wide. A
+         * marker cut by the frame reads as a rendering fault rather than as
+         * somewhere to eat, and it is the same complaint as a marker popping:
+         * things on the mountain should arrive whole.
+         *
+         * Folded into `wanted` rather than skipped, so leaving the frame fades
+         * the way going behind a ridge does.
+         */
+        const inside = box.l >= 0 && box.t >= 0 && box.r <= width && box.b <= height;
+        const wanted = inside && !hits(box);
         const solid = fadeOf(`m:${full}`, wanted, frameDt);
         if (wanted) placed.push(box);
         if (solid > 0.02) {
@@ -2253,6 +2276,8 @@ export default function FallbackTerrain({
 
         drawn.push({ name, full, kind, alt, ...box });
         hutsDrawn.add(full);
+        // So a junction of the same name does not write it a second time.
+        spoken?.add(name);
         if (drawn.length >= budget) break;
       }
       if (!labelsOnly) heldPlaces = new Set(drawn.map((d) => d.full));
@@ -2276,16 +2301,56 @@ export default function FallbackTerrain({
      * and the camera is a worse map than one that admits the pin is behind
      * something.
      */
-    const drawPins = (v, cam) => {
+    /*
+     * Where the pins' names will go, before anything else is laid out.
+     *
+     * The pins are the route's ends and the skier's own position, so their
+     * names are the ones on the map that cannot be dropped — and they were the
+     * only labels not taking part in the collision test. Drawn last, on top of
+     * everything, they landed across whatever a junction or a restaurant had
+     * already claimed: on Kronplatz mid-route, "Belvedere" sat over "Sonne"
+     * and over "Olang I - Valdaora I" at once.
+     *
+     * Measured first and drawn last, so the boxes are reserved before any
+     * other name is placed while the dots still paint over the route rather
+     * than under it. Below the dot if that is free, above it if not, and the
+     * name is dropped rather than stacked if neither is.
+     */
+    const planPins = (v, cam, placed) => {
       const p = propsRef.current.pins;
-      if (!p?.features?.length) return;
-      const drawn = [];
+      if (!p?.features?.length) return [];
+      ctx.font = "600 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+      const hits = (box) =>
+        placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
+      const out = [];
       for (const feature of p.features) {
         const [lon, lat] = feature.geometry.coordinates;
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
         const role = feature.properties.role;
         const r = role === "now" ? 8 : 6;
+        const name = feature.properties.name;
+        const w = ctx.measureText(name).width;
+        // The dot stays where the place is; only the words move inside the
+        // frame. At Kronplatz the route starts on a node near the left edge
+        // called "Olang I - Valdaora I", and the map said "I - Valdaora I".
+        const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
+        let box = null;
+        for (const ty of [s.y + r + 15, s.y - r - 8]) {
+          const candidate = { name, l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 12, b: ty + 4 };
+          if (hits(candidate)) continue;
+          box = { ...candidate, tx, ty };
+          break;
+        }
+        if (box) placed.push(box);
+        out.push({ feature, s, role, r, box });
+      }
+      return out;
+    };
+
+    const drawPins = (v, cam, plan) => {
+      const drawn = [];
+      for (const { feature, s, role, r, box } of plan) {
 
         ctx.beginPath();
         ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
@@ -2329,24 +2394,16 @@ export default function FallbackTerrain({
           ctx.fill();
         }
 
+        if (!box) continue;
         ctx.font = "600 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.lineWidth = 3.5;
         ctx.lineJoin = "round";
-        // Pulled inside the frame, the same as a place name. A pin sits where
-        // the route starts and finishes, which at Kronplatz is a node near the
-        // left edge called "Olang I - Valdaora I": the label ran off and the
-        // map said "I - Valdaora I". The dot stays where the place is; only
-        // the words move.
-        const name = feature.properties.name;
-        const w = ctx.measureText(name).width;
-        const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
-        const ty = s.y + r + 15;
         ctx.strokeStyle = "rgba(255,255,255,0.92)";
-        ctx.strokeText(name, tx, ty);
+        ctx.strokeText(box.name, box.tx, box.ty);
         ctx.fillStyle = "#0b1a24";
-        ctx.fillText(name, tx, ty);
-        drawn.push({ name, l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 12, b: ty + 4 });
+        ctx.fillText(box.name, box.tx, box.ty);
+        drawn.push(box);
       }
       // Same gate as the place names: canvas text leaves nothing to assert
       // against, so where it landed is published for the feature suite.
@@ -2644,14 +2701,23 @@ export default function FallbackTerrain({
          * huts are named before the junctions now, and it is the junctions
          * that come back as you zoom in.
          */
-        const boxes = drawPlaces(v, cam, chromeBoxes(), { only: "bases" });
-        drawHuts(v, cam, boxes, { markersOnly: true });
+        const boxes = chromeBoxes();
+        // Ahead of every other name, because these three are the route's own
+        // ends and where the skier is standing. Only the boxes are claimed
+        // here; the dots are painted at the end so nothing draws over them.
+        const pins = planPins(v, cam, boxes);
+        // One name, said once, whichever layer says it.
+        const spoken = new Set(
+          (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
+        );
+        drawPlaces(v, cam, boxes, { only: "bases", spoken });
+        drawHuts(v, cam, boxes, { markersOnly: true, spoken });
         drawHuts(v, cam, boxes, { labelsOnly: true });
-        drawPlaces(v, cam, boxes, { only: "rest" });
+        drawPlaces(v, cam, boxes, { only: "rest", spoken });
         // Last, because a place is a better thing to know than a piste name,
         // and there are far more piste names than there is room for.
         drawRunNames(v, cam, boxes);
-        drawPins(v, cam);
+        drawPins(v, cam, pins);
         // The view moved, so whatever detail was asked for is now for
         // somewhere else. Restart the clock rather than reporting mid-gesture:
         // a drag would otherwise fire a request a frame, for boxes nobody is

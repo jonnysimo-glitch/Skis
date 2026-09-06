@@ -882,6 +882,54 @@ if (feature("10. Map chrome only where there is a map")) {
   check("the plan form covers the map, so they go away again", (await chrome()) === 0, `${await chrome()}`);
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
+
+  /*
+   * And gone again where the map is a strip rather than a map.
+   *
+   * The summary is a sheet with about 185 pixels of mountain showing above it.
+   * Five 48pt buttons need 208, so the stack did not clip at the bottom, it
+   * ran off the TOP of the screen — a half-round button hanging into the
+   * status bar over a slice of terrain with its own labels cut in two by the
+   * sheet edge. The rule used to be a fraction of the viewport, which put the
+   * summary at 72% and just inside a 74% threshold; it is measured against the
+   * strip now.
+   */
+  const ended = await newPage(browser, { at: [9, 30] });
+  const tools = () => ended.$$eval(".maptools .iconbtn", (n) =>
+    n.filter((b) => getComputedStyle(b.closest(".maptools")).visibility !== "hidden").length);
+  await toPlan(ended, url);
+  await ended.fill("#p-t0", "14:30");
+  await ended.fill("#p-t1", "16:00");
+  await solve(ended);
+  if (await ended.$(".routecard")) {
+    await openRoute(ended, 0);
+    await ended.waitForTimeout(900);
+    check("the route detail keeps them, it is mostly map", (await tools()) >= 4, `${await tools()}`);
+    const go = await ended.$('button:has-text("Save and start")');
+    if (go) {
+      await go.click();
+      await ended.waitForSelector(".nav", { timeout: 15000 }).catch(() => {});
+      for (let i = 0; i < 90; i++) if (!(await reachNext(ended))) break;
+      const finish = await ended.$('button:has-text("Finish")');
+      if (finish) await finish.click();
+      await ended.waitForTimeout(1400);
+      check("the summary leaves too little map for them, so they go",
+        (await tools()) === 0, `${await tools()} still showing`);
+      // And nothing a person can see is hanging off the top of the screen.
+      // The hidden stack still has a layout box up there, which is why this
+      // asks about what is painted rather than about where the boxes are.
+      const above = await ended.evaluate(() =>
+        [...document.querySelectorAll(".maptools .iconbtn")]
+          .filter((b) => {
+            const s = getComputedStyle(b.closest(".maptools"));
+            return s.visibility !== "hidden" && +s.opacity > 0
+              && b.getBoundingClientRect().top < 0;
+          }).length);
+      check("and none of them is hanging off the top edge", above === 0, `${above}`);
+    }
+  }
+  check("no page errors on the way through", ended.errors.length === 0, ended.errors.join(" | "));
+  await ended.context_.close();
 }
 
 // ================================================= 11. USABLE WITHOUT SIGHT ==
@@ -2786,6 +2834,25 @@ if (feature("20. The mountain is labelled")) {
   await solve(routed);
   await routed.waitForTimeout(2000);
   const withRoute = (await routed.evaluate(() => window.__skisLabels)) ?? [];
+  /*
+   * Once across the whole map, not once per layer.
+   *
+   * The dedupe used to live inside the junction pass, which runs twice a frame
+   * — valley bases, then everything else — so a name that was a base at one
+   * end of a lift and a junction at the other got through both times. Latemar
+   * drew "Gardonè" twice twenty pixels apart and "Monte Agnello" twice,
+   * Kronplatz drew "Miara" twice. Counted across the junctions, the huts and
+   * the pins together, which is what a reader sees.
+   */
+  const everyName = await routed.evaluate(() => [
+    ...(window.__skisLabels ?? []).map((l) => l.name),
+    ...(window.__skisPlaces ?? []).map((l) => l.name),
+    ...(window.__skisPinLabels ?? []).map((l) => l.name),
+  ]);
+  const repeated = everyName.filter((n, i) => everyName.indexOf(n) !== i);
+  check("no name is written on the mountain twice, in any layer",
+    repeated.length === 0,
+    repeated.length ? [...new Set(repeated)].join(", ") : `${everyName.length} names, all different`);
   check("a place that is already a pin is not named twice",
     new Set(withRoute.map((l) => l.name)).size === withRoute.length,
     withRoute.map((l) => l.name).join(", "));
@@ -2803,6 +2870,53 @@ if (feature("20. The mountain is labelled")) {
     offscreen.length === 0 && pinned.length > 0,
     offscreen.length ? offscreen.map((l) => `${l.name} ${Math.round(l.l)}..${Math.round(l.r)}`).join("; ")
       : `${withRoute.length} places, ${pinned.length} pins, frame ${vw}px`);
+  /*
+   * And no name lands on another, across all three kinds at once.
+   *
+   * The overlap check above is within one kind. Every kind shares one list of
+   * claimed boxes except the pins, which were drawn last, on top, consulting
+   * nothing: on Kronplatz twelve legs in, "Belvedere" sat across "Sonne" and
+   * across "Olang I - Valdaora I" at the same time, and "Obereggen" sat across
+   * "Below Ochsenweide" at Latemar. Checked mid-route rather than at the
+   * start, because that is where the position pin joins the other two and the
+   * mountain is at its most crowded.
+   */
+  const boxesOf = (page) => page.evaluate(() => {
+    const out = [];
+    for (const [tier, list] of [["node", window.__skisLabels], ["place", window.__skisPlaces],
+      ["pin", window.__skisPinLabels]]) {
+      for (const b of list ?? []) {
+        if (typeof b?.l !== "number") continue;
+        out.push({ tier, name: b.name ?? b.full ?? "?", l: b.l, r: b.r, t: b.t, b: b.b });
+      }
+    }
+    return out;
+  });
+  await openRoute(routed, 0);
+  await routed.waitForTimeout(1200);
+  const go = await routed.$('button:has-text("Save and start")');
+  if (go) {
+    await go.click();
+    await routed.waitForSelector(".nav", { timeout: 15000 }).catch(() => {});
+    await routed.waitForTimeout(1400);
+    for (let i = 0; i < 12; i++) await reachNext(routed);
+    await routed.waitForTimeout(1200);
+  }
+  const crowded = await boxesOf(routed);
+  const collisions = [];
+  for (let i = 0; i < crowded.length; i++) {
+    for (let j = i + 1; j < crowded.length; j++) {
+      const a = crowded[i];
+      const b = crowded[j];
+      if (a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t) {
+        collisions.push(`${a.tier}:${a.name} over ${b.tier}:${b.name}`);
+      }
+    }
+  }
+  check("mid-route, no name is written over another",
+    crowded.length > 4 && collisions.length === 0,
+    collisions.length ? collisions.slice(0, 3).join("; ") : `${crowded.length} names, all clear`);
+
   check("no page errors on the routed map", routed.errors.length === 0, routed.errors.join(" | "));
   await routed.context_.close();
 }
