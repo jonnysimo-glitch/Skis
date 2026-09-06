@@ -101,6 +101,10 @@
   --piste-red: #c22b37;
   --piste-black: #101820;
   --lift: #7d95a5;
+  /* A connector, which carries no grade. Kept off the piste hues on purpose:
+     a link drawn in piste blue is a grade claim about ground that is not a
+     piste. Must match LINK_COLOUR in src/lib/geo.js. */
+  --link: #96825a;
 
   --warn: #f0b45e;
   --warn-bg: #2c2113;

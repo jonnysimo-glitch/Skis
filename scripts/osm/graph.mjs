@@ -21,7 +21,7 @@
  * data is not good enough, and you want to know that rather than ship it.
  */
 
-import { runMinutes, liftMinutes as cableMinutes, BOARDING_MINUTES } from "../../src/lib/pace.js";
+import { runMinutes, linkMinutes, liftMinutes as cableMinutes, BOARDING_MINUTES } from "../../src/lib/pace.js";
 
 /** How close a mountain restaurant has to be to count as lunch at that node. */
 const RIFUGIO_METRES = 120;
@@ -44,6 +44,13 @@ export const label = (name) => {
   const first = name.split(";")[0].trim();
   return first || name.trim();
 };
+
+/**
+ * A name that is not a name: what a cluster is called before anything better
+ * is known about it. Nothing may be named after one of these, or the
+ * placeholder propagates from a node onto an edge and back onto a node.
+ */
+export const PLACEHOLDER = /^Point \d+$/;
 
 /** Metres between two lat/lon points. */
 export function metres(aLat, aLon, bLat, bLon) {
@@ -153,7 +160,41 @@ class Clusters {
 }
 
 const isLift = (el) => el.type === "way" && el.tags?.aerialway && LIFT_KIND[el.tags.aerialway];
-const isPiste = (el) => el.type === "way" && el.tags?.["piste:type"] === "downhill";
+
+/**
+ * A piste mapped as a polygon rather than a line.
+ *
+ * OSM lets a wide open slope be drawn as an area, and mappers use it for
+ * bowls, nursery fields and the fat lower half of a piste. It is a shape, not
+ * a route, and its perimeter is not a way down: it runs up one side and down
+ * the other and is twice as long as the slope it encloses.
+ *
+ * Treated as a line it was doing real damage. Latemar shipped ninety edges and
+ * thirty-seven kilometres of polygon outline as piste — half the resort's
+ * stated distance — and Kronplatz's Ried came out as two parallel four
+ * kilometre "runs" that were the two sides of one snow field.
+ *
+ * Nothing is lost by skipping them. Every area at all four resorts is either
+ * unnamed with a mapped centreline running through it, or carries the name of
+ * a line that is already in the graph.
+ */
+const isArea = (el) => el.tags?.area === "yes";
+
+const isPiste = (el) =>
+  el.type === "way" && el.tags?.["piste:type"] === "downhill" && !isArea(el);
+
+/**
+ * A way OSM has already marked as a connector.
+ *
+ * `piste:type=connection` is how a mapper says "this is the flat bit between
+ * two pistes" — the skiweg round the back of a lift station, the traverse from
+ * one valley into the next. It is not a run and must not be graded or counted
+ * as one, but it is very often the only mapped thing joining two halves of a
+ * resort, so leaving it out means inventing a link later that OSM had drawn
+ * all along.
+ */
+const isConnection = (el) =>
+  el.type === "way" && el.tags?.["piste:type"] === "connection" && !isArea(el);
 
 /**
  * Ride time in minutes.
@@ -197,6 +238,12 @@ export function build(osm, { tolerance = 45, elevation }) {
   const elements = osm.elements || [];
   const lifts = elements.filter(isLift);
   const pistes = elements.filter(isPiste);
+  const connections = elements.filter(isConnection);
+  // Connectors go through every step a piste does — cleaning, clustering,
+  // junction splitting, edge building — and differ only in how they are
+  // graded, timed and named at the end. Keeping two lists here and one
+  // everywhere below is what stops the two drifting apart.
+  const ways = [...pistes, ...connections];
   const named = elements.filter(
     (el) => el.type === "node" && el.tags?.name && (el.tags.aerialway === "station" || el.tags.natural === "peak" || el.tags.mountain_pass === "yes")
   );
@@ -247,6 +294,9 @@ export function build(osm, { tolerance = 45, elevation }) {
   const report = {
     lifts: lifts.length,
     pistes: pistes.length,
+    connections: connections.length,
+    pisteAreasSkipped: elements.filter((el) =>
+      el.type === "way" && el.tags?.["piste:type"] && isArea(el)).length,
     namedPlaces: named.length,
     huts: huts.length,
     places: places.length,
@@ -269,7 +319,7 @@ export function build(osm, { tolerance = 45, elevation }) {
   // plausible and is not connected — the worst kind of wrong — so it is worth
   // refusing rather than reporting. `out geom tags` omits refs; `out geom`
   // includes them. See scripts/osm/overpass.mjs.
-  if (!pistes.some((el) => Array.isArray(el.nodes) && el.nodes.length)) {
+  if (!ways.some((el) => Array.isArray(el.nodes) && el.nodes.length)) {
     throw new Error(
       "No way carries node references, so no junction can be found and every\n" +
       "  piste would become a single unsplittable edge. The export was made with\n" +
@@ -284,7 +334,7 @@ export function build(osm, { tolerance = 45, elevation }) {
   // so the two stay index-aligned, because the junction logic indexes one by
   // the other. A run that loses an interior vertex is measured straight across
   // the gap, so it reads slightly short — recorded rather than hidden.
-  for (const el of [...lifts, ...pistes]) {
+  for (const el of [...lifts, ...ways]) {
     if (!Array.isArray(el.geometry)) continue;
     const holes = el.geometry.reduce((n, p) => n + (p ? 0 : 1), 0);
     if (!holes) continue;
@@ -304,7 +354,7 @@ export function build(osm, { tolerance = 45, elevation }) {
 
   const ends = (el) => [el.geometry?.[0], el.geometry?.[el.geometry.length - 1]];
 
-  for (const el of [...lifts, ...pistes]) {
+  for (const el of [...lifts, ...ways]) {
     if (!el.geometry || el.geometry.length < 2) { report.droppedNoGeometry++; continue; }
     const [a, b] = ends(el);
     // Spreading a null here would make a cluster with no coordinates, which
@@ -329,13 +379,13 @@ export function build(osm, { tolerance = 45, elevation }) {
   // chained whole valleys into one blob. The largest strongly connected
   // component came out as a single valley and everything else was pruned away.
   const uses = new Map();
-  for (const el of [...lifts, ...pistes]) {
+  for (const el of [...lifts, ...ways]) {
     if (!Array.isArray(el.nodes)) continue;
     for (const nodeId of el.nodes) uses.set(nodeId, (uses.get(nodeId) || 0) + 1);
   }
 
   const junctionRef = new Map();
-  for (const el of pistes) {
+  for (const el of ways) {
     if (!el.geometry || !el.nodes) continue;
     el.nodes.forEach((nodeId, i) => {
       if (i === 0 || i === el.nodes.length - 1) return;
@@ -417,7 +467,12 @@ export function build(osm, { tolerance = 45, elevation }) {
     const length = wayLength(el.geometry);
     LIFTS.push({
       from, to,
-      name: label(el.tags.name || el.tags["aerialway:name"]) || NODES[to].name,
+      // Left null when OSM does not name the lift. Falling back to the top
+      // node's name here read it before the junctions had theirs, so an
+      // unnamed lift above a placeholder became "Point 33" — and the naming
+      // pass below then read that back and called the node "Point 33
+      // junction". nameLifts() does it afterwards, off the final names.
+      name: label(el.tags.name || el.tags["aerialway:name"]) || null,
       kind: LIFT_KIND[el.tags.aerialway],
       minutes: liftMinutes(el, length),
       metres: Math.round(length),
@@ -428,11 +483,17 @@ export function build(osm, { tolerance = 45, elevation }) {
     });
   }
 
-  for (const el of pistes) {
+  for (const el of ways) {
     if (!el.geometry || el.geometry.length < 2) continue;
+    const isLink = el.tags["piste:type"] === "connection";
     const raw = el.tags["piste:difficulty"];
     let difficulty = DIFFICULTY[raw];
-    if (!difficulty) { difficulty = "red"; report.difficultyAssumed++; }
+    // A connector is the easiest thing on the mountain whatever a mapper
+    // graded it: you can walk it. Grading it red would hide the piste on the
+    // far side from everyone who asked for blues, which is the one group most
+    // likely to need the flat way round.
+    if (isLink) difficulty = "blue";
+    else if (!difficulty) { difficulty = "red"; report.difficultyAssumed++; }
     // The name a skier reads on the signpost, wherever OSM put it. `name` is
     // the obvious place, but a third of Kronplatz's pistes carry it as
     // `piste:name` instead, and some are signed only by number. Reading just
@@ -444,7 +505,7 @@ export function build(osm, { tolerance = 45, elevation }) {
       (el.tags["piste:ref"] || el.tags["piste:number"]
         ? `Piste ${el.tags["piste:ref"] || el.tags["piste:number"]}`
         : null));
-    if (!signed) report.unnamedRuns++;
+    if (!signed && !isLink) report.unnamedRuns++;
 
     // Split the way wherever it passes through a graph node, so a run that
     // three others join is three edges rather than one uninterruptible slide.
@@ -474,15 +535,18 @@ export function build(osm, { tolerance = 45, elevation }) {
       const drop = NODES[from].alt - NODES[to].alt;
       RUNS.push({
         from, to,
+        ...(isLink ? { link: true } : {}),
         // Left null on purpose when nothing is signed. The endpoint fallback
         // is applied by nameRuns() after the junctions have their own names
         // and the chains have merged: built here it froze the placeholder, so
         // a run came out as "Point 61 to Arndt" between two nodes since
         // renamed "Above Plateau" and "Arndt".
+        // Null for an unsigned connector too, and for the same reason: the
+        // node it is named after may not have its own name yet.
         name: signed,
         difficulty,
         km: Math.round((length / 1000) * 10) / 10,
-        minutes: runMinutes(length, drop, difficulty),
+        minutes: isLink ? linkMinutes(length) : runMinutes(length, drop, difficulty),
         metres: Math.round(length),
         osmId: el.id,
       });
@@ -509,8 +573,10 @@ export function build(osm, { tolerance = 45, elevation }) {
     const touching = {};
     for (const edge of [...LIFTS, ...RUNS]) {
       // Only a signed name locates a junction. Nothing is generated yet, so
-      // this no longer has to guess which names were.
-      if (!edge.name) continue;
+      // this no longer has to guess which names were — except for the one
+      // that can still slip through: a placeholder that has already been
+      // copied onto an edge. Naming a node after it is circular.
+      if (!edge.name || PLACEHOLDER.test(edge.name)) continue;
       (touching[edge.from] ||= new Set()).add(edge.name);
       (touching[edge.to] ||= new Set()).add(edge.name);
     }

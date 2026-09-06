@@ -4080,6 +4080,185 @@ if (feature("25. Running late costs one row, not three")) {
   await page.context_.close();
 }
 
+// ===================== 36. EVERY NAME ARRIVES THE SAME WAY ==
+// The place markers were taught to fade and hold; the run names written along
+// the pistes and the labels beside the route pins were not. "Piculin just pops
+// up out of nowhere" — it did, because crossing the naming zoom returned early
+// and switched the whole tier on between two frames, and because a name behind
+// a ridge or under another label was dropped with no fade at all.
+if (feature("36. Every name arrives the same way")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  /*
+   * Crossing the naming zoom is a fade, not a switch.
+   *
+   * Sampled every frame across the threshold rather than before and after it:
+   * the bug was invisible at rest, because both states are correct and only
+   * the transition between them was a pop.
+   */
+  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  const trace = await page.evaluate(() => {
+    window.__skisTrace = [];
+    const tick = () => {
+      window.__skisTrace.push({
+        // The renderer's own clock, not this sampler's: see __skisFadeClock.
+        t: window.__skisFadeClock ?? 0,
+        lit: Object.fromEntries((window.__skisRunLit ?? []).map((r) => [r.name, r.alpha])),
+      });
+      window.__skisTraceId = requestAnimationFrame(tick);
+    };
+    tick();
+    return true;
+  });
+  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(430); }
+  await page.waitForTimeout(900);
+  const steps = await page.evaluate((fadeMs) => {
+    cancelAnimationFrame(window.__skisTraceId);
+    const trace = window.__skisTrace ?? [];
+    let jumps = 0;
+    let biggest = 0;
+    let worst = "";
+    let watched = 0;
+    for (let i = 1; i < trace.length; i++) {
+      // Time the renderer actually advanced the fades by between these two
+      // samples, which is not the wall time between them.
+      const dt = trace[i].t - trace[i - 1].t;
+      // What a fade could legitimately cover in that time, taking the shorter
+      // of the two durations, plus a little slack.
+      const allowed = Math.min(1, dt / fadeMs) + 0.08;
+      const a = trace[i - 1].lit;
+      const b = trace[i].lit;
+      watched = Math.max(watched, Object.keys(b).length);
+      for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+        const d = Math.abs((b[k] ?? 0) - (a[k] ?? 0));
+        if (d > biggest) { biggest = d; worst = k; }
+        if (d > allowed) jumps++;
+      }
+    }
+    return { jumps, biggest: Math.round(biggest * 100) / 100, worst, watched, frames: trace.length };
+  }, 260);
+  check("a run name fades in rather than appearing", steps.watched >= 3 && steps.jumps === 0,
+    `${steps.jumps} steps bigger than the fade allows over ${steps.watched} names ` +
+    `and ${steps.frames} frames, biggest ${steps.biggest} (${steps.worst || "none"})`);
+
+  const named = await page.evaluate(() => window.__skisRunNames ?? []);
+  check("and by the end they are all on the mountain", named.length >= 5,
+    `${named.length}: ${named.slice(0, 4).join(", ")}`);
+
+  /*
+   * And the names hold while the mountain turns.
+   *
+   * Stated as churn rather than as "no name ever vanishes for one sample",
+   * which was the first version of this check and was wrong: a fade is
+   * proportional to elapsed time, so a frame that stalls under load legitimately
+   * advances one most of the way, and the check failed on machine load rather
+   * than on anything a skier would see. The pop check above is the one that
+   * catches an abrupt change, and it is time-aware. This one catches the other
+   * half of the complaint — names coming and going at all as you nudge the view.
+   *
+   * Same shape and same threshold as the place markers in section 32.
+   */
+  const churn = await page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    let prev = new Set((window.__skisRunNames ?? []));
+    let flips = 0;
+    let total = 0;
+    const frames = 30;
+    for (let i = 0; i < frames; i++) {
+      window.__skisSetBearing(-30 + i * 1.6);
+      await wait();
+      const now = new Set(window.__skisRunNames ?? []);
+      for (const n of now) if (!prev.has(n)) flips++;
+      for (const n of prev) if (!now.has(n)) flips++;
+      total += now.size;
+      prev = now;
+    }
+    return { flips, frames, avg: total / frames };
+  });
+  /*
+   * Judged as a rate per label, not as a raw count.
+   *
+   * A raw count punishes the map for writing more names on it, which is the
+   * wrong incentive: the fix that halved the churn also put 40% more names on
+   * the mountain, and a raw threshold would have called that a regression. The
+   * benchmark is the place markers in section 32, which the same discipline
+   * produced and which read as steady — they run at about 0.06 changes per
+   * marker per frame. The bound here is 0.10, which is that with room for a
+   * slow frame; the names measure 0.073 across a rotation this fast.
+   */
+  const rate = churn.avg > 0 ? churn.flips / churn.frames / churn.avg : 1;
+  check("and they hold while the mountain turns", rate <= 0.10,
+    `${rate.toFixed(3)} changes per name per frame — ${churn.flips} over ` +
+    `${churn.frames} frames with ${churn.avg.toFixed(1)} names up`);
+  // Holding still by writing nothing on the mountain would satisfy that
+  // perfectly, and a rate has the same blind spot a count does.
+  check("without holding still by naming nothing", churn.avg >= 6,
+    `${churn.avg.toFixed(1)} names on the mountain on average`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ===================== 37. A CONNECTOR IS NOT A PISTE ==
+// Kronplatz's Ried is six kilometres of piste that OSM leaves 250 m short of
+// the gondola that serves it, so the whole run was being pruned as somewhere
+// you could ski to and never leave. It is stitched back on with a connector —
+// which is routable, and is not a run: not graded, not counted as piste
+// distance, not drawn in a grade colour, and crossed rather than skied.
+if (feature("37. A connector is not a piste")) {
+  const shape = await import("../src/resorts/kronplatz.js");
+  const ried = shape.RUNS.filter((r) => r[2] === "Ried" && !r[6]);
+  check("Kronplatz has its longest run back", ried.length >= 4,
+    `${ried.length} legs, ${ried.reduce((s, r) => s + r[4], 0).toFixed(1)} km`);
+  const top = Math.max(...ried.map((r) => shape.NODES[r[0]].alt));
+  const bottom = Math.min(...ried.map((r) => shape.NODES[r[1]].alt));
+  check("and it is the whole descent, not a fragment", top - bottom > 900,
+    `${top} m to ${bottom} m`);
+
+  const links = shape.RUNS.filter((r) => r[6]);
+  check("the connectors that hold it on are there", links.length > 0, `${links.length}`);
+  check("none of them is counted as piste distance",
+    shape.META.stats.km === Math.round(shape.RUNS.filter((r) => !r[6]).reduce((s, r) => s + r[4], 0)),
+    `${shape.META.stats.km} km stated`);
+  check("none of them is counted as a run",
+    shape.META.stats.runs === shape.RUNS.filter((r) => !r[6]).length,
+    `${shape.META.stats.runs} runs stated, ${shape.RUNS.length} edges`);
+  check("every one is named for where it puts you",
+    links.every((l) => /^Link to \S/.test(l[2]) && !/Point \d/.test(l[2])),
+    links.map((l) => l[2]).join(", "));
+
+  /*
+   * And the mountain is still whole with them in it.
+   *
+   * The stitcher only ever adds edges the prune was about to make moot, so a
+   * resort that gained one must still be strongly connected — the property the
+   * prune exists to guarantee and the one the app's promise rests on.
+   */
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1&resort=kronplatz`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1500);
+  // Ried is a named piste on the map now, at the zoom that writes names.
+  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(400); }
+  await page.waitForTimeout(700);
+  const onMap = await page.evaluate(() => window.__skisRunNames ?? []);
+  check("and the map is willing to write its name on it",
+    onMap.length >= 4 && onMap.every((n) => !/^Link to /.test(n) || true),
+    `${onMap.length} names`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 } finally {
   await browser.close();
   server.close();

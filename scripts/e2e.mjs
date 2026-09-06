@@ -884,12 +884,18 @@ try {
     };
 
     /*
-     * Monterosa has 21 blue edges and they do not link up, so no blue day
-     * exists there at any length. This used to assert that one was offered
-     * anyway, and one was: five hours that skied 1.2 km and descended 166
-     * metres, the same cable car up and down. The requirement is the
-     * opposite of what the check said — say so plainly, and offer something
-     * that works.
+     * Monterosa's blue terrain barely links up, so no blue day fills a real
+     * ski day there. This used to assert that one was offered anyway, and one
+     * was: five hours that skied 1.2 km and descended 166 metres, the same
+     * cable car up and down. The requirement is the opposite of what the check
+     * said — say so plainly, and offer something that works.
+     *
+     * Which of the two honest refusals fires depends on the graph, so the
+     * assertions below are about the contract rather than about one of them.
+     * Stitching the connectors on gave Monterosa's blues an 88 minute loop
+     * where they had none, so "they do not link up at any length" stopped
+     * being true and the app switched to naming the length instead — a better
+     * answer, and one this check used to call a failure.
      */
     await page.click('button.chip:text-is("Blue")');
     await solve(page);
@@ -897,11 +903,19 @@ try {
       `${await routeCount(page)} routes`);
 
     const noBlue = await page.$eval(".sheet__body", (b) => b.textContent);
+    // The grade has to be named as the constraint. "Nothing gets you back in
+    // time" is the last-lift refusal and would send a blue skier to change the
+    // wrong thing.
     check("the reason given is the grade, not the clock",
-      /no day on blue|no blue day/i.test(noBlue) && !/back in time/i.test(noBlue),
-      noBlue.replace(/\s+/g, " ").slice(0, 110));
-    check("and it says the blue runs do not link up",
-      /do not link up|don't link up/i.test(noBlue));
+      /blue|at your grade/i.test(noBlue) && !/back in time/i.test(noBlue),
+      noBlue.replace(/\s+/g, " ").slice(0, 140));
+    // And it has to say what the mountain does offer at that grade, either as
+    // "no loop exists" or as how long the longest one is. A refusal with no
+    // number and no reason is the thing this section exists to prevent.
+    check("and it says what the mountain does offer on blue",
+      /do not link up|don't link up/i.test(noBlue) ||
+      /longest day this resort supports/i.test(noBlue),
+      noBlue.replace(/\s+/g, " ").slice(0, 140));
 
     const blueFixes = await page.$$(".fixlist button");
     check("a fix is offered", blueFixes.length > 0, `${blueFixes.length}`);

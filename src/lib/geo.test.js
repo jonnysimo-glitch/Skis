@@ -7,7 +7,7 @@
  * invisible until you are standing in the wrong valley.
  */
 
-import { nearestNode, metresBetween, routeBounds, edgeCoords } from "./geo.js";
+import { nearestNode, metresBetween, routeBounds, edgeCoords, colourFor, PISTE_COLOUR, PISTE_TINT, LIFT_COLOUR, LINK_COLOUR, LINK_TINT } from "./geo.js";
 import { NODES, buildEdges } from "../resort.js";
 
 let failures = 0;
@@ -164,6 +164,43 @@ check(
     return mean(lifts) > mean(runs);
   })()
 );
+
+/*
+ * A connector is drawn as a connector.
+ *
+ * It is graded blue so that routing lets anyone across it — you can walk one —
+ * but drawing it in piste blue would tell a skier there is an easy run over a
+ * two hundred metre skate across a car park. The grade colours are safety
+ * signals, so the link flag has to win over the grade at every draw site, and
+ * `colourFor` is the one place that decides.
+ */
+console.log("\nA CONNECTOR IS NOT DRAWN AS A GRADE");
+{
+  const link = { kind: "run", difficulty: "blue", link: true };
+  check("a blue-graded connector is not drawn piste blue",
+    colourFor(link) !== PISTE_COLOUR.blue, colourFor(link));
+  check("it gets the connector colour", colourFor(link) === LINK_COLOUR, colourFor(link));
+  check("and the connector tint faintly", colourFor(link, true) === LINK_TINT, colourFor(link, true));
+  check("it is not drawn as a lift either",
+    colourFor(link) !== LIFT_COLOUR, colourFor(link));
+  check("an ordinary blue run is still piste blue",
+    colourFor({ kind: "run", difficulty: "blue" }) === PISTE_COLOUR.blue);
+  check("and faint where the whole network is drawn",
+    colourFor({ kind: "run", difficulty: "red" }, true) === PISTE_TINT.red);
+  check("a lift is still a lift", colourFor({ kind: "lift" }) === LIFT_COLOUR);
+  // Straight, like a lift: a connector is a short hop and drawing it with a
+  // piste's wander would put the line off the ground it actually crosses.
+  const bend = (e) => {
+    const pts = edgeCoords({ ...e, from: Object.keys(NODES)[0], to: Object.keys(NODES)[1], id: "x" });
+    const direct = Math.hypot(pts.at(-1)[0] - pts[0][0], pts.at(-1)[1] - pts[0][1]);
+    let along = 0;
+    for (let i = 1; i < pts.length; i++) along += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    return direct / along;
+  };
+  check("and is drawn straight, not bent like a piste",
+    bend({ kind: "run", link: true }) > bend({ kind: "run" }),
+    `${bend({ kind: "run", link: true }).toFixed(4)} vs ${bend({ kind: "run" }).toFixed(4)}`);
+}
 
 console.log("\n" + (failures ? `${failures} FAILING` : "all geometry checks passed"));
 process.exit(failures ? 1 : 0);

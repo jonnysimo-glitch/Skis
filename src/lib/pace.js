@@ -52,6 +52,27 @@ export function runMinutes(lengthM, dropM, difficulty) {
 }
 
 /**
+ * How fast you cross a connector, in metres per minute.
+ *
+ * A link is not a run. It is the flat two hundred metres between where a piste
+ * peters out and where the lift queue starts: you skate it, pole it, or take
+ * your skis off and walk. Timing it at run pace would have the app promise a
+ * skier they can make the last lift with a minute to spare when they cannot,
+ * so it is deliberately slower than the slowest grade.
+ */
+export const LINK_SPEED = 100;
+
+/**
+ * Minutes to cross a connector.
+ *
+ * Two minutes minimum, the same floor a run gets: nothing on a mountain that
+ * involves stopping, skating and starting again is over in less.
+ */
+export function linkMinutes(lengthM) {
+  return Math.max(2, Math.round(lengthM / LINK_SPEED));
+}
+
+/**
  * Cable speed in metres per second by lift type.
  *
  * Line speed, not the manufacturer's rated speed: lifts slow for loading, run

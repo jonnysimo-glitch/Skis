@@ -80,12 +80,17 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
       {legsOf(route).map((edge, i) => {
         const done = i < doneThrough;
         const now = i === current;
-        const dotClass = edge.kind === "lift" ? "lift" : edge.difficulty;
+        const dotClass = edge.kind === "lift" ? "lift" : edge.link ? "link" : edge.difficulty;
+        // A connector is described by what it costs you rather than by a grade
+        // it does not have: "on foot or skating" is the honest version of the
+        // flat two hundred metres between two pistes.
         const sub =
           edge.kind === "lift"
             ? `${edge.liftType} · ${edge.ride} min ${edge.down ? "down" : "up"}` +
               `${edge.queue ? ` · ${edge.queue} min queue` : ""}`
-            : `${edge.difficulty} · ${edge.km} km · ${edge.drop} m down`;
+            : edge.link
+              ? `link · ${edge.min} min · skating or on foot`
+              : `${edge.difficulty} · ${edge.km} km · ${edge.drop} m down`;
         return (
           <li
             key={`${edge.id}-${i}`}

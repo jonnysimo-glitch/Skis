@@ -22,7 +22,7 @@ import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
 import { LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock, legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
-import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Close, ChevronDown, ChevronUp } from "../ui/Icons.jsx";
+import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Cross, Close, ChevronDown, ChevronUp } from "../ui/Icons.jsx";
 import { LegList } from "../ui/RouteBits.jsx";
 import { legClocks } from "../lib/plan.js";
 
@@ -264,6 +264,15 @@ export default function NavigateScreen({
 
   const junction = NODES[leg.to];
   const isLift = leg.kind === "lift";
+  /*
+   * A connector is not a run and must not be announced as one. "Ski Link to
+   * Ried" tells a skier to point their skis downhill at a flat two hundred
+   * metres of car park; "Cross to Ried" tells them to skate. The name carries
+   * its own "Link to" prefix everywhere else it appears, so it comes off here
+   * where the verb already says it.
+   */
+  const isLink = Boolean(leg.link);
+  const say = (edge) => (edge.link ? String(edge.name).replace(/^Link to /, "") : edge.name);
 
   // The distance reads better than the plan once there is a fix to compute it
   // from: "300 m" is checkable against what you can see, "4 min" is not.
@@ -280,20 +289,24 @@ export default function NavigateScreen({
           flat light with the screen dimmed by cold. */}
       <header className="nav__head">
         <div className="nav__badge">
-          {isLift ? <Lift width="30" height="30" /> : <Descend width="30" height="30" />}
+          {isLift ? <Lift width="30" height="30" />
+            : isLink ? <Cross width="30" height="30" />
+              : <Descend width="30" height="30" />}
         </div>
         <div className="nav__what">
           <h1 className="nav__do">
-            {isLift ? "Ride" : "Ski"} {leg.name}
+            {isLift ? "Ride" : isLink ? "Cross to" : "Ski"} {say(leg)}
           </h1>
           <div className="nav__then">
             {next
-              ? `then ${next.kind === "lift" ? "ride" : "ski"} ${next.name}`
+              ? `then ${next.kind === "lift" ? "ride" : next.link ? "cross to" : "ski"} ${say(next)}`
               : `last one, finishes at ${junction.name}`}
           </div>
         </div>
-        <div className={`nav__grade nav__grade--${isLift ? "lift" : leg.difficulty}`}>
-          {isLift ? leg.liftType : leg.difficulty}
+        {/* A link has no grade. Showing "blue" would be a grade claim about
+            ground that is not a piste at all. */}
+        <div className={`nav__grade nav__grade--${isLift ? "lift" : isLink ? "link" : leg.difficulty}`}>
+          {isLift ? leg.liftType : isLink ? "link" : leg.difficulty}
         </div>
         <button className="nav__stop" onClick={onAbandon} aria-label="Stop navigating">
           <Close width="20" height="20" />

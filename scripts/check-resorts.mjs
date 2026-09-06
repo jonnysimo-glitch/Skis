@@ -22,6 +22,7 @@ import { pathToFileURL } from "node:url";
 import { solve, asGraph } from "../src/solver.js";
 import { RESORTS } from "../src/resorts/index.js";
 import { graphFor, withGraphs } from "../src/resorts/graphs.js";
+import { LINK_RISE } from "./osm/validate.mjs";
 
 const OUT_DIR = new URL("../src/resorts/", import.meta.url);
 const OSM_DIR = new URL("../data/osm/", import.meta.url);
@@ -105,9 +106,17 @@ function checkGraph(id, mod) {
   // Zero is allowed: a flat link across a plateau or between two valley
   // stations is a real piste, and three of them exist across these resorts.
   // A negative drop is not — that is a run drawn the wrong way round.
-  const uphillRuns = edges.filter((e) => e.kind === "run" && !(e.drop >= 0));
+  const uphillRuns = edges.filter((e) => e.kind === "run" && !e.link && !(e.drop >= 0));
   check(`${id}: no run goes uphill`, uphillRuns.length === 0,
     uphillRuns.slice(0, 3).map((e) => `${e.name} (${e.drop} m)`).join("; "));
+  /*
+   * A connector may climb, because the walk between the two lift stations at
+   * Gabiet goes up twelve metres and is still the only way across. What it may
+   * not do is ask for a climb nobody would make carrying skis.
+   */
+  const steepLinks = edges.filter((e) => e.link && -e.drop > LINK_RISE);
+  check(`${id}: no connector asks you to climb`, steepLinks.length === 0,
+    steepLinks.slice(0, 3).map((e) => `${e.name} (${-e.drop} m up)`).join("; "));
 
   /**
    * Nothing on the mountain is called Point 61.

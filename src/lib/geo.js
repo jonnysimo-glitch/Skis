@@ -15,6 +15,28 @@ export const PISTE_COLOUR = {
 export const LIFT_COLOUR = "#7d95a5";
 
 /**
+ * A connector, which is not a grade.
+ *
+ * A link is graded blue for routing — anyone can cross one, on foot if it
+ * comes to that — but drawing it in piste blue would tell a skier there is a
+ * blue run where there is a two hundred metre skate across a car park. The
+ * grade colours are safety signals, so a link gets a neutral of its own: a
+ * stone khaki, far enough from the lift's blue-grey that the two never read
+ * as the same thing. `npm run test:palette` holds it there — the first colour
+ * tried was 20 deltaE from the lift and would have had skiers looking for a
+ * chair.
+ */
+export const LINK_COLOUR = "#96825a";
+export const LINK_TINT = "#b5a074";
+
+/** The line colour for one edge, whatever kind of edge it is. */
+export const colourFor = (edge, tint = false) => {
+  if (edge.link) return tint ? LINK_TINT : LINK_COLOUR;
+  if (edge.kind === "lift") return tint ? LIFT_TINT : LIFT_COLOUR;
+  return (tint ? PISTE_TINT : PISTE_COLOUR)[edge.difficulty];
+};
+
+/**
  * The same three grades, washed out, for the network that is always on the
  * map whether or not a day has been planned.
  *
@@ -69,8 +91,8 @@ function arc(from, to, id, bendScale) {
   return pts;
 }
 
-/** Lifts run taut; pistes wander. */
-const bendFor = (edge) => (edge.kind === "lift" ? 0.02 : 0.16);
+/** Lifts run taut; pistes wander. A connector is short and goes straight. */
+const bendFor = (edge) => (edge.kind === "lift" || edge.link ? 0.02 : 0.16);
 
 export function edgeCoords(edge) {
   return arc(edge.from, edge.to, edge.id, bendFor(edge));
@@ -92,7 +114,8 @@ export function routeToGeoJSON(route) {
         kind: edge.kind,
         name: edge.name,
         difficulty: edge.difficulty || null,
-        colour: edge.kind === "lift" ? LIFT_COLOUR : PISTE_COLOUR[edge.difficulty],
+        link: Boolean(edge.link),
+        colour: colourFor(edge),
       },
       geometry: { type: "LineString", coordinates: edgeCoords(edge) },
     })),
@@ -111,7 +134,12 @@ export function graphToGeoJSON(edges) {
       // The name comes along now: close in, the map writes it along the run
       // the way a road map writes a road, which is how a skier reads a piste
       // map and was the one thing ours could not do.
-      properties: { kind: edge.kind, difficulty: edge.difficulty || null, name: edge.name || null },
+      properties: {
+        kind: edge.kind,
+        difficulty: edge.difficulty || null,
+        link: Boolean(edge.link),
+        name: edge.name || null,
+      },
       geometry: { type: "LineString", coordinates: edgeCoords(edge) },
     })),
   };

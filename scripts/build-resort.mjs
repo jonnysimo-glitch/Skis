@@ -23,6 +23,7 @@ import { apronFor } from "../src/map/field.js";
 import { projectorFor } from "../src/lib/projector.js";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
 import { contractChains, nameRuns } from "./osm/simplify.mjs";
+import { stitch } from "./osm/stitch.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -138,12 +139,22 @@ async function buildOne(id) {
   // After the bases are marked, because a base is never contracted away, and
   // before the prune, so connectivity is judged on the graph the app will use.
   graph = contractChains(graph);
+  // Between the two on purpose. The chains have to be merged first or every
+  // dangling end is a way endpoint rather than a real one, and it has to come
+  // before the prune or there is nothing left to rescue.
+  graph = stitch(graph);
   graph = prune(graph);
   // Last, so an unsigned run is described by the nodes that survived the
   // merge and the prune, under the names they ended up with.
   graph = nameRuns(graph);
 
   const r = graph.report;
+  if (r.linksAdded) {
+    console.log(`  stitched    ${r.linksAdded} link(s), ${r.linksMetres} m, to reconnect what the prune would have dropped`);
+  }
+  if (r.pisteAreasSkipped) {
+    console.log(`  areas       ${r.pisteAreasSkipped} piste polygon(s) skipped: an outline is not a way down`);
+  }
   if (r.runsNamedByEndpoints) {
     console.log(`  named       ${r.runsNamedByEndpoints} unsigned run(s) named after where they go`);
   }

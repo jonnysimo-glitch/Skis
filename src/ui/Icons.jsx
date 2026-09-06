@@ -109,6 +109,14 @@ export const Ruler = (p) => (
 export const Descend = (p) => (
   <svg {...base} {...p}><path d="M4 4v12h12" /><path d="M7.5 7 11 11l2-2 3.5 4" /></svg>
 );
+/**
+ * A connector: flat ground with an arrow across it. Deliberately not the
+ * descent icon, because the one thing a skier needs to know about a link is
+ * that it does not slope and they will have to work at it.
+ */
+export const Cross = (p) => (
+  <svg {...base} {...p}><path d="M2.5 14.5h15" /><path d="M3 10h9" /><path d="m9 6.5 3.5 3.5L9 13.5" /></svg>
+);
 export const Runs = (p) => (
   <svg {...base} {...p}><path d="M3 15.5 8 6l3 5 2-3 4 7.5z" /></svg>
 );

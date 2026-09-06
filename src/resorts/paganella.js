@@ -10,7 +10,8 @@
  * What had to be assumed:
  *   - 4 pistes had no piste:difficulty and were taken as red
  *   - 34 runs were unnamed and are described by their endpoints
- *   - 3 nodes, 1 lift and 1 run were outside the largest strongly connected component and were dropped
+ *   - 2 nodes, 1 lift and 0 runs were outside the largest strongly connected component and were dropped
+ *   - 1 connector was added, 238 m in total, to rejoin pistes OSM leaves up to 350 m apart; they are marked as links, not counted as piste, and timed at walking pace
  *   - endpoints within 100 m of each other were treated as the same place
  *
  * NOT from OpenStreetMap, because it is not in there: last-lift times and
@@ -63,6 +64,7 @@ export const NODES = {
   salareconca3:      { name: "Salare Conca",          lat: 46.14417, lon: 11.01750, alt: 1693, area: "Andalo" },
   p41:               { name: "Above Salare Conca",    lat: 46.14456, lon: 11.02116, alt: 1761, area: "Andalo", named: false },
   santantonio3:      { name: "Sant'Antonio",          lat: 46.14183, lon: 11.01289, alt: 1715, area: "Andalo" },
+  p43:               { name: "Below Cima Paganella",  lat: 46.14157, lon: 11.03258, alt: 2042, area: "Andalo", named: false },
   salareconca4:      { name: "Salare Conca",          lat: 46.13931, lon: 11.01956, alt: 1819, area: "Andalo" },
   paganella22:       { name: "Paganella 2",           lat: 46.14201, lon: 11.01857, alt: 1756, area: "Andalo" },
   p46:               { name: "Below Cima Paganella",  lat: 46.14708, lon: 11.04166, alt: 1895, area: "Fai", named: false },
@@ -91,7 +93,16 @@ export const LIFTS = [
   ["laghet", "p24", "Laghet  Ferna", "gondola", 3, 1000, 4],
 ];
 
-/** [from, to, name, difficulty, km, minutes] */
+/**
+ * [from, to, name, difficulty, km, minutes] and, on a connector, a trailing 1.
+ *
+ * A connector is the flat bit between two pistes — the skiweg round the back
+ * of a station, the two hundred metres from where the piste peters out to
+ * where the lift queue starts. It is routable, so it lives here with the runs,
+ * but it is not a run: it is not counted in the resort's piste distance, it is
+ * drawn as a connector rather than graded piste, and navigation tells you to
+ * cross it rather than to ski it.
+ */
 export const RUNS = [
   ["p6", "p41", "Cacciatori 2", "red", 0.1, 2],
   ["p41", "salareconca3", "Cacciatori 2", "red", 0.4, 2],
@@ -153,6 +164,7 @@ export const RUNS = [
   ["meriz5", "meriz2", "Nuvola Rossa", "red", 0.8, 3],
   ["meriz2", "meriz", "Nuvola Rossa", "red", 0.1, 2],
   ["meriz3", "meriz2", "Campo Scuola Rolly Marchi", "blue", 0.5, 2],
+  ["p43", "santantonio2", "Below Cima Paganella to Sant'Antonio", "black", 1.1, 4],
   ["salareconca4", "paganella22", "Salare Conca to Paganella 2", "black", 0.3, 2],
   ["teresat", "pratidigaggia", "Teresat", "blue", 0.3, 2],
   ["laselletta", "p46", "Dosso Larici", "red", 0.3, 2],
@@ -164,6 +176,7 @@ export const RUNS = [
   ["albidemez", "albidemez3", "Albi de Mez link", "blue", 0.2, 2],
   ["albidemez", "albidemez3", "Albi de Mez link", "blue", 0.1, 2],
   ["intermediadosson", "intermediadosson2", "Intermedia Dosson link", "blue", 0.2, 2],
+  ["cimapaganella2", "p43", "Link to Below Cima Paganella", "blue", 0.2, 2, 1],
 ];
 
 /**
@@ -245,8 +258,8 @@ export const META = {
   "lastDown": 1020,
   "stats": {
     "lifts": 15,
-    "runs": 71,
-    "km": 31,
+    "runs": 72,
+    "km": 32,
     "top": 2113,
     "bottom": 1035,
     "valleys": 2
@@ -297,10 +310,11 @@ export function buildEdges() {
       });
     }
   });
-  RUNS.forEach(([from, to, name, difficulty, km, min], i) => {
+  RUNS.forEach(([from, to, name, difficulty, km, min, link], i) => {
     edges.push({
       id: `R${i}`, kind: "run", from, to, name, difficulty, km, min,
       drop: NODES[from].alt - NODES[to].alt,
+      ...(link ? { link: true } : {}),
     });
   });
   return edges;

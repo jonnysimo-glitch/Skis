@@ -63,6 +63,11 @@ export function contractChains({ NODES, LIFTS, RUNS, PLACES = [], report = {} })
       // Difficulty is a safety signal, so two grades never merge into one
       // edge: a skier told "red" must not be sent down a black half way.
       if (a.difficulty !== b.difficulty) continue;
+      // A connector never merges into a piste. Swallowing a flat two hundred
+      // metre traverse into the run above it would put the traverse's time
+      // and distance under the run's name and lose the one thing the skier
+      // needs to be told: that they have to skate this bit.
+      if (Boolean(a.link) !== Boolean(b.link)) continue;
       // Don't let a contraction hide a node another edge still needs.
       if ((incoming[key] || []).length !== 1 || (outgoing[key] || []).length !== 1) continue;
 
@@ -121,12 +126,44 @@ function pickName(a, b) {
  */
 export function nameRuns({ NODES, LIFTS, RUNS, PLACES = [], report }) {
   let named = 0;
+  let linked = 0;
+  let lifts = 0;
+  const place = (n, key) => (n?.name ?? key).replace(/ junction$/, "");
   const runs = RUNS.map((run) => {
     if (run.name) return run;
-    named++;
-    return { ...run, name: describe(NODES[run.from], NODES[run.to], run) };
+    if (run.link) linked++; else named++;
+    // A connector is named for where it puts you and nothing else. Running it
+    // through describe() would produce "Ried junction to Ried", which reads
+    // like a piste and is not one.
+    return {
+      ...run,
+      name: run.link
+        ? `Link to ${place(NODES[run.to], run.to)}`
+        : describe(NODES[run.from], NODES[run.to], run),
+    };
   });
-  return { NODES, LIFTS, RUNS: runs, PLACES, report: { ...report, runsNamedByEndpoints: named } };
+  /*
+   * A lift OSM never named, called after where it takes you.
+   *
+   * Last, with the runs, because the top station is very often a junction
+   * whose own name was worked out two passes ago. Doing it in build() gave
+   * "Point 33", which then named the node "Point 33 junction" — the exact
+   * placeholder leak the run naming was already moved here to avoid.
+   */
+  const namedLifts = LIFTS.map((lift) => {
+    if (lift.name) return lift;
+    lifts++;
+    return { ...lift, name: `${place(NODES[lift.to], lift.to)} lift` };
+  });
+  return {
+    NODES, LIFTS: namedLifts, RUNS: runs, PLACES,
+    report: {
+      ...report,
+      runsNamedByEndpoints: named,
+      linksNamedByEndpoints: linked,
+      liftsNamedByEndpoints: lifts,
+    },
+  };
 }
 
 /**

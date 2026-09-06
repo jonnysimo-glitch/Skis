@@ -6,7 +6,7 @@
  * when the resort changes" means in numbers: nothing about the slab is a
  * constant, and every dimension moves with the terrain it is under.
  */
-import { buildField, slabFor, toUnit, SKIRT, GRID, FIELD_PAD, apronFor } from "./field.js";
+import { buildField, slabFor, toUnit, SKIRT, GRID, FIELD_PAD, apronFor, fieldBounds } from "./field.js";
 import { GRAPHS } from "../resorts/graphs.js";
 import { NODES as MONTEROSA, projector as monterosaProjector } from "../resort.js";
 import { projectorFor } from "../lib/projector.js";
@@ -188,6 +188,40 @@ console.log("\nAND A RIDGE PUTS THE GROUND BEHIND IT IN SHADOW");
  * which is why the block looked cut out at the village. What the apron is for
  * is seeing where the valley goes, and that is a distance.
  */
+/*
+ * The photograph covers the whole mountain, not most of it.
+ *
+ * The satellite drape is fetched for a lat/lon box, and the mesh is built in
+ * projected metres. Anywhere the box falls short, the shader has no texel and
+ * falls back to painted snow — a straight-edged white strip along the edge of
+ * the photograph, which is the first thing the eye goes to and looks like the
+ * terrain was rendered in two halves.
+ *
+ * It fell short once, and quietly: the drape padded each axis by a fraction of
+ * that axis's own span while the mesh floored the short axis at a fraction of
+ * the long one, so the moment Monterosa's apron was squared up the drape
+ * covered 71% of the mesh and left 2.4 km of bare snow off each end. Neither
+ * side was wrong on its own; they merely stopped agreeing. So the assertion is
+ * that they are the same box, not that each is plausible.
+ */
+console.log("\nTHE PHOTOGRAPH COVERS THE WHOLE MESH");
+for (const [id, mod] of Object.entries(GRAPHS)) {
+  const proj = projectorFor(mod.NODES);
+  const field = buildField(mod.NODES, () => projectorFor(mod.NODES), mod.TERRAIN ?? null);
+  const a = proj.unproject(field.minX, field.minZ);
+  const b = proj.unproject(field.maxX, field.maxZ);
+  const mesh = {
+    west: Math.min(a.lon, b.lon), east: Math.max(a.lon, b.lon),
+    south: Math.min(a.lat, b.lat), north: Math.max(a.lat, b.lat),
+  };
+  const drape = fieldBounds(mod.NODES, proj);
+  const off = Math.max(...["west", "east", "south", "north"]
+    .map((k) => Math.abs(mesh[k] - drape[k])));
+  // A metre is about 9e-6 degrees; anything at that scale is float noise.
+  check(`${id}: the drape is fetched for exactly the mesh's ground`, off < 1e-9,
+    `worst corner off by ${off.toExponential(1)}°`);
+}
+
 console.log("\nTHE GROUND AROUND A RESORT IS NOT A SLIVER");
 for (const [id, mod] of Object.entries(GRAPHS)) {
   const proj = projectorFor(mod.NODES);

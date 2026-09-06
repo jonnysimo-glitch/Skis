@@ -304,6 +304,45 @@ function grid(terrain, proj) {
   };
 }
 
+/**
+ * The lat/lon box the mesh will cover, given a resort's nodes.
+ *
+ * The one answer to "what ground is on screen", so that everything which has
+ * to agree with the mesh asks the mesh rather than reconstructing it. Three
+ * places need it — the mesh itself, the satellite drape, and the baked
+ * elevation — and when the drape reconstructed it instead, it got it wrong in
+ * two ways at once.
+ *
+ * It padded each axis by a fraction of that axis's own span, which is what
+ * `apronFor` exists to stop: Monterosa is three times wider than it is tall,
+ * so the mesh floors the short axis and the drape did not, and the mountain
+ * came out with a straight-edged strip of painted snow along the north and
+ * south of the photograph. And it padded in degrees, where a degree of
+ * longitude is 0.73 of a degree of latitude at 45°N, so the box was not even
+ * the shape it looked like.
+ *
+ * Both go away by working in projected metres and unprojecting at the end,
+ * which is what the mesh does.
+ */
+export function fieldBounds(nodes, projector) {
+  const pts = Object.values(nodes).map((n) => projector.project(n.lat, n.lon));
+  const xs = pts.map((p) => p.x);
+  const zs = pts.map((p) => p.z);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+  const { padX, padZ } = apronFor(maxX - minX, maxZ - minZ);
+  const a = projector.unproject(minX - padX, minZ - padZ);
+  const b = projector.unproject(maxX + padX, maxZ + padZ);
+  return {
+    west: Math.min(a.lon, b.lon),
+    east: Math.max(a.lon, b.lon),
+    south: Math.min(a.lat, b.lat),
+    north: Math.max(a.lat, b.lat),
+  };
+}
+
 export function buildField(nodes, makeProjector, terrain = null) {
   const proj = makeProjector();
   const real = terrain ? grid(terrain, proj) : null;

@@ -21,7 +21,7 @@ import {
 } from "./field.js";
 import { glMatrix } from "./glmatrix.js";
 import { createTerrainGL } from "./gl.js";
-import { PISTE_COLOUR, PISTE_TINT, LIFT_TINT } from "../lib/geo.js";
+import { PISTE_COLOUR, PISTE_TINT, LIFT_TINT, LINK_COLOUR, LINK_TINT } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
 /** The casing, faded, for legs already skied. */
@@ -241,6 +241,21 @@ const PLACE_BUDGET_SLACK = 1.35;
  * restaurant.
  */
 const OCCLUSION_HOLD_MS = 520;
+/*
+ * A piste name waits longer than a place marker before it accepts being hidden.
+ *
+ * A marker is a point: behind the ridge or not. A run name sits on a line
+ * hundreds of metres long, and the one vertex the visibility test samples
+ * crosses a silhouette far more often than the piste actually disappears. The
+ * same 520 ms took names off the mountain while most of the run they belong to
+ * was still in plain sight.
+ */
+const RUN_NAME_OCCLUSION_MS = 1100;
+/**
+ * How many pixels of overlap a label already on the mountain will tolerate
+ * before it gives up its spot, where a newcomer would tolerate none.
+ */
+const INCUMBENT_SLACK = 7;
 
 /**
  * How far the map may slide before the terrain has to be drawn again rather
@@ -1957,8 +1972,15 @@ export default function FallbackTerrain({
       for (const feature of propsRef.current.graph.features) {
         const pts = toScreen(feature.geometry.coordinates, v, cam);
         const lift = feature.properties.kind === "lift";
-        const colour = lift ? LIFT_TINT : PISTE_TINT[feature.properties.difficulty] ?? LIFT_TINT;
-        const dash = lift ? [3, 4] : null;
+        // A connector is dashed like a lift, because it is a thing you cross
+        // rather than a thing you ski, but in its own neutral so the two do
+        // not read as the same. Never in a grade colour: piste blue on a two
+        // hundred metre skate would be telling a skier there is a run there.
+        const link = feature.properties.link;
+        const colour = link
+          ? LINK_TINT
+          : lift ? LIFT_TINT : PISTE_TINT[feature.properties.difficulty] ?? LIFT_TINT;
+        const dash = lift ? [3, 4] : link ? [2, 3] : null;
         // Per visible run, not per feature. A piste that crosses a ridge is
         // two strokes with the ridge between them, and the casing has to be
         // split the same way or it draws the missing stretch in white.
@@ -1968,11 +1990,12 @@ export default function FallbackTerrain({
           if (!runs.length) hidden++;
           else if (runs.length > 1 || runs[0].length < pts.length) clipped++;
         }
+        const thin = lift || link;
         for (const seg of runs) {
           ctx.globalAlpha = casing;
-          stroke(seg, "rgba(255,255,255,0.95)", lift ? 2.6 : 3.4, dash);
+          stroke(seg, "rgba(255,255,255,0.95)", thin ? 2.6 : 3.4, dash);
           ctx.globalAlpha = alpha;
-          stroke(seg, colour, lift ? 1.2 : 1.9, dash);
+          stroke(seg, colour, thin ? 1.2 : 1.9, dash);
           ctx.globalAlpha = 1;
         }
       }
@@ -2000,15 +2023,49 @@ export default function FallbackTerrain({
      */
     const drawRunNames = (v, cam, placed) => {
       const g = propsRef.current.graph;
-      if (!g?.features?.length || v.zoom < NAME_ZOOM) return placed;
+      if (!g?.features?.length) return placed;
+      /*
+       * The zoom threshold is a fade, not a cliff.
+       *
+       * Crossing NAME_ZOOM used to return early, so every run name on the
+       * mountain switched on together between two frames — "Piculin just pops
+       * up out of nowhere". Below the threshold the pass still runs while
+       * anything is still on screen, so the same names fade back out instead
+       * of blinking off.
+       */
+      const zoomOk = v.zoom >= NAME_ZOOM;
+      if (!zoomOk && !anyFading("r:")) return placed;
       const hasRoute = Boolean(propsRef.current.route?.features?.length);
       ctx.font = "600 10px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      const hits = (box) =>
-        placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
+      /*
+       * Asymmetric, and that is the point.
+       *
+       * A name already on the mountain is tested with a box shrunk by
+       * INCUMBENT_SLACK; a newcomer is tested with its full box. Without that
+       * gap the declutterer oscillates: two labels contest one patch, the
+       * winner is whoever the greedy order reaches first, and the order shifts
+       * every few frames as the view turns — so they trade the spot back and
+       * forth for as long as you keep turning. Thirteen names losing their spot
+       * over thirty frames and fifteen coming back is what that looks like.
+       *
+       * Hysteresis is the standard cure and the cost is honest: an incumbent
+       * may sit a few pixels closer to its neighbour than a newcomer would be
+       * allowed to. Both still have their casings, so both still read.
+       */
+      const hits = (box, slack = 0) =>
+        placed.some((o) =>
+          box.l + slack < o.r && box.r - slack > o.l && box.t + slack < o.b && box.b - slack > o.t);
       const drawnNames = [];
+      // How solid each one is, not merely whether it is there: a check that
+      // counts set membership calls a fade a disappearance, which is the one
+      // thing a fade is not.
+      const lit = mapTest ? [] : null;
+      // Why each name is not on the mountain, for the feature suite: a churn
+      // number with no cause attached is not something you can act on.
+      const why = mapTest ? {} : null;
 
       /*
        * One label per piste, on the best piece of it.
@@ -2026,7 +2083,25 @@ export default function FallbackTerrain({
         byName.set(f.properties.name, list);
       }
 
-      for (const [name, features] of byName) {
+      /*
+       * A name already on the mountain claims its space first.
+       *
+       * Without this the names churned as the view turned — 36 comings and
+       * goings over 30 frames of a slow rotation, against the 10 the place
+       * markers manage — because the collision test is greedy and the order it
+       * runs in is the graph's, which has nothing to do with what is already on
+       * screen. Two names contesting one patch would trade it back and forth
+       * every few frames, each one fading properly and the pair of them still
+       * flickering.
+       *
+       * The same incumbency the place markers get, for the same reason: it does
+       * not change WHICH names are eligible, only who gets first refusal on a
+       * spot they already hold.
+       */
+      const held = (name) => frameNow - (namedAt.get(name) ?? -Infinity) < PLACE_HOLD_MS;
+      const order = [...byName].sort((a, b) => (held(b[0]) ? 1 : 0) - (held(a[0]) ? 1 : 0));
+
+      for (const [name, features] of order) {
         const w = ctx.measureText(name).width;
         /*
          * A whole piste fragment, not a link of it.
@@ -2043,6 +2118,10 @@ export default function FallbackTerrain({
          * lengths have to agree.
          */
         let best = null;
+        let stayed = null;
+        const was = lastOn.get(name);
+        /* eslint-disable-next-line prefer-const -- reassigned by the fade-out path below */
+        let anywhere = null;
         for (const feature of features) {
           const pts = toScreen(feature.geometry.coordinates, v, cam);
           if (pts.length < 2) continue;
@@ -2057,29 +2136,115 @@ export default function FallbackTerrain({
           if (path > chord * 1.35) continue; // a horseshoe, not a stretch
           const flat = Math.abs(dy / (chord || 1));
           const score = chord * (1.35 - flat);
+          const cand = { pts, a, b, dx, dy, chord, score, feature };
+          if (!anywhere || score > anywhere.score) anywhere = cand;
           // A fragment hidden behind a ridge is not a place to write its name:
-          // the word would float on bare snow with no line under it.
+          // the word would float on bare snow with no line under it. But the
+          // fragment is still where the label has to fade out FROM, so the
+          // best hidden one is kept as somewhere to stand while it goes.
           if (!visible(pts[Math.floor(pts.length / 2)])) continue;
-          if (!best || score > best.score) best = { pts, a, b, dx, dy, chord, score };
+          if (!best || score > best.score) best = cand;
+          /*
+           * And if it is the fragment the name is already written on, that
+           * settles it.
+           *
+           * The score depends on the chord's projected length and how flat it
+           * lies, both of which change as the view turns, so two fragments of
+           * one piste trade the label every few degrees. Each swap moves the
+           * word to a different part of the mountain, which moves its box,
+           * which changes what it collides with — collisions were the largest
+           * single cause of names coming and going. Staying put while it is
+           * still a legal place to be costs nothing and removes all of that.
+           */
+          if (was === feature) stayed = cand;
         }
-        if (!best) continue;
+        best = stayed ?? best;
+        /*
+         * Nowhere to write it this frame — which is usually momentary.
+         *
+         * A fragment's chord shortens and lengthens as the mountain turns, so
+         * one that is a few pixels too short to hold the word drops out for a
+         * frame or two and comes straight back. Zeroing the fade there was a
+         * blink with extra steps: it was the last one left in the suite, one
+         * gap in nineteen names over thirty frames.
+         *
+         * So the fragment it was last written on is remembered and re-projected
+         * — the camera has moved, so the remembered SCREEN position would be
+         * stale, but the piste has not — and the label fades out along it.
+         */
+        if (best ?? anywhere) lastOn.set(name, (best ?? anywhere).feature);
+        if (!anywhere) {
+          const pts = was ? toScreen(was.geometry.coordinates, v, cam) : null;
+          if (!pts || pts.length < 2) {
+            if (why) why[name] = "nowhere long enough to write it";
+            fades.set(`r:${name}`, 0);
+            continue;
+          }
+          const a = pts[0];
+          const b = pts[pts.length - 1];
+          anywhere = { pts, a, b, dx: b.x - a.x, dy: b.y - a.y, feature: was };
+        }
+        // Behind a ridge, with the same patience a place marker gets. A word
+        // grazing a silhouette for two frames while you turn is not a reason
+        // to take it off the mountain.
+        const behind = steady(`ro:${name}`, !best, frameNow, RUN_NAME_OCCLUSION_MS);
+        best = best ?? anywhere;
         // On the line, at its middle vertex, rather than at the chord's
         // midpoint: on a piste that bends, the chord's middle is off the snow.
         const pts = best.pts;
-        const mid = pts[Math.floor(pts.length / 2)];
-        const mx = mid.x;
-        const my = mid.y;
         let angle = Math.atan2(best.dy, best.dx);
         if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
 
         // A rough box, axis aligned, which is enough for the declutterer: an
         // exact rotated hull would reject less and cost more than it saves.
         const half = Math.max(Math.abs(Math.cos(angle)) * w, 14) / 2;
-        const box = { l: mx - half, r: mx + half, t: my - 8, b: my + 8 };
-        if (hits(box)) continue;
-        placed.push(box);
+        const boxAt = (p) => ({ l: p.x - half, r: p.x + half, t: p.y - 8, b: p.y + 8 });
+
+        /*
+         * If the middle is taken, slide along the piste rather than give up.
+         *
+         * A run is hundreds of metres of line and the word needs forty pixels
+         * of it, so there is almost always somewhere else on the same piste
+         * that is free. Yielding the whole label instead was the largest cause
+         * of names coming and going as the view turned: the place markers and
+         * the route pins are placed first and always win, so every marker
+         * drifting across a piste took that piste's name off the mountain and
+         * put it back a moment later.
+         *
+         * Middle first, because that is where a name reads best, then out
+         * towards the ends in steps.
+         */
+        const along = [0.5, 0.38, 0.62, 0.28, 0.72];
+        let at = null;
+        let box = null;
+        const slack = held(name) ? INCUMBENT_SLACK : 0;
+        for (const t of along) {
+          const p = pts[Math.min(pts.length - 1, Math.max(0, Math.round(t * (pts.length - 1))))];
+          const candidate = boxAt(p);
+          if (hits(candidate, slack)) continue;
+          at = p;
+          box = candidate;
+          break;
+        }
+        // Nothing free anywhere along it: fade out from the middle, which is
+        // where it was.
+        const mid = pts[Math.floor(pts.length / 2)];
+        const room = Boolean(at);
+        at = at ?? mid;
+        box = box ?? boxAt(mid);
+        const mx = at.x;
+        const my = at.y;
+        const keep = zoomOk && !behind && room;
+        if (why && !keep) why[name] = !zoomOk ? "too far out" : behind ? "behind a ridge" : "no room anywhere along it";
+        const solid = fadeOf(`r:${name}`, keep, frameDt);
+        // Reserved only while it is wanted. A label on its way out stops
+        // holding the ground it is leaving, so the one that displaced it can
+        // start arriving in the same quarter second rather than after it.
+        if (keep) placed.push(box);
+        if (solid <= 0.02) continue;
 
         ctx.save();
+        ctx.globalAlpha = solid;
         ctx.translate(mx, my);
         ctx.rotate(angle);
         ctx.lineWidth = 3;
@@ -2089,10 +2254,16 @@ export default function FallbackTerrain({
         ctx.fillStyle = hasRoute ? "rgba(11,26,36,0.6)" : "rgba(11,26,36,0.82)";
         ctx.fillText(name, 0, 0);
         ctx.restore();
-        drawnNames.push(name);
+        ctx.globalAlpha = 1;
+        lit?.push({ name, alpha: Math.round(solid * 100) / 100 });
+        if (keep) { drawnNames.push(name); namedAt.set(name, frameNow); }
       }
       ctx.textBaseline = "alphabetic";
-      if (mapTest) window.__skisRunNames = drawnNames;
+      if (mapTest) {
+        window.__skisRunNames = drawnNames;
+        window.__skisRunLit = lit;
+        window.__skisRunWhy = why;
+      }
       return placed;
     };
 
@@ -2121,8 +2292,10 @@ export default function FallbackTerrain({
       for (const l of lines) {
         ctx.globalAlpha = dimmed(l) ? 0.35 : 1;
         const lift = l.props.kind === "lift";
-        const colour = lift ? "#22323f" : PISTE_COLOUR[l.props.difficulty] || "#7d95a5";
-        for (const seg of l.runs) stroke(seg, colour, (lift ? 2.4 : 3.4) * k, lift ? [5, 4] : null);
+        const link = l.props.link;
+        const colour = link ? LINK_COLOUR : lift ? "#22323f" : PISTE_COLOUR[l.props.difficulty] || "#7d95a5";
+        const dash = lift ? [5, 4] : link ? [3, 4] : null;
+        for (const seg of l.runs) stroke(seg, colour, (lift || link ? 2.4 : 3.4) * k, dash);
         ctx.globalAlpha = 1;
       }
     };
@@ -2413,16 +2586,27 @@ export default function FallbackTerrain({
      * the ranking stays strictly by altitude, and the cascade has nothing to
      * start from.
      */
+    /**
+     * The piste fragment each run name was last written on.
+     *
+     * Cross-frame on purpose: it is what a name fades out along on a frame
+     * where nothing is long enough to hold it. Keyed by name, and the whole
+     * effect is rebuilt when the resort changes, so it cannot outlive the
+     * mountain it refers to.
+     */
+    const lastOn = new Map();
+    /** When each run name was last written, so an incumbent keeps its spot. */
+    const namedAt = new Map();
     /** When each place was last drawn, and how long it has been hidden. */
     const shownAt = new Map();
     const hiddenSince = new Map();
     /** How many places the last frame put on the mountain. */
     let lastShownCount = 0;
-    const steady = (key, hidden, now) => {
+    const steady = (key, hidden, now, hold = OCCLUSION_HOLD_MS) => {
       if (!hidden) { hiddenSince.delete(key); return false; }
       const since = hiddenSince.get(key);
       if (since === undefined) { hiddenSince.set(key, now); return false; }
-      return now - since >= OCCLUSION_HOLD_MS;
+      return now - since >= hold;
     };
 
     const fades = new Map();
@@ -2447,6 +2631,19 @@ export default function FallbackTerrain({
       return to;
     };
     let fadingPlaces = false;
+
+    /**
+     * Is anything in this tier still on its way out?
+     *
+     * A pass that returns early when its tier is switched off would freeze
+     * every fade in that tier at whatever it was, which is a pop with extra
+     * steps. So the early return asks this first, and keeps running the pass
+     * for the quarter second it takes the last label to go.
+     */
+    const anyFading = (prefix) => {
+      for (const [key, value] of fades) if (value > 0.02 && key.startsWith(prefix)) return true;
+      return false;
+    };
 
     const drawHuts = (v, cam, placed, { markersOnly = false, labelsOnly = false, spoken = null } = {}) => {
       const all = propsRef.current.places ?? [];
@@ -2728,22 +2925,36 @@ export default function FallbackTerrain({
         // frame. At Kronplatz the route starts on a node near the left edge
         // called "Olang I - Valdaora I", and the map said "I - Valdaora I".
         const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
+        /*
+         * Somewhere to stand even when there is no room.
+         *
+         * Both slots taken used to mean no box, and no box meant the label
+         * simply stopped being drawn between two frames. A pin label is the
+         * name of the place you are going, so blinking it off as a restaurant
+         * drifts under it is the worst version of the flicker. It keeps its
+         * preferred slot as a position to fade out from, and `fits` says
+         * whether it may be there at all.
+         */
         let box = null;
+        let fallback = null;
         for (const ty of [s.y + r + 15, s.y - r - 8]) {
-          const candidate = { name, l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 12, b: ty + 4 };
+          const candidate = { name, l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 12, b: ty + 4, tx, ty };
+          fallback = fallback ?? candidate;
           if (hits(candidate)) continue;
-          box = { ...candidate, tx, ty };
+          box = candidate;
           break;
         }
-        if (box) placed.push(box);
-        out.push({ feature, s, role, r, box });
+        const fits = Boolean(box);
+        if (fits) placed.push(box);
+        out.push({ feature, s, role, r, box: box ?? fallback, fits });
       }
       return out;
     };
 
     const drawPins = (v, cam, plan) => {
       const drawn = [];
-      for (const { feature, s, role, r, box } of plan) {
+      const lit = mapTest ? [] : null;
+      for (const { feature, s, role, r, box, fits } of plan) {
 
         ctx.beginPath();
         ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
@@ -2788,6 +2999,11 @@ export default function FallbackTerrain({
         }
 
         if (!box) continue;
+        // The dot is never faded — it is the answer to "where am I", and three
+        // of them cannot clutter anything. Only the word beside it fades.
+        const solid = fadeOf(`p:${role}:${box.name}`, fits, frameDt);
+        if (solid <= 0.02) continue;
+        ctx.globalAlpha = solid;
         ctx.font = "600 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.lineWidth = 3.5;
@@ -2796,11 +3012,16 @@ export default function FallbackTerrain({
         ctx.strokeText(box.name, box.tx, box.ty);
         ctx.fillStyle = "#0b1a24";
         ctx.fillText(box.name, box.tx, box.ty);
-        drawn.push(box);
+        ctx.globalAlpha = 1;
+        lit?.push({ name: box.name, alpha: Math.round(solid * 100) / 100 });
+        if (fits) drawn.push(box);
       }
       // Same gate as the place names: canvas text leaves nothing to assert
       // against, so where it landed is published for the feature suite.
-      if (mapTest) window.__skisPinLabels = drawn;
+      if (mapTest) {
+        window.__skisPinLabels = drawn;
+        window.__skisPinLit = lit;
+      }
     };
 
     // Motion carried between a gesture and the render loop. Declared here, above
@@ -3008,6 +3229,17 @@ export default function FallbackTerrain({
         frameDt = dt;
         frameNow = now;
         fadingPlaces = false;
+        /*
+         * How much time the fades have actually been advanced by.
+         *
+         * Published for the checks, which otherwise measure an alpha step
+         * against the time between their own samples — and the renderer does
+         * not repaint on their cadence. It repaints only when something moved,
+         * so one redraw can span several of a sampler's frames and legitimately
+         * move a fade several times as far as the sampler thinks it could. This
+         * is the clock the fades are on, so it is the one to judge them by.
+         */
+        if (mapTest) window.__skisFadeClock = (window.__skisFadeClock ?? 0) + dt;
         const cam = fit(v);
         lastCam.current = cam;
         publishScale(v, cam);
@@ -3624,7 +3856,21 @@ export default function FallbackTerrain({
         let dx = c.x - gesture.x;
         let dy = c.y - gesture.y;
         const held = gesture.anchor;
-        const cam = lastCam.current;
+        /*
+         * The camera as it is now, not as it was when the page last drew.
+         *
+         * `fit` is eighty node projections and no drawing, so solving it per
+         * pointermove costs nothing next to a frame. Using the last drawn one
+         * instead meant this had to guess how much pan had been applied since,
+         * and the guess made the whole gesture depend on how often the renderer
+         * happened to repaint: the same drag came out as 56, 67 or 104 pixels
+         * of map for 67 of thumb depending on the cadence, and the cadence
+         * changes whenever anything else on the map starts or stops animating.
+         *
+         * It also gives `resist` below this frame's pan limit rather than the
+         * previous one's, which is the bound it is supposed to be enforcing.
+         */
+        const cam = fit(v);
         const proj = projectRef.current;
         if (held && cam && proj) {
           const at = proj(held.x, held.y, held.z, v, cam);
@@ -3645,23 +3891,18 @@ export default function FallbackTerrain({
              * mattering; only that the same one stays under the thumb.
              */
             /*
-             * Less whatever pan has been applied since that camera was solved.
+             * The whole remaining gap, applied once.
              *
-             * `at` is where the grabbed ground was when the last frame was
-             * drawn, and a digitiser delivers moves faster than the page draws
-             * frames — two or three per frame at 120Hz. Without this every one
-             * of them measures the same stale gap and applies the whole of it,
-             * so the correction compounds and the map runs away from the
-             * finger: measured at 168 pixels of map for 67 pixels of thumb,
-             * two and a half times too far, and worst near the top of the
-             * screen where the ground is most compressed. It never showed in a
-             * test that waited for a frame between moves, which is not how a
-             * finger works.
+             * A digitiser delivers moves faster than the page draws frames —
+             * two or three per frame at 120Hz — so this runs several times
+             * between renders and each run must leave the ground exactly under
+             * the thumb. It does, because `cam` above is solved from the view
+             * as it stands rather than from the last frame: every move measures
+             * a gap that already includes what the moves before it did, so
+             * there is nothing left to compound.
              */
-            const driftX = v.panX - cam.panX;
-            const driftY = v.panY - cam.panY;
-            const gapX = c.x - gesture.grabDX - (at.x + driftX);
-            const gapY = c.y - gesture.grabDY - (at.y + driftY);
+            const gapX = c.x - gesture.grabDX - at.x;
+            const gapY = c.y - gesture.grabDY - at.y;
             // A grab swung behind the camera projects a long way off, and
             // correcting to it would throw the map across the screen between
             // two frames. Past this it is not a correction.

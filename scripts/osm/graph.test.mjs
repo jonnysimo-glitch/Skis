@@ -12,6 +12,8 @@
 import { build, metres, wayLength, runMinutes, liftMinutes, DIFFICULTY } from "./graph.mjs";
 import { BOARDING_MINUTES, LIFT_SPEED_MS } from "../../src/lib/pace.js";
 import { prune, check } from "./validate.mjs";
+import { stitch, LINK_REACH } from "./stitch.mjs";
+import { contractChains, nameRuns } from "./simplify.mjs";
 import { decode } from "./elevation.mjs";
 
 let failures = 0;
@@ -296,6 +298,142 @@ try {
 }
 is("an export with no node references is refused, not silently flattened",
   refless.includes("node references"), refless.split("\n")[0]);
+
+/*
+ * A piste mapped as a polygon is not a route.
+ *
+ * OSM lets a wide slope be drawn as an area. Its perimeter runs up one side
+ * and down the other and is twice as long as the slope it encloses, so tracing
+ * it as a line invents a run that does not exist. Latemar was shipping ninety
+ * such edges and thirty-seven kilometres of them, half its stated distance.
+ */
+console.log("\nA SNOW FIELD IS NOT A WAY DOWN IT");
+{
+  const withArea = {
+    elements: [
+      ...OSM.elements,
+      // A closed polygon over the same ground as a real piste, sharing the
+      // junction node so it would be cut into two long arcs if it were traced.
+      { type: "way", id: 700,
+        tags: { "piste:type": "downhill", "piste:difficulty": "intermediate", area: "yes", name: "The bowl" },
+        nodes: [3, 2, 31, 3],
+        geometry: [at(46.17, 11.02), at(46.16, 11.01), at(46.152, 11.001), at(46.17, 11.02)] },
+    ],
+  };
+  const g = build(withArea, { tolerance: 45, elevation: (lat) => elevation(lat) });
+  is("a polygon piste contributes no run", !g.RUNS.some((r) => r.name === "The bowl"),
+    g.RUNS.filter((r) => r.name === "The bowl").length + " edges");
+  is("and is reported rather than silently dropped", g.report.pisteAreasSkipped === 1,
+    `${g.report.pisteAreasSkipped}`);
+  is("while the lines around it are untouched",
+    g.RUNS.length === build(OSM, { tolerance: 45, elevation: (lat) => elevation(lat) }).RUNS.length,
+    `${g.RUNS.length} runs`);
+}
+
+/*
+ * Rejoining what OSM leaves apart.
+ *
+ * Kronplatz's Ried is six kilometres of piste that stops 250 m short of the
+ * gondola serving it, so it could be skied and never left and the prune
+ * deleted all of it. The fixture reproduces exactly that shape: a long run off
+ * the summit whose bottom lands near, but not on, the valley station.
+ */
+console.log("\nA RUN THAT STOPS SHORT OF ITS LIFT IS NOT THROWN AWAY");
+{
+  // 46.15225 is 250 m north of the valley station at 46.15 — five times the
+  // clustering tolerance, and a walk you would actually make.
+  const orphan = {
+    elements: [
+      ...OSM.elements,
+      { type: "way", id: 800,
+        tags: { "piste:type": "downhill", "piste:difficulty": "intermediate", name: "The long one" },
+        nodes: [3, 801, 802],
+        geometry: [at(46.17, 11.02), at(46.16, 11.03), at(46.15225, 11.0)] },
+    ],
+  };
+  const raw = contractChains(build(orphan, { tolerance: 45, elevation: (lat) => elevation(lat) }));
+  const withoutStitch = prune(raw);
+  is("without stitching the run is lost entirely",
+    !withoutStitch.RUNS.some((r) => r.name === "The long one"),
+    withoutStitch.RUNS.map((r) => r.name).join(", "));
+
+  const stitched = nameRuns(prune(stitch(raw)));
+  is("stitching keeps it", stitched.RUNS.some((r) => r.name === "The long one"),
+    stitched.RUNS.map((r) => r.name).join(", "));
+  const links = stitched.RUNS.filter((r) => r.link);
+  is("by adding a connector, not by inventing a piste", links.length === 1,
+    `${links.length} links, ${stitched.RUNS.length - links.length} runs`);
+  is("the connector is short enough to be a mapping gap",
+    links.every((l) => l.metres <= LINK_REACH), `${links[0]?.metres} m`);
+  is("it never climbs more than you would walk up",
+    links.every((l) => stitched.NODES[l.to].alt - stitched.NODES[l.from].alt <= 20),
+    `${links.map((l) => stitched.NODES[l.to].alt - stitched.NODES[l.from].alt).join(", ")} m`);
+  is("it is timed at walking pace, not run pace",
+    links.every((l) => l.minutes >= Math.round(l.metres / 100)),
+    `${links[0]?.metres} m in ${links[0]?.minutes} min`);
+  is("it is named for where it puts you",
+    links.every((l) => /^Link to \S/.test(l.name) && !/Point \d/.test(l.name)),
+    links.map((l) => l.name).join(", "));
+  // A base has to be marked by hand here: the real pipeline gets them from the
+  // resort config, and `check` rightly refuses a mountain with nowhere to start.
+  const based = { ...stitched, NODES: Object.fromEntries(Object.entries(stitched.NODES)
+    .map(([k, n]) => [k, n.name === "Valley" ? { ...n, base: true } : n])) };
+  is("and the whole graph passes validation with it in",
+    check(based).length === 0, check(based).slice(0, 2).join("; "));
+
+  /*
+   * The reach is spent only where it buys something.
+   *
+   * A stitcher that joined every pair of nearby nodes would quietly merge two
+   * separate ski areas that share a bounding box — which is what Monterosa's
+   * box would do with Cervinia. Nothing already strongly connected may gain an
+   * edge.
+   */
+  const tidy = contractChains(build(OSM, { tolerance: 45, elevation: (lat) => elevation(lat) }));
+  is("a mountain that already joins up gains nothing",
+    stitch(tidy).RUNS.filter((r) => r.link).length === 0,
+    `${stitch(tidy).report.linksAdded} links`);
+  // Far enough away that no walk crosses it: two ski areas, not one.
+  const distant = {
+    elements: [
+      ...OSM.elements,
+      { type: "way", id: 900, tags: { aerialway: "chair_lift", name: "Far away chair" },
+        nodes: [901, 902], geometry: [at(46.30, 11.30), at(46.31, 11.31)] },
+      { type: "way", id: 901,
+        tags: { "piste:type": "downhill", "piste:difficulty": "easy", name: "Somewhere else" },
+        nodes: [902, 901], geometry: [at(46.31, 11.31), at(46.30, 11.30)] },
+    ],
+  };
+  const apart = stitch(contractChains(build(distant, { tolerance: 45, elevation: (lat) => elevation(lat) })));
+  is("and two ski areas that merely share a bounding box are left apart",
+    apart.RUNS.filter((r) => r.link).length === 0,
+    `${apart.report.linksAdded} links`);
+
+  /*
+   * The boundary, from the other side.
+   *
+   * The same orphan run, with its bottom moved just past the reach. This is
+   * the check that stops the reach quietly growing: a gap this wide is no
+   * longer a mapping error, and bridging it would be the pipeline asserting a
+   * traverse nobody skis.
+   */
+  const tooFar = {
+    elements: orphan.elements.map((el) => (el.id !== 800 ? el : {
+      ...el,
+      // Out to the west, 600 m or more from every node on the mountain —
+      // including the nursery drag's foot, which is the nearest thing to the
+      // valley station and the one the first draft of this fixture caught on.
+      geometry: [at(46.17, 11.02), at(46.16, 11.03), at(46.155, 10.994)],
+    })),
+  };
+  const beyond = stitch(contractChains(build(tooFar, { tolerance: 45, elevation: (lat) => elevation(lat) })));
+  is("a gap too wide to walk is left as a gap",
+    beyond.RUNS.filter((r) => r.link).length === 0,
+    `${beyond.report.linksAdded} links`);
+  is("so the run it would have rescued is still dropped",
+    !prune(beyond).RUNS.some((r) => r.name === "The long one"),
+    prune(beyond).RUNS.map((r) => r.name).join(", "));
+}
 
 console.log("\n" + (failures ? `${failures} FAILING` : "all pipeline checks passed"));
 process.exit(failures ? 1 : 0);

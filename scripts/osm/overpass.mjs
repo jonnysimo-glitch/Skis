@@ -82,6 +82,10 @@ export function query(bbox, { timeout = 180 } = {}) {
   return `[out:json][timeout:${timeout}];
 (
   way["piste:type"="downhill"](${box});
+  // Connectors: the skiweg round the back of a station, the traverse between
+  // two valleys. Not runs, but very often the only mapped thing joining two
+  // halves of a resort, and cheap to ask for while we are here.
+  way["piste:type"="connection"](${box});
   way["aerialway"~"^(${LIFT_TYPES.join("|")})$"](${box});
 );
 out geom;

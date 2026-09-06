@@ -10,7 +10,7 @@
  */
 import { altitudeSeries } from "../solver.js";
 import { NODES } from "../active-resort.js";
-import { PISTE_COLOUR, LIFT_COLOUR } from "../lib/geo.js";
+import { PISTE_COLOUR, LIFT_COLOUR, LINK_COLOUR, colourFor } from "../lib/geo.js";
 import { ACCENT } from "../lib/brand.js";
 
 export default function ElevationProfile({
@@ -61,9 +61,9 @@ export default function ElevationProfile({
       y1={y(alts[i]).toFixed(1)}
       x2={xs[i + 1].toFixed(1)}
       y2={y(alts[i + 1]).toFixed(1)}
-      stroke={edge.kind === "lift" ? LIFT_COLOUR : PISTE_COLOUR[edge.difficulty]}
-      strokeWidth={edge.kind === "lift" ? 1.7 : 2.8}
-      strokeDasharray={edge.kind === "lift" ? "2.5 2.5" : undefined}
+      stroke={colourFor(edge)}
+      strokeWidth={edge.kind === "lift" || edge.link ? 1.7 : 2.8}
+      strokeDasharray={edge.kind === "lift" ? "2.5 2.5" : edge.link ? "1.5 2" : undefined}
       strokeLinecap="round"
       opacity={i < doneThrough ? 0.3 : 1}
     />
@@ -180,9 +180,14 @@ export default function ElevationProfile({
  * can see it — riding up is time you are not skiing.
  */
 export function DifficultyBar({ route, labels = false }) {
-  const buckets = { blue: 0, red: 0, black: 0, lift: 0 };
+  const buckets = { blue: 0, red: 0, black: 0, link: 0, lift: 0 };
   for (const edge of route.segments) {
+    // A connector gets its own share rather than being counted as blue. It is
+    // a real part of the day — two hundred metres of skating is time you are
+    // not skiing — and putting it in the blue bucket would tell a beginner
+    // there is more easy piste in the day than there is.
     if (edge.kind === "lift") buckets.lift += edge.min;
+    else if (edge.link) buckets.link += edge.min;
     else buckets[edge.difficulty] += edge.min;
   }
   const total = Object.values(buckets).reduce((a, b) => a + b, 0) || 1;
@@ -190,6 +195,7 @@ export function DifficultyBar({ route, labels = false }) {
     ["blue", PISTE_COLOUR.blue, "Blue"],
     ["red", PISTE_COLOUR.red, "Red"],
     ["black", PISTE_COLOUR.black, "Black"],
+    ["link", LINK_COLOUR, "Links"],
     ["lift", LIFT_COLOUR, "Lifts"],
   ].filter(([key]) => buckets[key] > 0);
 

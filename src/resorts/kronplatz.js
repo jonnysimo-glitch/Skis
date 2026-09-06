@@ -9,7 +9,9 @@
  *
  * What had to be assumed:
  *   - 46 runs were unnamed and are described by their endpoints
- *   - 14 nodes, 3 lifts and 18 runs were outside the largest strongly connected component and were dropped
+ *   - 6 nodes, 2 lifts and 3 runs were outside the largest strongly connected component and were dropped
+ *   - 6 connectors were added, 1107 m in total, to rejoin pistes OSM leaves up to 350 m apart; they are marked as links, not counted as piste, and timed at walking pace
+ *   - 8 pistes mapped as an area rather than a line were skipped: the outline of a snow field is not a way down it
  *   - endpoints within 90 m of each other were treated as the same place
  *
  * NOT from OpenStreetMap, because it is not in there: last-lift times and
@@ -39,9 +41,9 @@ export const NODES = {
   costa:              { name: "Costa",                        lat: 46.72273, lon: 11.96410, alt: 1736, area: "St. Vigil", rifugio: true },
   predaperes:         { name: "Pré da Peres",                 lat: 46.71615, lon: 11.97043, alt: 2008, area: "St. Vigil" },
   miara:              { name: "Miara",                        lat: 46.70449, lon: 11.93023, alt: 1221, area: "St. Vigil", base: true, rifugio: true },
-  skitransbronta:     { name: "Skitrans Bronta",              lat: 46.70085, lon: 11.92720, alt: 1181, area: "St. Vigil", rifugio: true },
-  pedagapizdeplaies:  { name: "Pedagà / Piz de Plaies",       lat: 46.69676, lon: 11.92135, alt: 1326, area: "St. Vigil" },
-  coldancona:         { name: "Col d'Ancona",                 lat: 46.69847, lon: 11.91295, alt: 1596, area: "St. Vigil", rifugio: true },
+  skitransbronta:     { name: "Skitrans Bronta",              lat: 46.70090, lon: 11.92738, alt: 1180, area: "St. Vigil", rifugio: true },
+  pedagapizdeplaies:  { name: "Pedagà / Piz de Plaies",       lat: 46.69676, lon: 11.92140, alt: 1325, area: "St. Vigil" },
+  coldancona:         { name: "Col d'Ancona",                 lat: 46.69797, lon: 11.91163, alt: 1605, area: "St. Vigil", rifugio: true },
   piculin:            { name: "Piculin",                      lat: 46.69233, lon: 11.89281, alt: 1097, area: "St. Vigil" },
   miara2:             { name: "Miara",                        lat: 46.71121, lon: 11.95120, alt: 1478, area: "St. Vigil" },
   coltoron:           { name: "Col Toron",                    lat: 46.71908, lon: 11.96456, alt: 1814, area: "St. Vigil" },
@@ -51,6 +53,8 @@ export const NODES = {
   rara:               { name: "Rara",                         lat: 46.72160, lon: 11.95973, alt: 1698, area: "St. Vigil" },
   cianross:           { name: "Cianross",                     lat: 46.69754, lon: 11.92819, alt: 1216, area: "St. Vigil" },
   cianross2:          { name: "Cianross",                     lat: 46.69653, lon: 11.92471, alt: 1294, area: "St. Vigil" },
+  kronplatz20002:     { name: "Kronplatz 2000",               lat: 46.77024, lon: 11.93951, alt: 961, area: "Bruneck", rifugio: true },
+  p33:                { name: "Above Kronplatz 2000",         lat: 46.76932, lon: 11.94011, alt: 978, area: "Bruneck", named: false },
   ried:               { name: "Ried",                         lat: 46.79024, lon: 11.97811, alt: 925, area: "Bruneck", rifugio: true },
   alpenconnect:       { name: "Alpen Connect",                lat: 46.75212, lon: 11.99296, alt: 1619, area: "Bruneck", rifugio: true },
   alpenconnect2:      { name: "Alpen Connect",                lat: 46.74313, lon: 11.96757, alt: 2140, area: "St. Vigil" },
@@ -58,7 +62,7 @@ export const NODES = {
   olangiii2:          { name: "Olang I / II",                 lat: 46.74545, lon: 11.97424, alt: 2027, area: "Bruneck" },
   arndt3:             { name: "Arndt",                        lat: 46.74517, lon: 11.98831, alt: 1721, area: "St. Vigil" },
   p44:                { name: "Above Alpen Connect",          lat: 46.75150, lon: 11.98428, alt: 1777, area: "Bruneck", rifugio: true, named: false },
-  pedagapizdeplaies2: { name: "Pedagà / Piz de Plaies",       lat: 46.69657, lon: 11.91976, alt: 1352, area: "St. Vigil" },
+  pedagapizdeplaies2: { name: "Pedagà / Piz de Plaies",       lat: 46.69650, lon: 11.91974, alt: 1352, area: "St. Vigil" },
   p46:                { name: "Above Kronplatz 2000",         lat: 46.76824, lon: 11.94286, alt: 1016, area: "Bruneck", named: false },
   ruis2:              { name: "Ruis",                         lat: 46.72548, lon: 11.96662, alt: 1803, area: "St. Vigil" },
   p48:                { name: "Above Kronplatz I / II",       lat: 46.74433, lon: 11.95574, alt: 2088, area: "Bruneck", named: false },
@@ -86,9 +90,12 @@ export const NODES = {
   kronplatz20003:     { name: "Kronplatz 2000",               lat: 46.76969, lon: 11.94207, alt: 984, area: "Bruneck" },
   p72:                { name: "Pramstall junction",           lat: 46.74770, lon: 11.95660, alt: 1985, area: "Bruneck", named: false },
   p73:                { name: "Above Kronplatz I / II",       lat: 46.74838, lon: 11.95742, alt: 1955, area: "Bruneck", named: false },
+  plateau:            { name: "Plateau",                      lat: 46.74138, lon: 11.97295, alt: 2056, area: "St. Vigil" },
   p75:                { name: "Above Marchner",               lat: 46.73479, lon: 11.98960, alt: 1682, area: "St. Vigil", named: false },
   p76:                { name: "Below Olang I / II",           lat: 46.75037, lon: 11.97653, alt: 1938, area: "Bruneck", named: false },
+  p77:                { name: "Ried junction",                lat: 46.78206, lon: 11.98591, alt: 1291, area: "Bruneck", named: false },
   alpenconnect3:      { name: "Alpen Connect",                lat: 46.74206, lon: 11.96659, alt: 2164, area: "St. Vigil" },
+  p79:                { name: "Ried junction",                lat: 46.78334, lon: 11.98239, alt: 1168, area: "Bruneck", named: false },
   p80:                { name: "Col Toron junction",           lat: 46.71341, lon: 11.95307, alt: 1545, area: "St. Vigil", named: false },
   ruis3:              { name: "Ruis",                         lat: 46.73736, lon: 11.95584, alt: 2255, area: "St. Vigil" },
   p82:                { name: "Korer junction",               lat: 46.76851, lon: 11.94166, alt: 1002, area: "Bruneck", named: false },
@@ -100,10 +107,12 @@ export const NODES = {
   marchner2:          { name: "Marchner",                     lat: 46.73634, lon: 11.97489, alt: 1967, area: "St. Vigil" },
   costa8:             { name: "Costa",                        lat: 46.72774, lon: 11.96654, alt: 1852, area: "St. Vigil", rifugio: true },
   sonne3:             { name: "Sonne",                        lat: 46.73207, lon: 11.95838, alt: 2088, area: "St. Vigil", rifugio: true },
-  p94:                { name: "Above Pedagà / Piz de Plaies", lat: 46.69974, lon: 11.91843, alt: 1456, area: "St. Vigil", named: false },
-  skitransbronta2:    { name: "Skitrans Bronta",              lat: 46.70011, lon: 11.92463, alt: 1233, area: "St. Vigil" },
-  p97:                { name: "Seewiese junction",            lat: 46.74465, lon: 11.94845, alt: 2021, area: "Bruneck", named: false },
-  p98:                { name: "Below Olang I / II",           lat: 46.74447, lon: 11.97855, alt: 1956, area: "St. Vigil", named: false },
+  p92:                { name: "Ried junction",                lat: 46.78776, lon: 11.97723, alt: 957, area: "Bruneck", named: false },
+  p93:                { name: "Ried junction",                lat: 46.78646, lon: 11.97858, alt: 1017, area: "Bruneck", named: false },
+  p94:                { name: "Above Pedagà / Piz de Plaies", lat: 46.69969, lon: 11.91784, alt: 1472, area: "St. Vigil", named: false },
+  skitransbronta2:    { name: "Skitrans Bronta",              lat: 46.70009, lon: 11.92469, alt: 1232, area: "St. Vigil" },
+  p96:                { name: "Seewiese junction",            lat: 46.74465, lon: 11.94845, alt: 2021, area: "Bruneck", named: false },
+  p97:                { name: "Below Olang I / II",           lat: 46.74447, lon: 11.97855, alt: 1956, area: "St. Vigil", named: false },
   cianross3:          { name: "Cianross",                     lat: 46.69805, lon: 11.92323, alt: 1289, area: "St. Vigil" },
   arndt5:             { name: "Arndt",                        lat: 46.74504, lon: 11.99257, alt: 1624, area: "St. Vigil" },
 };
@@ -134,17 +143,27 @@ export const LIFTS = [
   ["rara", "coltoron", "Rara", "gondola", 3, 1000, 2],
   ["cianross", "cianross2", "Cianross", "gondola", 2, 1000, 4],
   ["kronplatziii", "kronplatzii", "Kronplatz II", "gondola", 5, 1000, 2],
+  ["kronplatz20002", "p33", "Above Kronplatz 2000 lift", "carpet", 5, 1000, 5],
   ["ried", "riedgipfelbahn", "Ried", "gondola", 14, 1000, 2],
   ["alpenconnect", "alpenconnect2", "Alpen Connecting", "gondola", 8, 1000, 2],
 ];
 
-/** [from, to, name, difficulty, km, minutes] */
+/**
+ * [from, to, name, difficulty, km, minutes] and, on a connector, a trailing 1.
+ *
+ * A connector is the flat bit between two pistes — the skiweg round the back
+ * of a station, the two hundred metres from where the piste peters out to
+ * where the lift queue starts. It is routable, so it lives here with the runs,
+ * but it is not a run: it is not counted in the resort's piste distance, it is
+ * drawn as a connector rather than graded piste, and navigation tells you to
+ * cross it rather than to ski it.
+ */
 export const RUNS = [
-  ["olangiii", "p98", "Ruipa", "blue", 0.3, 2],
+  ["olangiii", "p97", "Ruipa", "blue", 0.3, 2],
   ["p41", "p44", "Pracken", "blue", 0.1, 2],
   ["p44", "alpenconnect", "Pracken", "blue", 0.7, 2],
-  ["olangiii2", "p98", "Gassl", "red", 0.4, 2],
-  ["p98", "arndt3", "Gassl", "red", 0.7, 2],
+  ["olangiii2", "p97", "Gassl", "red", 0.4, 2],
+  ["p97", "arndt3", "Gassl", "red", 0.7, 2],
   ["olangiii", "olangiii2", "Alpen", "blue", 0.1, 2],
   ["olangiii2", "p58", "Alpen", "blue", 0.1, 2],
   ["p58", "p53", "Alpen", "blue", 0.7, 2],
@@ -156,7 +175,7 @@ export const RUNS = [
   ["predaperes", "coltoron", "Pré da Peres 32 V", "red", 0.5, 2],
   ["predaperes", "coltoron", "Pre da Peres 32", "red", 0.5, 2],
   ["coltoron", "costa", "Pre da Peres 32", "red", 0.4, 2],
-  ["coldancona", "pedagapizdeplaies2", "Piz de Plaies", "red", 1.2, 4],
+  ["coldancona", "pedagapizdeplaies2", "Piz de Plaies", "red", 1.3, 4],
   ["belvedere", "belvedere3", "Belvedere", "blue", 0.9, 3],
   ["belvedere3", "belvedere2", "Belvedere", "blue", 0.1, 2],
   ["cianross2", "cianross3", "Corn", "blue", 0.2, 2],
@@ -177,8 +196,8 @@ export const RUNS = [
   ["p48", "p60", "Seewiese", "red", 0.1, 2],
   ["p60", "p49", "Seewiese", "red", 0.1, 2],
   ["coltoron", "coltoron2", "Rara 31", "blue", 0.2, 2],
-  ["p51", "p97", "Seewiese", "red", 0.6, 2],
-  ["p97", "p52", "Seewiese", "red", 0.2, 2],
+  ["p51", "p96", "Seewiese", "red", 0.6, 2],
+  ["p96", "p52", "Seewiese", "red", 0.2, 2],
   ["p53", "p41", "Arndt", "red", 0.2, 2],
   ["costa3", "p57", "Furcia 9", "blue", 0.2, 2],
   ["p57", "ruis", "Furcia 9", "blue", 0.3, 2],
@@ -211,6 +230,8 @@ export const RUNS = [
   ["arndt5", "olangivaldaorai", "Gassl", "red", 1.3, 4],
   ["olangivaldaorai", "olangivaldaorai2", "Gassl", "red", 0.2, 2],
   ["belvedere", "arndt4", "Plateau", "blue", 0.9, 3],
+  ["arndt4", "plateau", "Plateau", "blue", 0.1, 2],
+  ["olangiii", "plateau", "Plateau", "blue", 0.2, 2],
   ["p60", "kronplatziii2", "Trasse", "black", 0.5, 2],
   ["pedagapizdeplaies3", "pedagapizdeplaies2", "Pedagà", "blue", 0.3, 2],
   ["pedagapizdeplaies2", "pedagapizdeplaies", "Pedagà", "blue", 0.1, 2],
@@ -244,8 +265,11 @@ export const RUNS = [
   ["p52", "p11", "Sylvester", "black", 3.1, 12],
   ["kronplatz20003", "kronplatz2000", "Kronplatz 2000 link", "blue", 0.2, 2],
   ["p72", "p73", "Pramstall", "red", 0.1, 2],
+  ["olangiii", "plateau", "Olang I / II to Plateau", "blue", 0.1, 2],
   ["p75", "marchner", "Marchner 2", "red", 0.4, 2],
+  ["p76", "p77", "Ried", "red", 4.1, 14],
   ["alpenconnect3", "alpenconnect2", "Spitzhorn", "blue", 0.2, 2],
+  ["p77", "p79", "Ried", "blue", 0.6, 2],
   ["p80", "miara2", "Col Toron to Miara", "black", 0.2, 2],
   ["belvedere", "kronplatzii", "Belvedere to Kronplatz II", "blue", 0.1, 2],
   ["kronplatzii", "ruis3", "Furcia 12", "red", 0.2, 2],
@@ -270,26 +294,25 @@ export const RUNS = [
   ["belvedere", "sonne", "Sonne", "red", 0.6, 2],
   ["belvedere", "p85", "Belvedere", "blue", 0.7, 2],
   ["sonne3", "sonne", "Sonne link", "blue", 0.1, 2],
-  ["olangiii", "p98", "Arndt", "red", 0.4, 2],
-  ["p98", "arndt3", "Arndt", "red", 0.8, 3],
+  ["p79", "p93", "Ried", "red", 0.5, 2],
+  ["p93", "p92", "Ried", "red", 0.2, 2],
+  ["p77", "p79", "Ried", "black", 0.3, 2],
+  ["p93", "p92", "Ried", "blue", 0.3, 2],
+  ["olangiii", "p97", "Arndt", "red", 0.4, 2],
+  ["p97", "arndt3", "Arndt", "red", 0.8, 3],
   ["arndt3", "arndt2", "Arndt", "red", 0.2, 2],
-  ["coldancona", "skitransbronta2", "Erta", "black", 0.8, 3],
-  ["skitransbronta2", "skitransbronta", "Erta", "black", 0.1, 2],
-  ["skitransbronta2", "skitransbronta", "Erta", "black", 0.3, 2],
-  ["p94", "skitransbronta2", "Erta", "black", 0.4, 2],
-  ["coldancona", "p94", "Erta", "black", 0.6, 2],
-  ["pedagapizdeplaies", "skitransbronta", "Pedagà", "blue", 0.7, 2],
-  ["skitransbronta2", "skitransbronta", "Pedagà", "blue", 0.1, 2],
-  ["pedagapizdeplaies2", "skitransbronta2", "Pedagà", "blue", 0.6, 2],
-  ["pedagapizdeplaies2", "pedagapizdeplaies", "Pedagà", "blue", 0.2, 2],
   ["p94", "skitransbronta2", "Sorega", "black", 0.5, 2],
   ["coltoron", "rara", "Rara", "blue", 0.4, 2],
-  ["p94", "skitransbronta2", "Sorega", "black", 0.4, 2],
-  ["p94", "skitransbronta2", "Sorega", "black", 0.5, 2],
-  ["p49", "p97", "Seewiese", "red", 0.4, 2],
+  ["p49", "p96", "Seewiese", "red", 0.4, 2],
   ["kronplatzii", "p51", "Lumen", "red", 0.5, 2],
-  ["p98", "p41", "Ruipa", "blue", 0.7, 4],
+  ["p97", "p41", "Ruipa", "blue", 0.7, 4],
   ["coldancona", "piculin", "Piculin", "black", 1.8, 7],
+  ["kronplatz20003", "kronplatz20002", "Link to Kronplatz 2000", "blue", 0.2, 2, 1],
+  ["kronplatz20002", "kronplatz2000", "Link to Kronplatz 2000", "blue", 0.2, 2, 1],
+  ["p82", "p33", "Link to Above Kronplatz 2000", "blue", 0.1, 2, 1],
+  ["p33", "kronplatz20003", "Link to Kronplatz 2000", "blue", 0.2, 2, 1],
+  ["plateau", "arndt4", "Link to Arndt", "blue", 0.1, 2, 1],
+  ["p92", "ried", "Link to Ried", "blue", 0.3, 3, 1],
 ];
 
 /**
@@ -399,9 +422,9 @@ export const META = {
   "firstLift": 510,
   "lastDown": 1020,
   "stats": {
-    "lifts": 26,
-    "runs": 150,
-    "km": 67,
+    "lifts": 27,
+    "runs": 148,
+    "km": 69,
     "top": 2265,
     "bottom": 925,
     "valleys": 3
@@ -451,10 +474,11 @@ export function buildEdges() {
       });
     }
   });
-  RUNS.forEach(([from, to, name, difficulty, km, min], i) => {
+  RUNS.forEach(([from, to, name, difficulty, km, min, link], i) => {
     edges.push({
       id: `R${i}`, kind: "run", from, to, name, difficulty, km, min,
       drop: NODES[from].alt - NODES[to].alt,
+      ...(link ? { link: true } : {}),
     });
   });
   return edges;

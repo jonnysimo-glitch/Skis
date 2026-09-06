@@ -202,5 +202,19 @@ for (let i = 0; i < grades.length; i++) {
   }
 }
 
+/*
+ * A connector is not a grade, and must not be mistakable for one.
+ *
+ * The link colour is what the map draws over the two hundred metres you skate
+ * between two pistes. If it read as piste blue a skier would take it for an
+ * easy run; if it read as the lift grey they would look for a lift. So it is
+ * held away from all four.
+ */
+console.log("\nA CONNECTOR IS NOT A GRADE");
+for (const other of ["piste-blue", "piste-red", "piste-black", "lift"]) {
+  const d = deltaE(token("link"), token(other));
+  check(`link is distinct from ${other}`, d >= MIN_DELTA, `deltaE ${d.toFixed(1)}`);
+}
+
 console.log("\n" + (bad ? `${bad} FAILING` : "palette is sound"));
 process.exit(bad ? 1 : 0);

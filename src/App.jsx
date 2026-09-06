@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sheet from "./ui/Sheet.jsx";
 import FallbackTerrain from "./map/FallbackTerrain.jsx";
 import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
-import { FIELD_PAD } from "./map/field.js";
+import { fieldBounds } from "./map/field.js";
 
 // MapLibre is ~800KB and not needed until the map is on screen, so it is split
 // out. If the chunk cannot be fetched at all — offline before it was ever
@@ -40,7 +40,7 @@ import PlanButton from "./ui/PlanButton.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
-import { NODES, buildEdges, activeGraph, setActiveResort, ensureActive } from "./active-resort.js";
+import { NODES, buildEdges, activeGraph, setActiveResort, ensureActive, activeProjector } from "./active-resort.js";
 import { graphFor } from "./resorts/graphs.js";
 import { useSolver } from "./lib/useSolver.js";
 import { legsOf } from "./solver.js";
@@ -398,29 +398,20 @@ export default function App() {
        */
       const params = new URLSearchParams(window.location.search);
       const synthetic = params.get("maptest") === "1" && params.get("tiles");
-      // The nodes, not the resort's configured bbox. The bbox is the area the
-      // Overpass query was drawn around and is deliberately generous; the
-      // terrain mesh is built from the nodes that survived, and imagery for a
-      // larger box than the mesh is a coarser zoom spent on ground nobody can
-      // see.
-      const lats = Object.values(NODES).map((n) => n.lat);
-      const lons = Object.values(NODES).map((n) => n.lon);
-      const w = Math.min(...lons);
-      const e = Math.max(...lons);
-      const so = Math.min(...lats);
-      const no = Math.max(...lats);
-      // The same 18% the terrain mesh pads its bounding box by, in
-      // src/map/field.js. Without it the outer ring of quads sits off the edge
-      // of the tiles that were fetched and falls back to the drawn surface:
-      // a white fringe of painted snow all the way round the photograph, which
-      // is the first thing the eye goes to.
-      const padX = (e - w) * FIELD_PAD;
-      const padY = (no - so) * FIELD_PAD;
+      /*
+       * Exactly the ground the mesh covers — asked of the mesh, not worked out
+       * again here.
+       *
+       * The nodes, not the resort's configured bbox: the bbox is the area the
+       * Overpass query was drawn around and is deliberately generous, and
+       * imagery for a larger box than the mesh is a coarser zoom spent on
+       * ground nobody can see. But it has to be the whole of the mesh, or the
+       * uncovered ring falls back to painted snow — a straight-edged strip of
+       * white along the edge of the photograph, which is the first thing the
+       * eye goes to.
+       */
       const image = await loadImagery({
-        bounds: {
-          west: w - padX, east: e + padX,
-          south: so - padY, north: no + padY,
-        },
+        bounds: fieldBounds(NODES, activeProjector()),
         urlFor: synthetic ? checkerTile : templateTile(SATELLITE_URL, MAPTILER_KEY),
       });
       if (!live) return;

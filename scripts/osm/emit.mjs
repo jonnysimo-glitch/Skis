@@ -97,7 +97,11 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
     lastDown: config.lastDown,
     stats: {
       lifts: LIFTS.length,
-      runs: RUNS.length,
+      // Connectors are excluded from both. A two hundred metre skate across a
+      // car park is not a run and its distance is not piste distance; counting
+      // it would inflate the one figure on the home screen a skier can check
+      // against a piste map.
+      runs: RUNS.filter((r) => !r.link).length,
       /**
        * Kilometres of piste, which is the figure to show a skier.
        *
@@ -108,7 +112,7 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
        * map. Length does not care how the same piste is cut up, and it is
        * what resorts advertise.
        */
-      km: Math.round(RUNS.reduce((sum, r) => sum + (r.km || 0), 0)),
+      km: Math.round(RUNS.filter((r) => !r.link).reduce((sum, r) => sum + (r.km || 0), 0)),
       top: Math.max(...alts),
       bottom: Math.min(...alts),
       valleys: areas.size || 1,
@@ -189,9 +193,11 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], terrain = null
     `${l.minutes}, ${l.lastUp}, ${l.queue}],`
   );
 
+  // The seventh field is only written for a connector, so a resort without
+  // one reads exactly as it did before.
   const runLines = RUNS.map((r) =>
     `  [${quote(r.from)}, ${quote(r.to)}, ${quote(r.name)}, ${quote(r.difficulty)}, ` +
-    `${r.km}, ${r.minutes}],`
+    `${r.km}, ${r.minutes}${r.link ? ", 1" : ""}],`
   );
 
   const assumed = [
@@ -212,6 +218,17 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], terrain = null
       `${report.liftsDropped} lift${report.liftsDropped === 1 ? "" : "s"} and ` +
       `${report.runsDropped} run${report.runsDropped === 1 ? "" : "s"} were outside the largest ` +
       `strongly connected component and were dropped`,
+    report.linksAdded
+      ? `${report.linksAdded} connector${report.linksAdded === 1 ? " was" : "s were"} added, ` +
+        `${report.linksMetres} m in total, to rejoin pistes OSM leaves up to ` +
+        `${report.linkReach} m apart; they are marked as links, not counted as piste, and ` +
+        `timed at walking pace`
+      : null,
+    report.pisteAreasSkipped
+      ? `${report.pisteAreasSkipped} piste${report.pisteAreasSkipped === 1 ? "" : "s"} mapped as ` +
+        `an area rather than a line ${report.pisteAreasSkipped === 1 ? "was" : "were"} skipped: ` +
+        `the outline of a snow field is not a way down it`
+      : null,
     `endpoints within ${report.tolerance} m of each other were treated as the same place`,
   ].filter(Boolean);
 
@@ -245,7 +262,16 @@ export const LIFTS = [
 ${liftLines.join("\n")}
 ];
 
-/** [from, to, name, difficulty, km, minutes] */
+/**
+ * [from, to, name, difficulty, km, minutes] and, on a connector, a trailing 1.
+ *
+ * A connector is the flat bit between two pistes — the skiweg round the back
+ * of a station, the two hundred metres from where the piste peters out to
+ * where the lift queue starts. It is routable, so it lives here with the runs,
+ * but it is not a run: it is not counted in the resort's piste distance, it is
+ * drawn as a connector rather than graded piste, and navigation tells you to
+ * cross it rather than to ski it.
+ */
 export const RUNS = [
 ${runLines.join("\n")}
 ];
@@ -331,10 +357,11 @@ export function buildEdges() {
       });
     }
   });
-  RUNS.forEach(([from, to, name, difficulty, km, min], i) => {
+  RUNS.forEach(([from, to, name, difficulty, km, min, link], i) => {
     edges.push({
       id: \`R\${i}\`, kind: "run", from, to, name, difficulty, km, min,
       drop: NODES[from].alt - NODES[to].alt,
+      ...(link ? { link: true } : {}),
     });
   });
   return edges;

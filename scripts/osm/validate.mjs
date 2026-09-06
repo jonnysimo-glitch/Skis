@@ -16,8 +16,15 @@
  * small.
  */
 
+/**
+ * How much a connector may climb, in metres. Kept here rather than imported
+ * from stitch.mjs so that validation does not depend on the thing it validates
+ * — and so a hand-written connector in a resort config is held to it too.
+ */
+export const LINK_RISE = 20;
+
 /** Tarjan's algorithm, iterative: alpine graphs are small but recursion is avoidable. */
-function stronglyConnected(nodeKeys, edges) {
+export function stronglyConnected(nodeKeys, edges) {
   const adj = new Map(nodeKeys.map((k) => [k, []]));
   for (const e of edges) adj.get(e.from)?.push(e.to);
 
@@ -130,6 +137,21 @@ function undirectedPieces(keys, edges) {
  */
 const DOWNLOADABLE = new Set(["gondola", "cable car", "funicular"]);
 
+/**
+ * Every edge the app will actually be able to travel, in both directions where
+ * both are real.
+ *
+ * Exported because the stitcher has to judge connectivity by exactly the rule
+ * the prune will apply a moment later. When the two disagreed, the stitcher
+ * built links for a node the prune was going to keep anyway, and left the one
+ * it was about to delete alone.
+ */
+export function travelEdges({ LIFTS, RUNS }) {
+  const rideable = LIFTS.filter((l) => DOWNLOADABLE.has(l.kind))
+    .map((l) => ({ ...l, from: l.to, to: l.from, down: true }));
+  return [...LIFTS, ...rideable, ...RUNS];
+}
+
 export function prune({ NODES, LIFTS, RUNS, PLACES = [], report = {} }) {
   const keys = Object.keys(NODES);
   /*
@@ -143,9 +165,7 @@ export function prune({ NODES, LIFTS, RUNS, PLACES = [], report = {} }) {
    * the village, and the whole valley — five hundred metres of the resort's
    * vertical — was being thrown away as unreachable.
    */
-  const rideable = LIFTS.filter((l) => DOWNLOADABLE.has(l.kind))
-    .map((l) => ({ ...l, from: l.to, to: l.from, down: true }));
-  const edges = [...LIFTS, ...rideable, ...RUNS];
+  const edges = travelEdges({ LIFTS, RUNS });
   const pieces = undirectedPieces(keys, edges);
   const components = stronglyConnected(keys, edges);
   components.sort((a, b) => b.length - a.length);
@@ -207,8 +227,19 @@ export function check({ NODES, LIFTS, RUNS }) {
   }
 
   for (const run of RUNS) {
-    if (NODES[run.to].alt > NODES[run.from].alt) {
-      problems.push(`run "${run.name}" goes uphill, ${run.from} to ${run.to}`);
+    /*
+     * A run may never climb. A connector may climb a little, and has to be
+     * allowed to: the two lift stations at Gabiet are two hundred metres and
+     * twelve vertical metres apart, and the walk between them is the only way
+     * across. What is refused is a connector that claims you can climb more
+     * than you could carry your skis up.
+     */
+    const rise = NODES[run.to].alt - NODES[run.from].alt;
+    if (run.link ? rise > LINK_RISE : rise > 0) {
+      problems.push(run.link
+        ? `link "${run.name}" climbs ${Math.round(rise)} m, more than the ${LINK_RISE} m ` +
+          `a skier can be asked to walk up, ${run.from} to ${run.to}`
+        : `run "${run.name}" goes uphill, ${run.from} to ${run.to}`);
     }
     if (!(run.minutes > 0)) problems.push(`run "${run.name}" takes no time`);
     if (!["blue", "red", "black"].includes(run.difficulty)) {

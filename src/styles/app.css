@@ -642,6 +642,9 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .leg__dot--red { background: var(--piste-red); }
 .leg__dot--black { background: var(--piste-black); }
 .leg__dot--lift { background: var(--lift); border-radius: 50%; width: 10px; height: 10px; }
+/* A connector: neutral, and smaller than a run, because it is a gap between
+   two of them rather than one of them. */
+.leg__dot--link { background: var(--link); border-radius: 50%; width: 8px; height: 8px; }
 .leg--now .leg__dot { box-shadow: 0 0 0 3px var(--accent-tint), 0 0 0 4.5px var(--accent); }
 .leg__nm { display: block; font-size: var(--t-callout); font-weight: 500; line-height: 1.25; }
 .leg__sub { display: block; font-size: var(--t-footnote); color: var(--ink-3); margin-top: 2px; }
@@ -1219,6 +1222,8 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .nav__grade--red { background: var(--piste-red); }
 .nav__grade--black { background: #38424b; }
 .nav__grade--lift { background: var(--surface-3); }
+/* A connector carries no grade, so it carries no grade colour either. */
+.nav__grade--link { background: var(--surface-3); }
 
 .nav__metrics {
   display: flex;
