@@ -230,12 +230,27 @@ export function buildField(nodes, makeProjector, terrain = null) {
 
   const xs = pts.map((p) => p.x);
   const zs = pts.map((p) => p.z);
-  const padX = (Math.max(...xs) - Math.min(...xs)) * FIELD_PAD;
-  const padZ = (Math.max(...zs) - Math.min(...zs)) * FIELD_PAD;
-  const minX = Math.min(...xs) - padX;
-  const maxX = Math.max(...xs) + padX;
-  const minZ = Math.min(...zs) - padZ;
-  const maxZ = Math.max(...zs) + padZ;
+  /*
+   * The resort's own extent, before the pad.
+   *
+   * Worth keeping separate. The field is padded so the mountain has ground to
+   * rise out of instead of ending at the last lift station, but the padded box
+   * is over twice the resort across, and framing the camera on it makes the
+   * resort itself a third of the size it could be. The camera wants the resort;
+   * the mesh wants the pad.
+   */
+  const resort = {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minZ: Math.min(...zs),
+    maxZ: Math.max(...zs),
+  };
+  const padX = (resort.maxX - resort.minX) * FIELD_PAD;
+  const padZ = (resort.maxZ - resort.minZ) * FIELD_PAD;
+  const minX = resort.minX - padX;
+  const maxX = resort.maxX + padX;
+  const minZ = resort.minZ - padZ;
+  const maxZ = resort.maxZ + padZ;
 
   const heights = new Float32Array((GRID + 1) * (GRID + 1));
   const at = (i, j) => i * (GRID + 1) + j;
@@ -264,6 +279,11 @@ export function buildField(nodes, makeProjector, terrain = null) {
   const cell = Math.max(maxX - minX, maxZ - minZ) / GRID;
   let lo = Infinity;
   let hi = -Infinity;
+  // The high point of the resort itself, which is not the high point of the
+  // field: the pad reaches far enough out to pick up whatever peak happens to
+  // be next door, and the camera should not be leaving room above the frame
+  // for a mountain in the next valley.
+  let resortHi = -Infinity;
   for (let i = 0; i <= GRID; i++) {
     for (let j = 0; j <= GRID; j++) {
       const x = minX + ((maxX - minX) * i) / GRID;
@@ -296,6 +316,9 @@ export function buildField(nodes, makeProjector, terrain = null) {
       heights[at(i, j)] = h;
       lo = Math.min(lo, h);
       hi = Math.max(hi, h);
+      if (x >= resort.minX && x <= resort.maxX && z >= resort.minZ && z <= resort.maxZ) {
+        resortHi = Math.max(resortHi, h);
+      }
     }
   }
 
@@ -468,7 +491,8 @@ export function buildField(nodes, makeProjector, terrain = null) {
 
   return {
     proj, heights, at, sample, shades, shadows, steeps, grains, qAt,
-    minX, maxX, minZ, maxZ, lo, hi, body,
+    minX, maxX, minZ, maxZ, resort, pts, lo, hi, body,
+    resortHi: Number.isFinite(resortHi) ? resortHi : hi,
     cx: (minX + maxX) / 2,
     cz: (minZ + maxZ) / 2,
     cy: (lo + hi) / 2,

@@ -1501,6 +1501,7 @@ if (feature("33. The sun casts shadows")) {
 
   let seen = 0;
   let darkened = 0;
+  let deep = 0;
   let brightened = 0;
   let deepest = 0;
   for (let i = 0; i < Math.min(lit.length, plain.length); i++) {
@@ -1508,10 +1509,12 @@ if (feature("33. The sun casts shadows")) {
     seen++;
     const d = plain[i] - lit[i];
     if (d > 10) darkened++;
+    if (d > 40) deep++;
     if (d < -10) brightened++;
     if (d > deepest) deepest = d;
   }
   const share = seen ? Math.round((darkened / seen) * 100) : 0;
+  const heavy = seen ? Math.round((deep / seen) * 100) : 0;
   /*
    * Both ends matter. Nothing changing means the shadow map never reached the
    * renderer, which is how this feature would quietly do nothing while every
@@ -1521,7 +1524,31 @@ if (feature("33. The sun casts shadows")) {
    */
   check("the sun's shadows darken a visible part of the mountain",
     share >= 8, `${share}% of the ground, deepest ${deepest.toFixed(0)} levels`);
-  check("but not the whole of it", share <= 55, `${share}%`);
+  /*
+   * The ceiling is on deep shade, not on anything that moved.
+   *
+   * "Anything that moved" counts the penumbra, and the penumbra is most of the
+   * mountain: shadows here are softened deliberately, so a ridge line puts a
+   * few levels of grey across a wide band either side of the hard edge. That
+   * number is a fact about how much bare terrain is in frame rather than about
+   * the lighting — it read 15% while the camera was framing the padded plain
+   * around the resort and 57% once it framed the resort, with nothing about
+   * the sun having changed.
+   *
+   * What "not the whole of it" is actually asserting is that the mountain is
+   * lit and has shadows on it, rather than being a mountain in shadow. Deep
+   * shade — a drop of more than forty levels out of the two hundred or so the
+   * snow spans — is that claim, and it does not move when the framing does.
+   *
+   * The sign of the march is not this check's job and never was, which is why
+   * the old ceiling could not have caught it: an inverted march shadows the
+   * complement, which is about the same share. field.test.js checks the
+   * geometry directly on a made-up single peak, where which side is dark is
+   * arithmetic — "it falls on the side away from the sun" and "most of a
+   * mountain is in the sun".
+   */
+  check("but not the whole of it", heavy <= 25,
+    `${heavy}% deep in shade, ${share}% touched at all`);
   // A cast shadow only ever removes light. Anything brighter is a sign the
   // toggle is doing something other than what it says.
   check("and nothing gets brighter for being in shadow", brightened < seen * 0.01,
@@ -1615,17 +1642,19 @@ if (feature("32. The places arrive as you get closer")) {
    * fills less of the frame at rest now, so four notches no longer reaches a
    * valley and the count went down rather than up.
    */
+  // A notch of -400 is 1.42x, so "zoom to 6" from 4 lands on 8 and the stops
+  // are too coarse to walk in. -120 is 1.13x.
   const zoomTo = async (want) => {
-    for (let n = 0; n < 20; n++) {
+    for (let n = 0; n < 40; n++) {
       const at = await page.evaluate(() => window.__skisView?.zoom ?? 1);
       if (at >= want) break;
       await page.$eval(SEL, (c) => {
         const r = c.getBoundingClientRect();
         c.dispatchEvent(new WheelEvent("wheel", {
-          deltaY: -400, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true,
+          deltaY: -120, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true,
         }));
       });
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(90);
     }
     await page.waitForTimeout(1200);
   };
@@ -1664,13 +1693,34 @@ if (feature("32. The places arrive as you get closer")) {
     midShare > farShare,
     `${(midShare * 100) | 0}% of those in frame, against ${(farShare * 100) | 0}% far out`);
 
-  await zoomTo(10);
-  const near = await places();
-  // Not "more again". Past a point, zooming in shows FEWER, because the frame
-  // holds less mountain and most places have left it — which is right, and an
-  // assertion that they keep increasing was asserting the opposite.
-  check("and close up, the ones in frame are still marked", near.length >= 1,
-    `${near.length} in a frame holding one bowl`);
+  /*
+   * As close as the resort still has places to show, found rather than named.
+   *
+   * Not "more again": past a point zooming in shows FEWER, because the frame
+   * holds less mountain and most places have left it, and an assertion that
+   * they keep increasing was asserting the opposite.
+   *
+   * Nor a count at a named zoom. Kronplatz is compact, so by zoom eight the
+   * frame is one bowl and holds NONE of its thirty-seven places — the share is
+   * then zero over zero, and reading that as the tiering having failed is
+   * reading an empty frame as a bug. Monterosa at the same zoom holds two, and
+   * whether either is behind a ridge depends on exactly where the wheel
+   * stopped, which makes a count there a coin flip on a camera position.
+   *
+   * So walk in until the frame stops holding enough places to say anything,
+   * and make the claim at the last zoom that did. That is a real close-up on
+   * any resort, rather than a number that happens to suit this one.
+   */
+  let close = { zoom: 3, shown: mid.length, frame: Math.round(mid.length / Math.max(1e-9, midShare)) };
+  for (const stop of [4, 5, 6, 7, 8]) {
+    await zoomTo(stop);
+    const frame = await inFrame();
+    if (frame < 3) break;
+    close = { zoom: stop, shown: (await places()).length, frame };
+  }
+  check("and it stays that way the closer you get",
+    close.shown / close.frame > farShare,
+    `${((close.shown / close.frame) * 100) | 0}% of the ${close.frame} in frame at zoom ${close.zoom}, against ${(farShare * 100) | 0}% far out`);
 
   /*
    * The ranking, not just the count.

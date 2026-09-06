@@ -71,20 +71,6 @@ const FLING_MIN = 0.4 / 16.7;   // slower than this on release is not a flick
 const GLIDE_STOP = 0.15 / 16.7; // slower than this is a stop
 
 /**
- * How far to soften the terrain when compositing it, in CSS pixels.
- *
- * Wide enough to dissolve the steps between flat quads completely. It can be
- * this wide because the blurred copy is cut back to the sharp silhouette
- * before it is composited, so only the inside of the mountain is softened.
- *
- * Narrower than it was, because the grid is finer than it was. At GRID 60 the
- * steps were 2.6px of blur apart; at 72 they are closer together and the same
- * blur was throwing away the extra resolution it had just paid for, along with
- * the rock and the snow grain that make the surface read as ground.
- */
-const TERRAIN_BLUR = 1.9;
-
-/**
  * Depth-buffer resolution, as a fraction of the canvas in CSS pixels.
  *
  * Was a third, which put the point where a line disappears over a ridge on a
@@ -169,6 +155,17 @@ const DETAIL_SETTLE_MS = 420;
  * straight back, which is invisible.
  */
 const PLACE_FADE_MS = 220;
+
+/**
+ * How many frames running a place must be behind the mountain before it goes.
+ *
+ * The depth test is exact and that is the problem: a marker sitting on a
+ * silhouette crosses it and back as the mountain turns, and each crossing
+ * frees a collision box that something else takes. Four frames is a
+ * fifteenth of a second — far too short to keep a marker that has genuinely
+ * gone behind a ridge, and long enough that grazing one costs nothing.
+ */
+const OCCLUSION_PATIENCE = 4;
 
 /**
  * How far the map may slide before the terrain has to be drawn again rather
@@ -335,20 +332,47 @@ const pitchRate = (zoom) => PITCH_RATE * Math.max(0.45, Math.min(1, 1 / (1 + 0.0
 const ZOOM_EASE_MS = 110;
 
 /*
- * More blur the closer you get, not less.
+ * More blur the bigger a facet is on screen, which is not the same as zoom.
  *
- * This had it backwards. A quad is a fixed piece of ground, so zooming in
- * makes it bigger on screen, not smaller: at the closest zoom a facet is forty
- * pixels across and the softening was down to one, which is why the mountain
- * broke into visible tiles exactly when a skier was looking at it hardest.
- * Scaling with the zoom keeps the seams dissolved at every distance.
+ * The first version of this scaled with zoom, on the right reasoning: a quad
+ * is a fixed piece of ground, so getting closer makes it bigger and the
+ * softening has to grow with it or the mountain breaks into visible tiles
+ * exactly when a skier is looking at it hardest.
  *
- * The ceiling is the other half of it, and it is low on purpose. Blur cannot
- * add detail that is not there, so past about three pixels the near ground
- * stops looking soft and starts looking out of focus, which is worse than a
- * seam.
+ * Zoom is only one of the things that decides how big a facet is, though, and
+ * it turned out to be the smaller one. Focal length is solved per frame from
+ * the framing, and reframing the camera on the resort rather than on the
+ * padded mesh around it made every cell half again as wide at zoom 1 with the
+ * zoom untouched — so the blur stayed where it was and the facets came back.
+ * Latemar is a third of the scale of Kronplatz at the same zoom, for the same
+ * reason. Measure the facet instead of guessing at it from one of its inputs.
+ *
+ * And blur the flat patch, not the cell. Under the satellite drape a cell is
+ * subdivided into as many as SUBDIVIDE_MAX squares of real photograph, so the
+ * biggest area of one flat colour is a fraction of the cell and blurring the
+ * whole cell would be throwing the imagery away to fix a seam that is not
+ * there. Bare terrain has no subdivision and the flat patch is the whole cell.
  */
-const blurFor = (zoom) => TERRAIN_BLUR * Math.max(0.75, Math.min(1.55, Math.max(zoom, 1) / 2.2));
+/** One mesh cell, in CSS pixels, at the middle of the scene. */
+const cellPx = (f) => f / (GRID * 1.45);
+/** The largest area of one flat colour on the surface, in CSS pixels. */
+const patchPx = (f, skinned) => {
+  const cell = cellPx(f);
+  if (!skinned) return cell;
+  const n = Math.max(1, Math.min(SUBDIVIDE_MAX, Math.round(cell / SUBDIVIDE_PX)));
+  return cell / n;
+};
+/**
+ * Half a patch of blur dissolves the step between two patches without
+ * softening anything larger. The floor is what the old constant was worth at
+ * rest, so nothing got sharper; the ceiling keeps a mountain that has been
+ * zoomed into to its own contour lines from going out of focus.
+ */
+const BLUR_PER_PATCH = 0.32;
+const BLUR_MIN = 1.4;
+const BLUR_MAX = 4;
+const blurFor = (f, skinned) =>
+  Math.max(BLUR_MIN, Math.min(BLUR_MAX, patchPx(f, skinned) * BLUR_PER_PATCH));
 
 /**
  * Pitch limits. 0 is straight down, which is as far as the camera goes: there
@@ -446,8 +470,14 @@ const PAN_REACH = 0.45;
 // How far the slab may run past the side edges, and how much of the free
 // height it fills. Bleeding the corners is deliberate: a diorama that stops
 // short of the frame reads as a small object, not as terrain.
-const BLOCK_BLEED = 1.62;
-const BLOCK_FILL = 0.72;
+const BLOCK_BLEED = 1.00;
+const BLOCK_FILL = 0.55;
+/**
+ * How much ground beyond the outermost lift the camera keeps in shot, as a
+ * fraction of the resort's own width. The mesh is padded much further than
+ * this (FIELD_PAD); this is only how much of it the framing pays for.
+ */
+const FRAME_PAD = 0.18;
 
 
 
@@ -705,6 +735,11 @@ export default function FallbackTerrain({
       const s2 = projectRef.current(x, f.sample(x, z), z, view.current, lastCam.current);
       return { x: s2.x, y: s2.y };
     };
+    // The solved camera: focal length and centring. The blur that dissolves
+    // the facets is a function of how big a mesh cell is on screen, which is a
+    // function of f, so a test that wants to check the softening scales has to
+    // be able to see it.
+    window.__skisCamera = () => (lastCam.current ? { ...lastCam.current } : null);
     // The mountain's own nodes, so a test can pick whatever is under a finger
     // and follow it through a gesture.
     window.__skisNodes = propsRef.current.nodes ?? nodes;
@@ -859,13 +894,43 @@ export default function FallbackTerrain({
     // covering.
     const unit = (x, y, z, v) => toUnit(field, x, y, z, v);
 
-    /** The whole mountain, corner to corner. */
+    /**
+     * The whole mountain, corner to corner.
+     *
+     * The resort's own corners, not the field's. The field is padded by
+     * FIELD_PAD on every side so the mountain rises out of ground rather than
+     * ending at the last lift station, which makes the mesh 2.1x the resort
+     * across. Framing that box put the resort in the middle third of the
+     * screen with sky above and below it, and pushed the base villages —
+     * Champoluc is the outermost node there is — right to the edge.
+     *
+     * So the camera frames the resort plus a slice of the pad. The rest of the
+     * pad is still drawn and still fills the corners of the frame; it is just
+     * no longer competing with the resort for room.
+     */
     const whole = () => {
-      const out = [];
-      for (const x of [field.minX, field.maxX]) {
-        for (const z of [field.minZ, field.maxZ]) out.push([x, field.sample(x, z), z]);
-      }
-      out.push([field.cx, field.hi, field.cz]);
+      const r = field.resort;
+      const cx = (r.minX + r.maxX) / 2;
+      const cz = (r.minZ + r.maxZ) / 2;
+      /*
+       * The lift stations, pushed out from the middle, not the corners of
+       * their bounding box.
+       *
+       * Monterosa runs diagonally across its box, so the box's corners sit
+       * kilometres past anything skiable and its projected width is half again
+       * the resort's. That is what BLOCK_BLEED was tuned against: bleeding the
+       * corners off the sides was free, because there was nothing in them. It
+       * is not free on a resort that fills its box — Latemar lost Obereggen
+       * off the right edge — and the difference between the two is a fact
+       * about the shape of the resort, which is exactly what the point cloud
+       * carries and the bounding box throws away.
+       */
+      const out = field.pts.map((p) => {
+        const x = cx + (p.x - cx) * (1 + FRAME_PAD);
+        const z = cz + (p.z - cz) * (1 + FRAME_PAD);
+        return [x, field.sample(x, z), z];
+      });
+      out.push([cx, field.resortHi, cz]);
       return out;
     };
 
@@ -2034,23 +2099,34 @@ export default function FallbackTerrain({
      * A pop is a thing the eye is built to catch; a fade of this length is not.
      */
     /*
-     * Which places had a marker last frame, and where.
+     * How many frames running a place has been on the wrong side of the
+     * occlusion test.
      *
-     * The fade alone did not stop the flicker, because the fade treats the
-     * symptom. The cause is that every decision here is a hard threshold on a
-     * shared resource: a marker crosses a silhouette and frees its box, which
-     * lets a second one in, which takes the room a third was using. One
-     * genuine change cascades into three, every frame, and the mountain
+     * This is where the flicker starts. Everything downstream is a hard
+     * threshold on a shared resource — the collision boxes — so one marker
+     * winking out frees room, a second takes it, a third loses what it had.
+     * One genuine change becomes three, every frame, and the mountain
      * shimmers.
      *
-     * Sticky placement breaks the cascade. A place that had a marker gets its
-     * box reserved before any newcomer is considered, so an arrival can never
-     * evict an incumbent — it waits for room. The order stops depending on
-     * which pixel a silhouette happened to cross this frame, and starts
-     * depending on what was already on the mountain, which is what someone
-     * looking at it expects.
+     * Reserving an incumbent's box first was the first fix and it works, but
+     * it makes what is shown depend on history: a low place picked up during a
+     * turn keeps its slot against a higher one afterwards, and the mountain
+     * slowly fills with village bars. Two of the five showing were below the
+     * median altitude after one slow turn.
+     *
+     * So the hysteresis goes where the instability is instead. A place has to
+     * fail the depth test for several frames running before it is dropped,
+     * which absorbs a marker grazing a silhouette without touching the order —
+     * the ranking stays strictly by altitude, and the cascade has nothing to
+     * start from.
      */
     let heldPlaces = new Set();
+    const occludedFor = new Map();
+    const steady = (key, hidden) => {
+      const n = hidden ? (occludedFor.get(key) ?? 0) + 1 : 0;
+      occludedFor.set(key, n);
+      return n >= OCCLUSION_PATIENCE;
+    };
 
     const fades = new Map();
     const fadeOf = (key, want, dt) => {
@@ -2110,9 +2186,18 @@ export default function FallbackTerrain({
         placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
 
       const drawn = [];
-      // Incumbents first, then everyone else, both in altitude order. Two
-      // passes over one list rather than a sort with a "was it showing" key,
-      // because the second pass has to see the boxes the first one reserved.
+      /*
+       * Incumbents first, then everyone else, both in altitude order.
+       *
+       * Hysteresis on the depth test stops a marker grazing a silhouette from
+       * winking, and on its own takes the churn over a slow turn from 36 to
+       * 20. Reserving the boxes of what was already showing takes it to 8: an
+       * arrival waits for room rather than evicting someone, so one change
+       * cannot cascade into three.
+       *
+       * Both, because they fix different halves. Neither changes WHICH places
+       * are eligible — that is altitude, and it stays altitude.
+       */
       const order = [
         ...list.filter(([full]) => heldPlaces.has(full)),
         ...list.filter(([full]) => !heldPlaces.has(full)),
@@ -2126,8 +2211,9 @@ export default function FallbackTerrain({
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
         if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
-        // A restaurant on the far side of the mountain is behind the mountain.
-        if (!visible(s)) continue;
+        // A restaurant on the far side of the mountain is behind the mountain —
+        // but only once it has been for a few frames running. See `steady`.
+        if (steady(`h:${full}`, !visible(s))) continue;
 
         const r = 6.4;
         const box = { l: s.x - r - 3, r: s.x + r + 3, t: s.y - r - 3, b: s.y + r + 3 };
@@ -2364,8 +2450,8 @@ export default function FallbackTerrain({
         // Of everything here that overshoots, this is the one a person can
         // feel, because it is the gesture they make most.
         const lim = v.panLimit;
-        v.panX = resist(v.panX, glide.x * dt, lim?.x);
-        v.panY = resist(v.panY, glide.y * dt, lim?.y);
+        v.panX = resist(v.panX, glide.x * dt, lim?.x, width);
+        v.panY = resist(v.panY, glide.y * dt, lim?.y, height);
         const bleed = Math.exp(-dt / GLIDE_MS);
         glide.x *= bleed;
         glide.y *= bleed;
@@ -2526,7 +2612,7 @@ export default function FallbackTerrain({
         if (!reuse) {
           blurCtx.setTransform(1, 0, 0, 1, 0, 0);
           blurCtx.clearRect(0, 0, blur.width, blur.height);
-          blurCtx.filter = `blur(${blurFor(v.zoom) * dpr}px)`;
+          blurCtx.filter = `blur(${blurFor(cam.f, !!propsRef.current.imagery) * dpr}px)`;
           blurCtx.drawImage(off, 0, 0);
           blurCtx.filter = "none";
           blurCtx.globalCompositeOperation = "destination-in";
@@ -2856,19 +2942,41 @@ export default function FallbackTerrain({
     /**
      * Movement past the wall, with the give of a rubber band.
      *
-     * Beyond the limit each pixel of finger travel buys a third of a pixel,
-     * and the spring in the frame loop pulls it back when you let go. The
-     * clamp this replaces stopped dead mid-drag, which feels like the app has
-     * stopped listening rather than like the map has an edge.
+     * Beyond the limit the first pixel of finger travel buys a third of a
+     * pixel and every pixel after buys less, converging on OVERSHOOT_MAX of
+     * the frame however hard you pull. The spring in the frame loop takes it
+     * back when you let go. The hard clamp this replaces stopped dead mid-drag,
+     * which feels like the app has stopped listening rather than like the map
+     * has an edge.
+     *
+     * A flat third was the first version and has no ceiling: a long drag past
+     * the stop kept going at a third speed, so the mountain could be pulled
+     * most of a screen clear of its own wall. How far depended on where the
+     * wall was, which is a fact about the framing — reframing the camera on
+     * the resort moved the wall in and the same 600px drag went from 261px
+     * past it to 378px, with nothing about the gesture having changed. A band
+     * that asymptotes has the same give where it matters, in the first few
+     * pixels, and an edge that is felt rather than computed.
+     *
+     * Path-independent, which is why it maps back through the inverse rather
+     * than scaling each increment: resisting increment by increment makes the
+     * result depend on how many pointer events the browser happened to
+     * coalesce, so the same drag ends up somewhere different on every device.
+     *
+     *   band(x) = c x / (1 + c x / D)      band(0) = 0, band'(0) = c, band(inf) = D
+     *   band^-1(y) = y / (c (1 - y / D))
      */
     const OVERSHOOT = 0.34;
-    const resist = (cur, d, lim) => {
+    const OVERSHOOT_MAX = 0.22;
+    const resist = (cur, d, lim, frame) => {
       const next = cur + d;
       if (lim == null || Math.abs(next) <= lim) return next;
+      const cap = Math.max(1, (frame ?? 0) * OVERSHOOT_MAX);
+      const band = (x) => (OVERSHOOT * x) / (1 + (OVERSHOOT * x) / cap);
+      const unband = (y) => y / (OVERSHOOT * Math.max(1e-3, 1 - y / cap));
       const wasOver = Math.max(0, Math.abs(cur) - lim);
-      const nowOver = Math.abs(next) - lim;
-      // Only the part of the move that is past the wall is resisted.
-      return Math.sign(next) * (lim + wasOver + (nowOver - wasOver) * OVERSHOOT);
+      const raw = unband(Math.min(wasOver, cap * 0.999)) + (Math.abs(next) - lim - wasOver);
+      return Math.sign(next) * (lim + band(Math.max(0, raw)));
     };
 
     /**
@@ -2997,8 +3105,8 @@ export default function FallbackTerrain({
             }
           }
         }
-        v.panX = resist(v.panX, dx, v.panLimit?.x);
-        v.panY = resist(v.panY, dy, v.panLimit?.y);
+        v.panX = resist(v.panX, dx, v.panLimit?.x, width);
+        v.panY = resist(v.panY, dy, v.panLimit?.y, height);
         // Clamped below at half a millisecond: coalesced moves can arrive with
         // the same timestamp, and dividing by zero puts an infinity into the
         // average that never washes out.
