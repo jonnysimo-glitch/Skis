@@ -1431,6 +1431,7 @@ if (feature("15. Gestures, and the mountain being solid")) {
     await page.evaluate(() => window.__skisSetPitch(0));
     await page.waitForTimeout(900);
     const flat = await occlusion();
+    const overhead = await routePixels();
     check("from straight above, the depth test hides nothing",
       flat && flat.seen > 20 && flat.hidden === 0,
       `${flat?.hidden} of ${flat?.seen} runs hidden`);
@@ -1453,8 +1454,24 @@ if (feature("15. Gestures, and the mountain being solid")) {
       tipped && tipped.hidden < tipped.seen * 0.9,
       `${tipped?.hidden} of ${tipped?.seen} hidden`);
 
+    /*
+     * The route is on the mountain, not missing from it.
+     *
+     * A low floor on purpose. The failure worth catching here is the line not
+     * being drawn at all — the depth test rejecting it wholesale, or the route
+     * layer landing under the terrain — and every larger number this could ask
+     * for turns out to measure something else. It was 40, and a finer mesh
+     * took it to 33 while occluding more accurately, which is the feature
+     * working. Comparing against the overhead reading is no better: at pitch
+     * zero the same line is spread across the whole frame and at 62 it is
+     * foreshortened into a band, so the ratio is a fact about the pitch.
+     *
+     * How much of the route the mountain hides is already checked, above and
+     * in numbers that mean it: `tipped.hidden` against `tipped.seen`.
+     */
     const front = await routePixels();
-    check("the route is drawn on the mountain", front > 40, `${front} sampled pixels`);
+    check("the route is drawn on the mountain", front > 12,
+      `${front} sampled pixels, ${overhead} from straight above`);
 
     await page.evaluate(() => window.__skisSetBearing(152));
     await page.waitForTimeout(1400);
@@ -1469,6 +1486,100 @@ if (feature("15. Gestures, and the mountain being solid")) {
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
+}
+
+// ========= 34. THE MOUNTAIN IS AS FINE AS THE GROUND UNDER IT ==
+/*
+ * The mesh used to be chosen off the drag frame time — 72 across, because 84
+ * stuttered. That tied the resolution of the still picture to the cost of the
+ * moving one, and at the framing the app opens on it made a cell eleven screen
+ * pixels wide: half the resolution of the display, softened with a blur so the
+ * facets would not show. Beside mowi.space's block it read as a smooth blob
+ * where theirs has gullies.
+ *
+ * They are separate questions. A moving mountain is drawn on every second
+ * vertex and a still one on all of them, a beat after the hand comes off, so
+ * the fine mesh costs nothing during the gesture that has to stay smooth. The
+ * two failure modes are never refining — the old picture, quietly — and never
+ * coarsening, which is the stutter this is meant to avoid.
+ */
+if (feature("34. The mountain is as fine as the ground under it")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(2500);
+
+  const SEL = "canvas[aria-label*='Terrain view']";
+  const mesh = () => page.evaluate(() => window.__skisMesh ?? null);
+  const { TERRAIN } = graphFor(RESORTS.find((r) => r.available).id);
+  const settled = await mesh();
+  check("at rest the whole mesh is drawn", settled?.step === 1, JSON.stringify(settled));
+  check("and it is as fine as the elevation behind it",
+    !TERRAIN || settled.grid >= TERRAIN.n * 0.85,
+    `mesh ${settled?.grid} across, DEM ${TERRAIN?.n ?? "none"}`);
+
+  /**
+   * How much the surface changes from one pixel to the next, over ground only.
+   *
+   * Detail, measured the way an eye judges it: a coarse mesh interpolated up
+   * is smooth, and a fine one has the ground's own gullies in it. Sky is a
+   * vertical gradient with no horizontal change at all, so it is left out by
+   * requiring both neighbours to differ from the row's sky.
+   */
+  const grain = () => page.$eval(SEL, (c) => {
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    let sum = 0;
+    let n = 0;
+    for (let y = 0; y < height; y += 2) {
+      const s = (y * width) * 4;
+      const sky = [data[s], data[s + 1], data[s + 2]];
+      for (let x = 2; x < width - 2; x += 2) {
+        const i = (y * width + x) * 4;
+        const j = (y * width + x + 2) * 4;
+        const off = (k) => Math.abs(data[i + k] - sky[k]) + Math.abs(data[j + k] - sky[k]);
+        if (off(0) + off(1) + off(2) < 40) continue; // both ends are sky
+        sum += Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1]) +
+          Math.abs(data[i + 2] - data[j + 2]);
+        n++;
+      }
+    }
+    return n ? Math.round((sum / n) * 100) / 100 : 0;
+  });
+  const fine = await grain();
+
+  // Drag, and look while the finger is still down.
+  const box = await page.$eval(SEL, (c) => {
+    const r = c.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(box.x + box.w / 2 - i * 6, box.y + box.h / 2 + i * 3);
+  }
+  await page.waitForTimeout(400);
+  const held = await mesh();
+  check("a finger on the glass drops it to the coarse pass",
+    held?.step > 1, `step ${held?.step}`);
+  // Still holding: a thumb that pauses must not buy itself a long frame.
+  await page.waitForTimeout(700);
+  const paused = await mesh();
+  check("and a pause mid-drag does not refine under the thumb",
+    paused?.step > 1, `step ${paused?.step}`);
+
+  await page.mouse.up();
+  await page.waitForTimeout(1200);
+  const after = await mesh();
+  check("letting go brings the whole mesh back", after?.step === 1, `step ${after?.step}`);
+  const back = await grain();
+  check("and the picture is as detailed as it was before the drag",
+    back > fine * 0.6, `${back} against ${fine} at rest`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
 }
 
 // ========= 33. THE SUN CASTS SHADOWS ==
@@ -2055,17 +2166,23 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   const surface = () => page.evaluate(() => window.__skisSurface);
 
   /*
-   * Standing still, even the far view is painted from the imagery.
+   * Standing still, no piece of the photograph is painted as a block.
    *
-   * At the framing the app opens on a quad is about five pixels of screen for
-   * 167 metres of ground, and one flat colour for it throws away most of what
-   * the photograph knows. Painting them all costs 26,000 cells and doubles the
-   * frame — which is fine for a picture and ruinous for a drag, so the fine
-   * pass is the one that runs once the camera stops.
+   * This used to count subdivided quads and require most of them to be, which
+   * was a proxy for the thing that matters and stopped being one the moment
+   * the mesh got finer: at GRID 144 a quad is under six screen pixels already,
+   * so subdividing it into four-pixel cells is a no-op and the count collapsed
+   * to a tenth while the picture got strictly sharper. Where the resolution
+   * comes from is an implementation detail; how coarse the result is, is not.
+   *
+   * So it asks the renderer for the biggest area of imagery it painted in one
+   * colour. Twice SUBDIVIDE_PX is the honest bar — one cell of slack for the
+   * quads seen most obliquely.
    */
   const far = await surface();
-  check("standing still, the far view is painted from the imagery too",
-    far && far.textured > far.flat, `${far?.textured} of ${far?.textured + far?.flat} quads subdivided`);
+  check("standing still, no piece of the photograph is painted as a block",
+    far && far.patch > 0 && far.patch <= 8,
+    `biggest flat patch ${far?.patch}px, ${far?.textured} of ${far?.textured + far?.flat} quads subdivided`);
 
   /*
    * And a drag does not repaint it, because a drag does not change it.

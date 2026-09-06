@@ -19,6 +19,7 @@ import { prune, check } from "./osm/validate.mjs";
 import { elevationFor, bakeTerrain } from "./osm/elevation.mjs";
 import { emit } from "./osm/emit.mjs";
 import { writeRegistry } from "./osm/registry.mjs";
+import { FIELD_PAD } from "../src/map/field.js";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
 import { contractChains, nameRuns } from "./osm/simplify.mjs";
 
@@ -29,6 +30,43 @@ const value = (name, fallback) => {
   return found ? found.slice(name.length + 3) : fallback;
 };
 const ids = args.filter((a) => !a.startsWith("--"));
+
+/**
+ * How many elevation samples across the baked terrain grid.
+ *
+ * Matched to the mesh, not to the source. The tiles are z13, about thirteen
+ * metres a pixel at alpine latitudes, so the ground has far more detail than
+ * this — but the mesh drawn from it is GRID in src/map/field.js, and a sample
+ * the mesh never reads is a quarter of a megabyte of base64 in the bundle for
+ * nothing. 320 was tried: it is 267KB a resort against 67KB, and the mesh that
+ * could use it is eighty thousand quads a frame, which Canvas 2D cannot fill.
+ */
+const TERRAIN_SAMPLES = 160;
+
+/**
+ * The ground the app draws, in lat/lon.
+ *
+ * Wider than the graph, because the point of it is context: a resort's nodes
+ * are strung along the pistes, so a box drawn tight around them is a sliver
+ * with the valley bases on its edge, and the mountain looks like it was cut
+ * out of something rather than standing in something.
+ *
+ * BAKE_PAD is FIELD_PAD with a little over, and the "little over" is the whole
+ * reason this is a named constant rather than a number: the app's mesh spans
+ * exactly FIELD_PAD, and a bake that stops a metre short leaves its outermost
+ * ring of quads with no measurement behind them.
+ */
+const BAKE_PAD = FIELD_PAD + 0.05;
+const boxAround = (nodes) => {
+  const lats = Object.values(nodes).map((n) => n.lat);
+  const lons = Object.values(nodes).map((n) => n.lon);
+  const padLon = (Math.max(...lons) - Math.min(...lons)) * BAKE_PAD;
+  const padLat = (Math.max(...lats) - Math.min(...lats)) * BAKE_PAD;
+  return [
+    Math.min(...lons) - padLon, Math.min(...lats) - padLat,
+    Math.max(...lons) + padLon, Math.max(...lats) + padLat,
+  ];
+};
 
 const CONFIG_DIR = new URL("./resorts/", import.meta.url).pathname;
 const OUT_DIR = new URL("../src/resorts/", import.meta.url).pathname;
@@ -130,28 +168,35 @@ async function buildOne(id) {
   }
 
   /*
-   * The ground the mountain sits on, baked in.
+   * Over the box the app will actually draw, which is not the box the graph
+   * was measured over.
    *
-   * Over a box wider than the graph, because the point of it is context: a
-   * resort's nodes are strung along the pistes, so a box drawn tight around
-   * them is a sliver with the valley bases on its edge, and the mountain looks
-   * like it was cut out of something rather than standing in something. Sixty
-   * per cent of the span on every side is enough to see where the valleys go.
+   * The config bbox is the area the Overpass query was drawn around. The
+   * terrain the app draws is the node bbox padded by FIELD_PAD on every side,
+   * and at Monterosa that is 34.9km against the config's 28.1 — so the outer
+   * two kilometres west and three and a half east had no measurement behind
+   * them and fell back to interpolating between lift stations. A smooth
+   * invented apron around a real mountain, and it looks like one.
    *
-   * Clamped to the config bbox, which is what the elevation tiles were fetched
-   * for — asking outside it would sample nothing and bake a cliff.
+   * A second sampler rather than a wider first one, so the graph's own
+   * altitudes and gradients come from exactly the tiles they always did and a
+   * rebuild does not quietly move every number in the file. Tiles are cached
+   * on disk, so the overlap is free.
    */
-  const lats = Object.values(graph.NODES).map((n) => n.lat);
-  const lons = Object.values(graph.NODES).map((n) => n.lon);
-  const padLon = (Math.max(...lons) - Math.min(...lons)) * 0.6;
-  const padLat = (Math.max(...lats) - Math.min(...lats)) * 0.6;
-  const box = [
-    Math.max(config.bbox[0], Math.min(...lons) - padLon),
-    Math.max(config.bbox[1], Math.min(...lats) - padLat),
-    Math.min(config.bbox[2], Math.max(...lons) + padLon),
-    Math.min(config.bbox[3], Math.max(...lats) + padLat),
-  ];
-  const terrain = bakeTerrain(box, elevation, 160);
+  const box = boxAround(graph.NODES);
+  const outside = box[0] < config.bbox[0] || box[1] < config.bbox[1] ||
+    box[2] > config.bbox[2] || box[3] > config.bbox[3];
+  const ground = outside
+    ? await elevationFor([
+      Math.min(config.bbox[0], box[0]), Math.min(config.bbox[1], box[1]),
+      Math.max(config.bbox[2], box[2]), Math.max(config.bbox[3], box[3]),
+    ], { offline: flag("offline") })
+    : elevation;
+  if (outside) {
+    console.log(`  ground      ${ground.tiles} tiles for the drawn box` +
+      `${ground.missing.length ? `, ${ground.missing.length} missing` : ""}`);
+  }
+  const terrain = bakeTerrain(box, ground, TERRAIN_SAMPLES);
   console.log(`  terrain     ${terrain.n}x${terrain.n} samples over ` +
     `${((box[2] - box[0]) * 78).toFixed(1)}x${((box[3] - box[1]) * 111).toFixed(1)}km, ` +
     `${Math.round(terrain.data.length / 1024)}KB`);

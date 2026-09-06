@@ -6,7 +6,8 @@
  * when the resort changes" means in numbers: nothing about the slab is a
  * constant, and every dimension moves with the terrain it is under.
  */
-import { buildField, slabFor, toUnit, SKIRT, GRID } from "./field.js";
+import { buildField, slabFor, toUnit, SKIRT, GRID, FIELD_PAD } from "./field.js";
+import { GRAPHS } from "../resorts/graphs.js";
 import { NODES as MONTEROSA, projector as monterosaProjector } from "../resort.js";
 import { projectorFor } from "../lib/projector.js";
 
@@ -164,6 +165,44 @@ console.log("\nAND A RIDGE PUTS THE GROUND BEHIND IT IN SHADOW");
   const partial = [...mono.shadows].filter((v) => v > 0.08 && v < 0.92).length;
   check("and the edges of a shadow are soft", partial > deep * 0.5,
     `${partial} quads part shaded against ${deep} fully`);
+}
+
+/*
+ * Every resort's baked elevation reaches as far as the mesh drawn from it.
+ *
+ * These are two different boxes and were quietly different. The DEM was baked
+ * over the config's Overpass bbox; the mesh spans the node bbox padded by
+ * FIELD_PAD on every side, which at Monterosa is 34.9km against the config's
+ * 28.1. Everything past the DEM's edge fell through to the old interpolation
+ * between lift-station altitudes — so the outer two kilometres west and three
+ * and a half east of a real mountain were a smooth invented apron, and looked
+ * like one. Nothing failed; the fallback is there for the hand-typed graph and
+ * it did its job silently.
+ */
+console.log("\nTHE ELEVATION REACHES AS FAR AS THE MESH");
+for (const [id, mod] of Object.entries(GRAPHS)) {
+  if (!mod.TERRAIN) continue;
+  const proj = projectorFor(mod.NODES);
+  const pts = Object.values(mod.NODES).map((n) => proj.project(n.lat, n.lon));
+  const xs = pts.map((q) => q.x);
+  const zs = pts.map((q) => q.z);
+  const padX = (Math.max(...xs) - Math.min(...xs)) * FIELD_PAD;
+  const padZ = (Math.max(...zs) - Math.min(...zs)) * FIELD_PAD;
+  const corners = [
+    proj.unproject(Math.min(...xs) - padX, Math.min(...zs) - padZ),
+    proj.unproject(Math.max(...xs) + padX, Math.max(...zs) + padZ),
+  ];
+  const lons = corners.map((c) => c.lon);
+  const lats = corners.map((c) => c.lat);
+  const t = mod.TERRAIN;
+  const covers = t.west <= Math.min(...lons) + 1e-9 && t.east >= Math.max(...lons) - 1e-9 &&
+    t.south <= Math.min(...lats) + 1e-9 && t.north >= Math.max(...lats) - 1e-9;
+  const short = Math.round(Math.max(
+    (t.west - Math.min(...lons)) * 78, (Math.max(...lons) - t.east) * 78,
+    (t.south - Math.min(...lats)) * 111, (Math.max(...lats) - t.north) * 111
+  ) * 1000);
+  check(`${id}: the DEM covers the whole mesh`, covers,
+    covers ? `${t.n} samples over the drawn box` : `${short}m of mesh with no measurement under it`);
 }
 
 console.log("\nTHE CAMERA IS ABOVE THE MOUNTAIN");

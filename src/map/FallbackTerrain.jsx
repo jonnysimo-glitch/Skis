@@ -131,6 +131,23 @@ const DEPTH_STEP = 1;
  * thousand cells on its own. Four by four turns a block into a picture, and
  * past that the limit is the imagery's resolution rather than the mesh's.
  */
+/**
+ * Progressive refinement.
+ *
+ * The mesh is as fine as the measured ground under it. What that costs is a
+ * frame time while the camera is turning, and that is the only thing it costs:
+ * a still mountain can be drawn once, properly, at whatever the terrain data
+ * actually holds. So a moving one takes every MESH_STRIDE'th vertex and the
+ * full mesh goes down a beat after the finger comes off.
+ *
+ * The same field either way, so `sample`, `hi` and `lo` — and therefore the
+ * framing — are identical between the two passes and refining cannot move the
+ * camera under the user.
+ */
+const MESH_STRIDE = 2;
+/** How still the camera has to be before the fine pass is worth starting. */
+const MESH_SETTLE_MS = 140;
+
 const SUBDIVIDE_PX = 4;
 const SUBDIVIDE_MAX = 4;
 
@@ -205,6 +222,14 @@ const PAN_REUSE_MAX = 80;
  * of rasterising on the redraws, not on the frames in between.
  */
 const TERRAIN_MARGIN = 80;
+/**
+ * How far past the drawn area a quad may reach and still be worth drawing.
+ *
+ * The margin, plus slack for a quad that straddles the boundary: only quads
+ * with all four corners outside are dropped, and a big one seen edge-on can
+ * have all four corners past the line while its middle is still in shot.
+ */
+const CULL_PAD = TERRAIN_MARGIN + 240;
 
 /**
  * How many mountain places to show, as `count = base * zoom ** power`.
@@ -355,9 +380,16 @@ const ZOOM_EASE_MS = 110;
  */
 /** One mesh cell, in CSS pixels, at the middle of the scene. */
 const cellPx = (f) => f / (GRID * 1.45);
-/** The largest area of one flat colour on the surface, in CSS pixels. */
-const patchPx = (f, skinned) => {
-  const cell = cellPx(f);
+/**
+ * The largest area of one flat colour on the surface, in CSS pixels.
+ *
+ * `step` is the mesh stride: while the camera is moving the surface is drawn
+ * on every second vertex, so a patch is twice as wide and needs twice the
+ * softening. Getting this wrong is visible as the mountain sharpening and
+ * un-sharpening as you turn it.
+ */
+const patchPx = (f, skinned, step = 1) => {
+  const cell = cellPx(f) * step;
   if (!skinned) return cell;
   const n = Math.max(1, Math.min(SUBDIVIDE_MAX, Math.round(cell / SUBDIVIDE_PX)));
   return cell / n;
@@ -371,8 +403,8 @@ const patchPx = (f, skinned) => {
 const BLUR_PER_PATCH = 0.32;
 const BLUR_MIN = 1.4;
 const BLUR_MAX = 4;
-const blurFor = (f, skinned) =>
-  Math.max(BLUR_MIN, Math.min(BLUR_MAX, patchPx(f, skinned) * BLUR_PER_PATCH));
+const blurFor = (f, skinned, step = 1) =>
+  Math.max(BLUR_MIN, Math.min(BLUR_MAX, patchPx(f, skinned, step) * BLUR_PER_PATCH));
 
 /**
  * Pitch limits. 0 is straight down, which is as far as the camera goes: there
@@ -1277,11 +1309,31 @@ export default function FallbackTerrain({
       }
     };
 
-    const drawTerrain = (v, cam, g, dep) => {
+    /**
+     * Draw the mountain, optionally every `step`th vertex.
+     *
+     * Progressive refinement, and the reason the mesh can be fine at all. The
+     * grid is sampled from a measured DEM and there is no point holding it
+     * coarser than the screen — at the framing the app opens on, a cell at
+     * GRID 72 is eleven pixels, so the surface is half the resolution of the
+     * display it is being drawn to and the softening exists to hide that.
+     *
+     * What stops it being fine is the frame time while the camera is turning,
+     * and that is a different question from what the still picture looks like.
+     * A moving mountain is drawn on the stride and the still one at full
+     * resolution, a beat after the finger comes off. One field either way, so
+     * `sample`, `hi`, `lo` and therefore the framing are identical between the
+     * two and refining cannot move the camera.
+     */
+    const drawTerrain = (v, cam, g, dep, step = 1) => {
       const { heights, at, shades, shadows, steeps, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
       const dz = (maxZ - minZ) / GRID;
       const skin = photoGrid();
+      // The offscreen reaches TERRAIN_MARGIN past the canvas on every side, in
+      // the canvas's own coordinates, so anything beyond that is not drawn.
+      const cullR = width + CULL_PAD;
+      const cullB = height + CULL_PAD;
       const quads = [];
       let dMin = Infinity;
       let dMax = -Infinity;
@@ -1296,30 +1348,70 @@ export default function FallbackTerrain({
        * drawn and became the thing to fix the moment a depth pass wanted the
        * same corners again.
        */
+      // Only the lattice the stride actually visits. The array is full size so
+      // `at` still addresses it, and the slab below reads the same corners.
       const verts = new Array((GRID + 1) * (GRID + 1));
-      for (let i = 0; i <= GRID; i++) {
+      for (let i = 0; i <= GRID; i += step) {
         const x = minX + dx * i;
-        for (let j = 0; j <= GRID; j++) {
+        for (let j = 0; j <= GRID; j += step) {
           const k = at(i, j);
           verts[k] = project(x, heights[k], minZ + dz * j, v, cam);
         }
       }
+      // The last row and column, whatever the stride leaves over, so a mesh
+      // whose size is not a multiple of the stride still reaches its own edge
+      // instead of stopping short of it and showing the slab through the gap.
+      if (GRID % step) {
+        for (let i = 0; i <= GRID; i += step) {
+          verts[at(i, GRID)] = project(minX + dx * i, heights[at(i, GRID)], maxZ, v, cam);
+        }
+        for (let j = 0; j <= GRID; j += step) {
+          verts[at(GRID, j)] = project(maxX, heights[at(GRID, j)], minZ + dz * j, v, cam);
+        }
+        verts[at(GRID, GRID)] = project(maxX, heights[at(GRID, GRID)], maxZ, v, cam);
+      }
+      const next = (i) => (i + step >= GRID ? GRID : i + step);
 
-      for (let i = 0; i < GRID; i++) {
-        for (let j = 0; j < GRID; j++) {
+      for (let i = 0; i < GRID; i += step) {
+        const i2 = next(i);
+        for (let j = 0; j < GRID; j += step) {
+          const j2 = next(j);
           const h00 = heights[at(i, j)];
-          const h10 = heights[at(i + 1, j)];
-          const h01 = heights[at(i, j + 1)];
-          const h11 = heights[at(i + 1, j + 1)];
+          const h10 = heights[at(i2, j)];
+          const h01 = heights[at(i, j2)];
+          const h11 = heights[at(i2, j2)];
 
           const a = verts[at(i, j)];
-          const b = verts[at(i + 1, j)];
-          const c = verts[at(i + 1, j + 1)];
-          const d = verts[at(i, j + 1)];
+          const b = verts[at(i2, j)];
+          const c = verts[at(i2, j2)];
+          const d = verts[at(i, j2)];
 
           const depth = (a.depth + c.depth) / 2;
           dMin = Math.min(dMin, depth);
           dMax = Math.max(dMax, depth);
+
+          /*
+           * Ground nobody can see costs nothing.
+           *
+           * Zoomed in, most of the mesh is off the sides — at zoom four,
+           * fifteen quads in sixteen are outside the frame, and every one of
+           * them was being projected, sorted, filled and written to the depth
+           * buffer. The margin is the same one the terrain is drawn past so a
+           * pan can slide it without exposing bare canvas, plus a quad's worth
+           * of slack so nothing on the boundary is dropped while part of it is
+           * still showing.
+           *
+           * The bounds are the offscreen's, in its own coordinates, which is
+           * why the margin is added on both sides rather than subtracted on
+           * one. Cheap enough to be worth doing per quad: four comparisons
+           * against a fill that costs microseconds.
+           */
+          if ((a.x < -CULL_PAD && b.x < -CULL_PAD && c.x < -CULL_PAD && d.x < -CULL_PAD) ||
+              (a.x > cullR && b.x > cullR && c.x > cullR && d.x > cullR) ||
+              (a.y < -CULL_PAD && b.y < -CULL_PAD && c.y < -CULL_PAD && d.y < -CULL_PAD) ||
+              (a.y > cullB && b.y > cullB && c.y > cullB && d.y > cullB)) {
+            continue;
+          }
 
           /*
            * The depth mesh is coarser than the picture, and safe to be.
@@ -1339,19 +1431,21 @@ export default function FallbackTerrain({
            * under-occlusion, never over.
            */
           let block = null;
-          if (dep && i % DEPTH_STEP === 0 && j % DEPTH_STEP === 0) {
-            const i2 = Math.min(i + DEPTH_STEP, GRID);
-            const j2 = Math.min(j + DEPTH_STEP, GRID);
+          const dstep = DEPTH_STEP * step;
+          if (dep && i % dstep === 0 && j % dstep === 0) {
+            const bi = Math.min(i + dstep, GRID);
+            const bj = Math.min(j + dstep, GRID);
             let far = -Infinity;
-            for (let u = i; u <= i2; u++) {
-              for (let w = j; w <= j2; w++) {
-                const q = verts[at(u, w)].depth;
+            for (let u = i; u <= bi; u += step) {
+              const uu = Math.min(u, GRID);
+              for (let w = j; w <= bj; w += step) {
+                const q = verts[at(uu, Math.min(w, GRID))]?.depth;
                 if (q > far) far = q;
               }
             }
             block = {
               far,
-              pts: [verts[at(i, j)], verts[at(i2, j)], verts[at(i2, j2)], verts[at(i, j2)]],
+              pts: [verts[at(i, j)], verts[at(bi, j)], verts[at(bi, bj)], verts[at(i, bj)]],
             };
           }
 
@@ -1423,13 +1517,17 @@ export default function FallbackTerrain({
             out
           );
 
-        for (let i = 0; i < GRID; i++) {
-          edge(i, 0, 1, 0, [0, -1]);
-          edge(i, GRID, 1, 0, [0, 1]);
+        // Along the same lattice the surface uses, so the rim meets the ground
+        // it is holding up rather than cutting across it.
+        for (let i = 0; i < GRID; i += step) {
+          const d = next(i) - i;
+          edge(i, 0, d, 0, [0, -1]);
+          edge(i, GRID, d, 0, [0, 1]);
         }
-        for (let j = 0; j < GRID; j++) {
-          edge(0, j, 0, 1, [-1, 0]);
-          edge(GRID, j, 0, 1, [1, 0]);
+        for (let j = 0; j < GRID; j += step) {
+          const d = next(j) - j;
+          edge(0, j, 0, d, [-1, 0]);
+          edge(GRID, j, 0, d, [1, 0]);
         }
 
         // The underside, one flat tone, so it is a box and not a shell.
@@ -1471,6 +1569,7 @@ export default function FallbackTerrain({
       let flat = 0;
       let textured = 0;
       let cells = 0;
+      let patch = 0;
       for (const q of quads) {
         const haze = Math.max(0, Math.min(1, (q.depth - dMin) / dSpan));
         // Flat means exactly that: one tone, no relief shading and no haze.
@@ -1526,6 +1625,11 @@ export default function FallbackTerrain({
           const tall = Math.max(Math.abs(d.y - a.y), Math.abs(c.y - b.y));
           const n = Math.max(1, Math.min(SUBDIVIDE_MAX,
             Math.round(Math.max(wide, tall) / SUBDIVIDE_PX)));
+          // The biggest area of the photograph painted as one colour, which is
+          // what "does the drape reach the screen" actually asks. Whether the
+          // resolution comes from the mesh or from subdividing it is an
+          // implementation detail; how coarse the result is, is not.
+          if (mapTest) patch = Math.max(patch, Math.max(wide, tall) / n);
           if (n > 1) {
             drawTextured(g, q, n, haze, dx, dz, minX, minZ);
             if (mapTest) { textured++; cells += n * n; }
@@ -1575,7 +1679,14 @@ export default function FallbackTerrain({
           dep.fill();
         }
       }
-      if (mapTest) window.__skisSurface = { flat, textured, cells };
+      if (mapTest) {
+        window.__skisSurface = { flat, textured, cells, patch: Math.round(patch * 10) / 10 };
+        // Which pass drew what is on screen: the stride, and the mesh it is a
+        // stride of. Canvas leaves nothing to assert against, and inferring
+        // "is this the fine one" from pixels is exactly the sort of guess that
+        // passes when the refinement has quietly stopped happening.
+        window.__skisMesh = { step, grid: GRID, quads: quads.length };
+      }
     };
 
     /**
@@ -2470,6 +2581,11 @@ export default function FallbackTerrain({
     let frameDt = 16.7;
     let raf = 0;
     let lastBearing = null;
+    /** The camera as of the last frame, and when it last differed. */
+    let lastSig = "";
+    let stillSince = 0;
+    /** The stride the picture on the offscreen was drawn at. */
+    let drawnStep = MESH_STRIDE;
     const frame = () => {
       const v = view.current;
 
@@ -2612,6 +2728,24 @@ export default function FallbackTerrain({
          * A key of "has imagery: yes" would have frozen the coarse mosaic on
          * screen for ever.
          */
+        /*
+         * Moving, or settled?
+         *
+         * Everything the camera can change, pan included — a slid frame is
+         * still a moving one, even though the picture is reused rather than
+         * redrawn. Compared against the last frame rather than the last draw,
+         * because the question is whether the user's hand has stopped, not
+         * whether the cache is warm.
+         */
+        const nowSig = `${cam.f}|${v.bearing}|${v.pitch}|${v.zoom}|${cam.ox}|${cam.oy}`;
+        if (nowSig !== lastSig || v.dragging) { lastSig = nowSig; stillSince = now; }
+        // Never while a finger is down. A thumb that pauses mid-drag holds the
+        // camera still, and refining there spends a long frame under the hand
+        // and then throws it away on the next pixel of movement — a stutter
+        // exactly where the map is meant to feel attached to the finger.
+        const settled = !v.dragging && now - stillSince >= MESH_SETTLE_MS;
+        const step = settled ? 1 : MESH_STRIDE;
+
         const now2 = {
           f: cam.f,
           bearing: v.bearing,
@@ -2623,6 +2757,7 @@ export default function FallbackTerrain({
           block: propsRef.current.block,
           nodes: propsRef.current.nodes,
           shadowsOn,
+          step,
         };
         const same = cachedAt !== null &&
           Object.keys(now2).every((k) => cachedAt.what[k] === now2[k]);
@@ -2646,7 +2781,7 @@ export default function FallbackTerrain({
           depthCtx.clearRect(0, 0, depth.width, depth.height);
           depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE,
             TERRAIN_MARGIN * DEPTH_SCALE, TERRAIN_MARGIN * DEPTH_SCALE);
-          drawTerrain(v, cam, offCtx, depthCtx);
+          drawTerrain(v, cam, offCtx, depthCtx, step);
           // One readback for the frame. Per-point getImageData is the obvious
           // way to write this and is orders of magnitude slower: every call
           // synchronises with the compositor, and there are thousands of
@@ -2655,6 +2790,7 @@ export default function FallbackTerrain({
             ? depthCtx.getImageData(0, 0, depth.width, depth.height)
             : null;
           cachedAt = { what: now2, ox: cam.ox, oy: cam.oy };
+          drawnStep = step;
         }
 
         // Blur it, then cut the blur back to the sharp shape.
@@ -2669,7 +2805,7 @@ export default function FallbackTerrain({
         if (!reuse) {
           blurCtx.setTransform(1, 0, 0, 1, 0, 0);
           blurCtx.clearRect(0, 0, blur.width, blur.height);
-          blurCtx.filter = `blur(${blurFor(cam.f, !!propsRef.current.imagery) * dpr}px)`;
+          blurCtx.filter = `blur(${blurFor(cam.f, !!propsRef.current.imagery, step) * dpr}px)`;
           blurCtx.drawImage(off, 0, 0);
           blurCtx.filter = "none";
           blurCtx.globalCompositeOperation = "destination-in";
@@ -2728,6 +2864,21 @@ export default function FallbackTerrain({
         const want = propsRef.current.onDetail;
         if (want && lastCam.current) want(visibleGround(v, lastCam.current));
 
+      }
+
+      /*
+       * The camera has stopped and the picture is the coarse one. Ask for a
+       * frame, so the fine mesh goes down.
+       *
+       * Here rather than inside the draw, because the draw only runs when
+       * something is dirty and nothing is: the hand came off and the map is
+       * sitting there at half resolution. One dirty flag, and the branch above
+       * does the rest — the stride is part of the cache key, so it redraws
+       * rather than reusing what it has.
+       */
+      if (drawnStep > 1 && lastSig && !view.current.dragging &&
+          now - stillSince >= MESH_SETTLE_MS) {
+        dirty.current = true;
       }
       raf = requestAnimationFrame(frame);
     };

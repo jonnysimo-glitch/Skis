@@ -7,12 +7,24 @@
  * refine chips depend on and which makes the tests worth writing.
  */
 /*
- * 72, measured rather than guessed. The redraw only happens when something
- * moved, so what matters is the frame time during a drag: 60 was 44ms at the
- * 95th percentile on this machine and 72 is 46ms, for 44% more ground. 84
- * costs 60ms, which is a visible stutter on a phone.
+ * As fine as the ground under it, which is not the same as as fine as the
+ * frame budget.
+ *
+ * This was 72, chosen off the drag frame time — 84 cost 60ms and stuttered.
+ * That reasoning tied the resolution of the still picture to the cost of the
+ * moving one, and they are separate questions: the renderer draws a moving
+ * mountain on every second vertex and the still one on all of them, a beat
+ * after the hand comes off, so the mesh is paid for at a quarter of the quads
+ * during the gesture nobody wants to stutter.
+ *
+ * 144 is what the data holds. The baked DEM is 160 samples square, so a finer
+ * mesh than this would be interpolating between measurements rather than
+ * reading them; a coarser one throws half of them away, which at the framing
+ * the app opens on made a cell eleven screen pixels across — half the
+ * resolution of the display, and the reason the surface needed blurring to
+ * look like ground at all.
  */
-export const GRID = 72;
+export const GRID = 144;
 
 /**
  * Real alpine terrain looks flat at 1.0 on a phone, per the brief. Lives here
