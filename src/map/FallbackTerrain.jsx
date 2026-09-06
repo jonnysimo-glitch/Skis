@@ -16,7 +16,7 @@ import { NODES as ACTIVE_NODES, PLACES as ACTIVE_PLACES, TERRAIN as ACTIVE_TERRA
 import { shortName } from "../lib/places.js";
 import {
   buildField, slabFor, toUnit, GRID, VERT_EXAGGERATION,
-  SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR,
+  SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR, STRATA,
   SKY_TOP, SKY_MID, SKY_HORIZON,
 } from "./field.js";
 import { PISTE_COLOUR, PISTE_TINT, LIFT_TINT } from "../lib/geo.js";
@@ -512,6 +512,21 @@ const BLOCK_FILL = 0.55;
 const FRAME_PAD = 0.18;
 
 
+
+/**
+ * The block's face, painted in layers rather than in one tone.
+ *
+ * Nearly free: one gradient per rim strip, of which there are a few hundred.
+ * The multipliers are STRATA, in field.js, next to the colours they scale.
+ */
+const strata = (g, rgb, band) => {
+  const paint = g.createLinearGradient(band[0], band[1], band[2], band[3]);
+  for (const [t, k] of STRATA) {
+    paint.addColorStop(t, `rgb(${Math.min(255, Math.round(rgb[0] * k))},` +
+      `${Math.min(255, Math.round(rgb[1] * k))},${Math.min(255, Math.round(rgb[2] * k))})`);
+  }
+  return paint;
+};
 
 const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
 
@@ -1507,6 +1522,13 @@ export default function FallbackTerrain({
             block: dep ? { far: Math.max(...pts.map((q) => q.depth)), pts } : null,
             pts,
             flat: out[0] !== 0 ? SKIRT_SHADE : SKIRT_LIT,
+            // Down the face, for the strata. The rim is a constant thickness
+            // following the ground, so a band across it runs parallel to the
+            // ground above — which is what strata in a cut block look like.
+            band: [
+              (pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2,
+              (pts[2].x + pts[3].x) / 2, (pts[2].y + pts[3].y) / 2,
+            ],
           });
         };
 
@@ -1638,7 +1660,7 @@ export default function FallbackTerrain({
         }
 
         const fill = q.flat
-          ? `rgb(${q.flat[0]},${q.flat[1]},${q.flat[2]})`
+          ? q.band ? strata(g, q.flat, q.band) : `rgb(${q.flat[0]},${q.flat[1]},${q.flat[2]})`
           // A quad the drape could not reach — outside the tiles that were
           // fetched — falls back to the drawn surface rather than to a hole,
           // so the edge of the imagery is a change of texture and not a cliff.

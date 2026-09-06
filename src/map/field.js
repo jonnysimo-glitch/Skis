@@ -159,9 +159,46 @@ export function skyAt(t) {
   return [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * k));
 }
 
-export const SKIRT_LIT = [241, 246, 251];
-export const SKIRT_SHADE = [203, 220, 235];
-export const BASE_COLOUR = [188, 208, 226];
+/*
+ * The block is rock, not more snow.
+ *
+ * These were a near-white and two shades off it, so the rim under the terrain
+ * was the same colour as the snowfield above it and the model read as a
+ * snowfield that stopped rather than as a piece of mountain lifted out of the
+ * range. Mowi's block is the reference here and the thing it gets right is the
+ * base: dark stone under the ground, which is what makes the whole thing sit
+ * as an object with a top, sides and a bottom.
+ *
+ * Cool grey rather than brown, so the one saturated colour on screen is still
+ * the route. There is an old warning against this in the comment on the rim in
+ * FallbackTerrain.jsx and it is worth reading before touching these: a rim
+ * this dark is honest about where it is, so if a change here makes the model
+ * look worse, the rim is covering something and the colour is what exposed it,
+ * not what caused it.
+ */
+export const SKIRT_LIT = [106, 101, 95];
+export const SKIRT_SHADE = [70, 66, 62];
+export const BASE_COLOUR = [47, 44, 41];
+
+/**
+ * Bedding planes down the face of the block, as multipliers on whichever face
+ * colour a strip already has.
+ *
+ * A rim in one flat tone is a shape; rock is layers. Uneven on purpose —
+ * evenly spaced bands read as a barcode rather than as geology — and the last
+ * stop is the darkest because the bottom of a cut face is in its own shadow.
+ *
+ * Here rather than in the renderer because the feature suite has to tell the
+ * slab from the mountain, and it used to do that by matching the three colours
+ * above exactly. Strata broke that: nearly every rim pixel is now some scalar
+ * multiple of a face colour. The multipliers are only ever scalar, never a
+ * hue shift, so the test is "is this one of those colours, dimmed" — which
+ * needs the range, and a copy of it here would go stale.
+ */
+export const STRATA = [
+  [0, 1.07], [0.13, 1.02], [0.145, 0.9], [0.33, 0.95], [0.35, 1.04],
+  [0.52, 0.98], [0.545, 0.88], [0.74, 0.93], [0.76, 1.0], [1, 0.72],
+];
 
 /**
  * The slab's dimensions for a given field.

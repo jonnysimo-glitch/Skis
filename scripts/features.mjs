@@ -11,7 +11,7 @@
  */
 import { RESORTS } from "../src/resorts/index.js";
 import { graphFor } from "../src/resorts/graphs.js";
-import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR, skyAt } from "../src/map/field.js";
+import { SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR, STRATA, skyAt } from "../src/map/field.js";
 import { DWELL_MS as DWELL } from "../src/lib/progress.js";
 import { PNG } from "pngjs";
 import {
@@ -1202,7 +1202,7 @@ if (feature("13. The block is under the mountain, not in front of it")) {
      * The renderer's own stops are imported, so this cannot drift again.
      */
     const SKY = Array.from({ length: 101 }, (_, i) => skyAt(i / 100));
-    const shot = await page.$eval(SEL, (c, [FLAT, SKY_ROWS]) => {
+    const shot = await page.$eval(SEL, (c, [FLAT, SKY_ROWS, KLO, KHI]) => {
       const g = c.getContext("2d");
       const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
       let slab = 0, terrain = 0, top = 1e9, bottom = -1;
@@ -1215,7 +1215,17 @@ if (feature("13. The block is under the mountain, not in front of it")) {
           const [r, gg, b] = [data[i], data[i + 1], data[i + 2]];
           const isSky = Math.abs(r - sky[0]) <= 5 && Math.abs(gg - sky[1]) <= 5 && Math.abs(b - sky[2]) <= 5;
           if (isSky) continue;
-          const isSlab = FLAT.some((f) => f[0] === r && f[1] === gg && f[2] === b);
+          // One of the slab's face colours, dimmed or brightened by a bedding
+          // plane. The strata only ever scale a colour, so the test is that
+          // all three channels are the same multiple of one of them, and that
+          // the multiple is inside the range STRATA uses. Exact equality was
+          // the old test and it counted one rim pixel in a hundred once the
+          // face stopped being one flat tone.
+          const isSlab = FLAT.some((f) => {
+            const k = r / f[0];
+            if (k < KLO || k > KHI) return false;
+            return Math.abs(gg - f[1] * k) < 1.2 && Math.abs(b - f[2] * k) < 1.2;
+          });
           if (isSlab) { slab++; rSlab++; } else { terrain++; rTerrain++; }
           if (y < top) top = y;
           if (y > bottom) bottom = y;
@@ -1232,7 +1242,9 @@ if (feature("13. The block is under the mountain, not in front of it")) {
         upperSlab += r.rSlab;
       }
       return { slab, terrain, upperTerrain, upperSlab };
-    }, [[SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR], SKY]);
+    }, [[SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR], SKY,
+      Math.min(...STRATA.map(([, k]) => k)) - 0.02,
+      Math.max(...STRATA.map(([, k]) => k)) + 0.02]);
 
     const model = shot.slab + shot.terrain;
     const slabPct = (shot.slab / model) * 100;
