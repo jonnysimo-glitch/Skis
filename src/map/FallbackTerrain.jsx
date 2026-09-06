@@ -199,18 +199,48 @@ const OVERLAP = 0.06;
  * flickers across a silhouette for two frames now changes by a tenth and comes
  * straight back, which is invisible.
  */
-const PLACE_FADE_MS = 220;
+const PLACE_FADE_MS = 260;
+/**
+ * Longer on the way out than on the way in.
+ *
+ * Not symmetry for its own sake. Arriving is information, so it should be
+ * quick; leaving is usually the map changing its mind, and a slow exit means a
+ * place that goes and comes straight back never visibly went. Together with
+ * the hold below, a small nudge of the camera cannot take anything off the
+ * mountain.
+ */
+const PLACE_FADE_OUT_MS = 460;
+/**
+ * How long a place keeps its place after it stops qualifying.
+ *
+ * "There should be a range that holds them", which is exactly right: what was
+ * on the mountain a moment ago should still be there after a small move. The
+ * old memory was one frame — `heldPlaces` was rebuilt from what got drawn — so
+ * a marker that grazed a silhouette for a single frame lost its incumbency,
+ * a newcomer took the slot, and the two then swapped back and forth.
+ */
+const PLACE_HOLD_MS = 1400;
+/**
+ * How far the budget may stretch to keep incumbents, before it starts evicting.
+ *
+ * The budget is a continuous function of zoom rounded to a whole number, so a
+ * hair of zoom either side of a boundary adds and removes a place. The slack
+ * lets what is already showing stay showing while the budget passes under it,
+ * and only trims once the gap is real.
+ */
+const PLACE_BUDGET_SLACK = 1.35;
 
 /**
- * How many frames running a place must be behind the mountain before it goes.
+ * How long a place must be behind the mountain before it goes.
  *
- * The depth test is exact and that is the problem: a marker sitting on a
- * silhouette crosses it and back as the mountain turns, and each crossing
- * frees a collision box that something else takes. Four frames is a
- * fifteenth of a second — far too short to keep a marker that has genuinely
- * gone behind a ridge, and long enough that grazing one costs nothing.
+ * In milliseconds, which is what the eye is judging. This was four frames:
+ * 66ms on a phone drawing smoothly and half a second on one that is not, so
+ * the same code was patient on a slow device and twitchy on a fast one. Half a
+ * second either way now. What it absorbs is a marker grazing a silhouette as
+ * the camera turns, which is a fact about the ridge rather than about the
+ * restaurant.
  */
-const OCCLUSION_PATIENCE = 4;
+const OCCLUSION_HOLD_MS = 520;
 
 /**
  * How far the map may slide before the terrain has to be drawn again rather
@@ -1159,6 +1189,11 @@ export default function FallbackTerrain({
         f,
         ox: padX + availW / 2 - (f * (u0 + u1)) / 2 + v.panX,
         oy: top + padTop + availH / 2 - (f * (v0 + v1)) / 2 + v.panY,
+        // The pan this camera was solved with. A drag needs it: pointer moves
+        // arrive faster than frames, so between renders the pan has moved on
+        // and anything projected with this camera is that far out of date.
+        panX: v.panX,
+        panY: v.panY,
       };
     };
 
@@ -2378,18 +2413,33 @@ export default function FallbackTerrain({
      * the ranking stays strictly by altitude, and the cascade has nothing to
      * start from.
      */
-    let heldPlaces = new Set();
-    const occludedFor = new Map();
-    const steady = (key, hidden) => {
-      const n = hidden ? (occludedFor.get(key) ?? 0) + 1 : 0;
-      occludedFor.set(key, n);
-      return n >= OCCLUSION_PATIENCE;
+    /** When each place was last drawn, and how long it has been hidden. */
+    const shownAt = new Map();
+    const hiddenSince = new Map();
+    /** How many places the last frame put on the mountain. */
+    let lastShownCount = 0;
+    const steady = (key, hidden, now) => {
+      if (!hidden) { hiddenSince.delete(key); return false; }
+      const since = hiddenSince.get(key);
+      if (since === undefined) { hiddenSince.set(key, now); return false; }
+      return now - since >= OCCLUSION_HOLD_MS;
     };
 
     const fades = new Map();
     const fadeOf = (key, want, dt) => {
-      const from = fades.get(key) ?? (want ? 1 : 0);
-      const step = Math.min(1, dt / PLACE_FADE_MS);
+      /*
+       * Everything starts at nothing and fades up, including the first one.
+       *
+       * A key seen for the first time used to start at full if it was wanted,
+       * so a place arriving popped to solid between two frames and only ever
+       * faded on the way OUT. Half a fade is not a fade — "they should appear
+       * gradually" is the whole request — and it made the first appearance the
+       * most abrupt thing on the map. Starting at zero also fades the opening
+       * set in over a quarter of a second, which is the map arriving rather
+       * than the map being there.
+       */
+      const from = fades.get(key) ?? 0;
+      const step = Math.min(1, dt / (want ? PLACE_FADE_MS : PLACE_FADE_OUT_MS));
       const to = from + ((want ? 1 : 0) - from) * step;
       fades.set(key, to);
       // Anything moving needs another frame to finish moving in.
@@ -2428,7 +2478,21 @@ export default function FallbackTerrain({
        * one is what left the far view crowded, because at that distance the
        * markers are small and a great many of them fit.
        */
-      const budget = Math.round(HUT_BASE_COUNT * v.zoom ** HUT_ZOOM_POWER);
+      const wanted = Math.round(HUT_BASE_COUNT * v.zoom ** HUT_ZOOM_POWER);
+      /*
+       * With a dead band, so a hair of zoom does not add and remove one.
+       *
+       * The budget is a continuous function of zoom rounded to a whole number.
+       * Nudge the camera and it steps by one; the place at the bottom of the
+       * ranking goes, and comes back, and goes. The band lets what is already
+       * on the mountain stay there while the number passes under it, and only
+       * trims once the gap is bigger than the slack — which walks the count
+       * down over a few frames instead of snapping it.
+       */
+      const budget = Math.max(
+        wanted,
+        Math.min(lastShownCount, Math.round(wanted * PLACE_BUDGET_SLACK))
+      );
       if (budget <= 0) { if (!labelsOnly) hutsDrawn.clear(); return placed; }
       if (!labelsOnly) hutsDrawn.clear();
       // Sorted, not sliced. The budget is spent on places that actually get
@@ -2447,6 +2511,10 @@ export default function FallbackTerrain({
         placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t);
 
       const drawn = [];
+      // Why a place is not on the mountain, for when the answer matters. Four
+      // different tests can drop one and they need different fixes.
+      const why = mapTest ? {} : null;
+      const lit = mapTest ? [] : null;
       /*
        * Incumbents first, then everyone else, both in altitude order.
        *
@@ -2459,25 +2527,52 @@ export default function FallbackTerrain({
        * Both, because they fix different halves. Neither changes WHICH places
        * are eligible — that is altitude, and it stays altitude.
        */
+      const holding = (full) => frameNow - (shownAt.get(full) ?? -Infinity) < PLACE_HOLD_MS;
       const order = [
-        ...list.filter(([full]) => heldPlaces.has(full)),
-        ...list.filter(([full]) => !heldPlaces.has(full)),
+        ...list.filter(([full]) => holding(full)),
+        ...list.filter(([full]) => !holding(full)),
       ];
       for (const [full, kind, lat, lon, alt] of order) {
-        // The names pass only names what the markers pass drew. Without this
-        // the budget applied to markers and not to labels, so past it a place
-        // got its name written on the mountain with no marker under it.
-        if (labelsOnly && !hutsDrawn.has(full)) continue;
         const name = shortName(full);
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
-        if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
-        // A restaurant on the far side of the mountain is behind the mountain —
-        // but only once it has been for a few frames running. See `steady`.
-        if (steady(`h:${full}`, !visible(s))) continue;
+        /*
+         * Every reason to hide something goes through the fade, not around it.
+         *
+         * Three tests used to `continue` before `fadeOf` was ever called: off
+         * the screen, behind the mountain, and — in the names pass — having no
+         * marker under it. A fade that is not asked for does not run, so it
+         * froze at whatever it last was, which for something that had been on
+         * screen is one. Go behind a ridge and the marker vanished between two
+         * frames; come back out and it appeared at full strength between two
+         * more. All the softening in this file was reaching only the places
+         * that lost their room to a collision.
+         *
+         * Far off screen is the exception and is not a fade: there is nothing
+         * to see either way, so the fade is set to zero outright and the place
+         * comes back the way a new one does.
+         */
+        if (s.x < -60 || s.x > width + 60 || s.y < -60 || s.y > height + 60) {
+          if (why) why[full] = "off screen";
+          fades.set(`m:${full}`, 0);
+          fades.set(`n:${full}`, 0);
+          continue;
+        }
+        const hidden = steady(`h:${full}`, !visible(s), frameNow);
+        if (hidden && why) why[full] = "behind the mountain";
 
         const r = 6.4;
-        const box = { l: s.x - r - 3, r: s.x + r + 3, t: s.y - r - 3, b: s.y + r + 3 };
+        /*
+         * A marker's box is the marker, near enough.
+         *
+         * Three pixels of padding either side makes a nineteen pixel claim
+         * around a thirteen pixel disc, and on a summit where four
+         * restaurants sit within a hundred metres that is the difference
+         * between all four showing and two of them. The padding was there to
+         * keep discs from touching; one pixel does that, and a cluster that
+         * physically cannot fit is a cluster the eye can see is a cluster.
+         */
+        const box = { l: s.x - r - 1, r: s.x + r + 1, t: s.y - r - 1, b: s.y + r + 1 };
         if (labelsOnly) {
           /*
            * The marker went down in the earlier pass; this one only has to
@@ -2499,7 +2594,9 @@ export default function FallbackTerrain({
           const tx = Math.max(w / 2 + 6, Math.min(width - w / 2 - 6, s.x));
           const ty = s.y + r + 17;
           const label = { l: tx - w / 2 - 3, r: tx + w / 2 + 3, t: ty - 10, b: ty + 3 };
-          const fits = !hits(label);
+          // A name goes when its marker goes, at the same speed, rather than
+          // being cut the moment the marker loses its slot.
+          const fits = hutsDrawn.has(full) && !hits(label);
           const solid = fadeOf(`n:${full}`, fits, frameDt);
           if (fits) placed.push(label);
           if (solid <= 0.02) continue;
@@ -2531,24 +2628,52 @@ export default function FallbackTerrain({
          * the way going behind a ridge does.
          */
         const inside = box.l >= 0 && box.t >= 0 && box.r <= width && box.b <= height;
-        const wanted = inside && !hits(box);
-        const solid = fadeOf(`m:${full}`, wanted, frameDt);
-        if (wanted) placed.push(box);
+        /*
+         * Past the budget it fades out; it does not stop being drawn.
+         *
+         * This loop used to `break` at the budget, which reads as an economy
+         * and is a bug: a place pushed out of the ranking never reached
+         * `fadeOf` again, so its fade froze at full and the marker vanished
+         * between two frames. Everything the fade was there for — the gentle
+         * arrival, the slow exit — applied only to places that lost their room
+         * to a collision, and not to the far more common case of losing it to
+         * the budget. It is the largest part of "everything keeps appearing
+         * and disappearing".
+         *
+         * The cost of running to the end of the list instead is a few dozen
+         * projections a frame.
+         */
+        const room = drawn.length < budget;
+        const keep = !hidden && inside && room && !hits(box);
+        const solid = fadeOf(`m:${full}`, keep, frameDt);
+        if (keep) placed.push(box);
         if (solid > 0.02) {
           ctx.globalAlpha = solid;
           pin(s.x, s.y, r, kind);
           ctx.globalAlpha = 1;
+          // How solid, not just whether. Counting set membership calls a fade
+          // a disappearance, which is the one thing a fade is not; what the
+          // eye objects to is a marker that jumps between frames, and that is
+          // this number.
+          if (lit) lit.push({ full, alpha: Math.round(solid * 100) / 100 });
         }
-        if (!wanted) continue;
+        if (!keep) {
+          if (why) why[full] = !inside ? "half off the edge" : !room ? "past the budget" : "no room beside it";
+          continue;
+        }
 
         drawn.push({ name, full, kind, alt, ...box });
         hutsDrawn.add(full);
+        shownAt.set(full, frameNow);
         // So a junction of the same name does not write it a second time.
         spoken?.add(name);
-        if (drawn.length >= budget) break;
+      }
+      if (mapTest && !labelsOnly) {
+        window.__skisPlaceWhy = why;
+        window.__skisPlaceLit = lit;
       }
       if (mapTest && labelsOnly) window.__skisPlaceNames = named;
-      if (!labelsOnly) heldPlaces = new Set(drawn.map((d) => d.full));
+      if (!labelsOnly) lastShownCount = drawn.length;
       if (mapTest && !labelsOnly) {
         window.__skisPlaces = drawn;
         // Everything the resort has, so a check can ask whether what got shown
@@ -2735,6 +2860,8 @@ export default function FallbackTerrain({
     // The frame time the draw pass should ease by. Set once at the top of a
     // frame rather than threaded through six functions.
     let frameDt = 16.7;
+    /** The clock this frame is drawn against, for every hold and every fade. */
+    let frameNow = 0;
     let raf = 0;
     let lastBearing = null;
     /** The camera as of the last frame, and when it last differed. */
@@ -2879,6 +3006,7 @@ export default function FallbackTerrain({
       if (dirty.current || fadingPlaces) {
         dirty.current = false;
         frameDt = dt;
+        frameNow = now;
         fadingPlaces = false;
         const cam = fit(v);
         lastCam.current = cam;
@@ -3516,8 +3644,24 @@ export default function FallbackTerrain({
              * move after it tracks exactly. Which point was grabbed stops
              * mattering; only that the same one stays under the thumb.
              */
-            const gapX = c.x - gesture.grabDX - at.x;
-            const gapY = c.y - gesture.grabDY - at.y;
+            /*
+             * Less whatever pan has been applied since that camera was solved.
+             *
+             * `at` is where the grabbed ground was when the last frame was
+             * drawn, and a digitiser delivers moves faster than the page draws
+             * frames — two or three per frame at 120Hz. Without this every one
+             * of them measures the same stale gap and applies the whole of it,
+             * so the correction compounds and the map runs away from the
+             * finger: measured at 168 pixels of map for 67 pixels of thumb,
+             * two and a half times too far, and worst near the top of the
+             * screen where the ground is most compressed. It never showed in a
+             * test that waited for a frame between moves, which is not how a
+             * finger works.
+             */
+            const driftX = v.panX - cam.panX;
+            const driftY = v.panY - cam.panY;
+            const gapX = c.x - gesture.grabDX - (at.x + driftX);
+            const gapY = c.y - gesture.grabDY - (at.y + driftY);
             // A grab swung behind the camera projects a long way off, and
             // correcting to it would throw the map across the screen between
             // two frames. Past this it is not a correction.

@@ -371,6 +371,18 @@ export default function App() {
     }
     let live = true;
     setMapBroken(false);
+    /*
+     * Let go of the last mountain's photograph before fetching this one's.
+     *
+     * The drape stayed in state across a resort change, so for as long as the
+     * new mosaic took to arrive the map was draping one resort's imagery over
+     * another resort's ground. Every texture coordinate lands outside the
+     * mosaic there, and a clamped texture answers with its border pixel, so
+     * the whole mountain came out one flat colour — "all green", which is what
+     * the edge of a valley tile is. Nothing to show is the honest state, and
+     * the drawn snow surface is a complete map on its own.
+     */
+    setDrape(null);
     (async () => {
       const { loadImagery, templateTile, checkerTile } = await import("./map/imagery.js");
       /*

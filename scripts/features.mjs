@@ -1910,6 +1910,68 @@ if (feature("32. The places arrive as you get closer")) {
   // Holding still by showing nothing would satisfy that perfectly.
   check("without holding still by showing nothing", churn.avg >= 2,
     `${churn.avg.toFixed(1)} on the mountain on average`);
+  /*
+   * And nothing jumps: what changes, fades.
+   *
+   * Counting how many places are on the mountain from one frame to the next
+   * calls a fade a disappearance, which is the one thing a fade is not. What
+   * an eye objects to is a marker that is solid in one frame and gone in the
+   * next, so this watches the opacity of every marker through a slow drag and
+   * asks whether any of them stepped further than the fade allows in the time
+   * that frame took.
+   *
+   * Three routes used to skip the fade entirely — off the screen, behind the
+   * mountain, and past the budget — and a fade that is never asked for freezes
+   * at whatever it last was. Every one of those popped.
+   */
+  const pops = await page.evaluate(async (fadeMs) => {
+    const c = document.querySelector("canvas[aria-label*='Terrain view']");
+    const b = c.getBoundingClientRect();
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const send = (x, y, t) => c.dispatchEvent(new PointerEvent(t, {
+      pointerId: 5, clientX: x, clientY: y, bubbles: true, pointerType: "touch", isPrimary: true }));
+    const alphas = () => Object.fromEntries((window.__skisPlaceLit ?? []).map((p) => [p.full, p.alpha]));
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height * 0.5;
+    let prev = alphas();
+    let last = performance.now();
+    let jumps = 0;
+    let biggest = 0;
+    let worst = "";
+    let watched = 0;
+    send(cx, cy, "pointerdown");
+    await wait();
+    for (let k = 1; k <= 40; k++) {
+      send(cx + k * 2.2, cy + k * 1.1, "pointermove");
+      await wait();
+      const now = performance.now();
+      // What the fade could legitimately cover in the time this frame took,
+      // with a frame of slack: a slow frame is allowed a big step.
+      const allowed = Math.min(1, ((now - last) * 2) / fadeMs) + 0.08;
+      last = now;
+      const lit = alphas();
+      watched = Math.max(watched, Object.keys(lit).length);
+      for (const key of new Set([...Object.keys(prev), ...Object.keys(lit)])) {
+        const d = Math.abs((lit[key] ?? 0) - (prev[key] ?? 0));
+        if (d > biggest) { biggest = d; worst = key; }
+        if (d > allowed) jumps++;
+      }
+      prev = lit;
+    }
+    send(cx + 88, cy + 44, "pointerup");
+    for (let k = 0; k < 20; k++) await wait();
+    return { jumps, watched, biggest: Math.round(biggest * 100) / 100, worst };
+  }, 260);
+  // With something to watch, or it passes by having nothing to report.
+  check("and what changes fades rather than popping",
+    pops.watched >= 3 && pops.jumps === 0,
+    `${pops.jumps} steps bigger than the fade allows over ${pops.watched} markers, ` +
+    `biggest ${pops.biggest}${pops.worst ? ` (${pops.worst})` : ""}`);
+  // That drag left the camera somewhere else, and everything below compares
+  // against the opening view.
+  await page.click("[aria-label='Recentre the view']");
+  await page.waitForTimeout(900);
+
   // Put the mountain back where it was: the checks below compare against the
   // opening view, and a turn leaves a different set of places facing you.
   await page.evaluate(() => window.__skisSetBearing(-28));
@@ -2162,6 +2224,43 @@ if (feature("31. A drag holds the ground")) {
      */
     check("the ground grabbed is the ground under the finger at the end",
       off < 18, `${Number.isFinite(off) ? off.toFixed(0) : "?"}px from the thumb`);
+    /*
+     * And several moves inside one frame must not move it several times.
+     *
+     * A digitiser reports faster than a page draws — two or three moves per
+     * frame at 120Hz — and the correction is measured against the camera that
+     * drew the LAST frame. Every move in a frame therefore saw the same stale
+     * gap and applied the whole of it, so the map ran away from the finger:
+     * measured at 168 pixels of map for 67 of thumb, worst near the top of the
+     * screen where the ground is most compressed. Reported three times as
+     * "it's too fast when I slide", and invisible to every check here, because
+     * they all waited for a frame between moves. This one does not.
+     */
+    const runaway = await page.evaluate(async (from) => {
+      const c = document.querySelector("canvas[aria-label*='Terrain view']");
+      const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const send = (x, y, type) => c.dispatchEvent(new PointerEvent(type, {
+        pointerId: 7, clientX: x, clientY: y, bubbles: true, pointerType: "touch", isPrimary: true }));
+      await wait();
+      const was = { x: window.__skisView.panX, y: window.__skisView.panY };
+      send(from.x, from.y, "pointerdown");
+      await wait();
+      const FINGER = 60;
+      for (let i = 1; i <= 6; i++) {
+        for (let k = 1; k <= 3; k++) {
+          const t = ((i - 1) + k / 3) / 6;
+          send(from.x - FINGER * t, from.y + (FINGER / 2) * t, "pointermove");
+        }
+        await wait();
+      }
+      send(from.x - FINGER, from.y + FINGER / 2, "pointerup");
+      await wait();
+      const moved = Math.hypot(window.__skisView.panX - was.x, window.__skisView.panY - was.y);
+      return { finger: Math.hypot(FINGER, FINGER / 2), moved };
+    }, { x: start.x, y: start.y * 0.6 });
+    check("and three moves in one frame move it once",
+      runaway.moved < runaway.finger * 1.25,
+      `${runaway.moved.toFixed(0)}px of map for ${runaway.finger.toFixed(0)}px of thumb`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
@@ -2440,6 +2539,65 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   const closeCost = await frameCost();
   check("and a frame close up costs no more than one far out",
     closeCost < 220, `${closeCost}ms a frame at zoom ${near?.toFixed(0)}`);
+
+  /*
+   * And switching resort never drapes one mountain's photograph over another.
+   *
+   * The mosaic stayed in state across the change, so until the new one landed
+   * the map was texturing this resort's ground with the last one's imagery.
+   * Every coordinate falls outside, a clamped texture answers with its border
+   * pixel, and the whole mountain comes out one flat tone — reported as "the
+   * terrain is all green", which is the edge of a valley tile. The 2D renderer
+   * never showed it, because its sampler answers null out there.
+   *
+   * Watched through the transition rather than at the end of it: the settled
+   * picture was always right, and a tenth of a second of flat green is exactly
+   * what somebody opening a new resort sees.
+   */
+  {
+    const swap = await newPage(browser, { at: [9, 30] });
+    await swap.goto(`${url}?maptest=1&tiles=check`, { waitUntil: "domcontentloaded" });
+    await swap.waitForSelector(".hero", { timeout: 20000 });
+    await swap.click(".hero");
+    await swap.click("text=Go skiing");
+    await swap.waitForSelector(".planbtn", { timeout: 15000 });
+    await swap.waitForTimeout(2200);
+    /** How many distinct tones the ground is painted in. One is the failure. */
+    const tones = () => swap.$eval(SEL, (c) => {
+      const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+      const seen = new Set();
+      let ground = 0;
+      for (let y = 0; y < height; y += 5) {
+        const s = (y * width) * 4;
+        const sky = [data[s], data[s + 1], data[s + 2]];
+        for (let x = 0; x < width; x += 5) {
+          const i = (y * width + x) * 4;
+          if (Math.abs(data[i] - sky[0]) + Math.abs(data[i + 1] - sky[1]) +
+            Math.abs(data[i + 2] - sky[2]) < 40) continue;
+          ground++;
+          seen.add(`${data[i] >> 4},${data[i + 1] >> 4},${data[i + 2] >> 4}`);
+        }
+      }
+      return { tones: seen.size, ground };
+    });
+    await swap.click("text=Change");
+    await swap.waitForSelector(".hero", { timeout: 15000 });
+    await (await swap.$$(".hero"))[1].click();
+    await swap.click("text=Go skiing");
+    await swap.waitForSelector(".planbtn", { timeout: 20000 });
+    let flattest = null;
+    for (let k = 0; k < 20; k++) {
+      await swap.waitForTimeout(160);
+      const r = await tones();
+      // Only frames with a mountain on them; an empty one says nothing.
+      if (r.ground > 1500 && (!flattest || r.tones < flattest.tones)) flattest = r;
+    }
+    check("switching resort never flattens the ground to one tone",
+      flattest !== null && flattest.tones > 12,
+      flattest ? `${flattest.tones} tones at the worst frame of the change` : "never saw a mountain");
+    check("no page errors through the change", swap.errors.length === 0, swap.errors.join(" | "));
+    await swap.context_.close();
+  }
 
   // Back again, and nothing is stuck.
   await page.evaluate(() => window.__skisSetMapMode("cutout"));

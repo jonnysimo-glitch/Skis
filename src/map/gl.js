@@ -102,11 +102,24 @@ void main() {
   }
 
   if (skin > 0.5) {
+    /*
+     * Off the edge of the mosaic is snow, not the edge pixel.
+     *
+     * The texture is clamped, so a coordinate outside it samples the border
+     * and keeps sampling it — which is a colour, and a wrong one. When the map
+     * is handed a mosaic of somewhere else, every coordinate is outside and
+     * the whole mountain comes out as one flat tone: reported as "the terrain
+     * is all green", which is what the edge of a valley tile looks like. The
+     * 2D renderer never had this because its sampler answers null out there
+     * and falls through; this is the same answer, made explicit.
+     */
+    bool on = vUv.x >= 0.0 && vUv.x <= 1.0 && vUv.y >= 0.0 && vUv.y <= 1.0;
     vec4 t = texture2D(tex, vUv);
     // A texel the mosaic never covered comes back transparent; fall through to
     // the drawn surface rather than to a hole.
-    c = t.a > 0.5 ? t.rgb * 255.0 : snow;
-    float k = t.a > 0.5 ? 0.72 + 0.46 * shade : 0.52 + 0.80 * shade;
+    bool photo = on && t.a > 0.5;
+    c = photo ? t.rgb * 255.0 : snow;
+    float k = photo ? 0.72 + 0.46 * shade : 0.52 + 0.80 * shade;
     c *= k * mix(SHADOW, SUNLIT, clamp(shade * 1.15, 0.0, 1.0));
   } else {
     c = snow * (0.52 + 0.80 * shade)
