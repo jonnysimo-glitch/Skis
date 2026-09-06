@@ -19,6 +19,8 @@ import {
   SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR, STRATA,
   SKY_TOP, SKY_MID, SKY_HORIZON,
 } from "./field.js";
+import { glMatrix } from "./glmatrix.js";
+import { createTerrainGL } from "./gl.js";
 import { PISTE_COLOUR, PISTE_TINT, LIFT_TINT } from "../lib/geo.js";
 import { ACCENT, ACCENT_LINE, INK } from "../lib/brand.js";
 
@@ -88,6 +90,17 @@ const GLIDE_STOP = 0.15 / 16.7; // slower than this is a stop
  * what it is worth rather than on what it costs.
  */
 const DEPTH_SCALE = 1 / 2;
+/**
+ * And a coarser one for the GPU, because the cost there is the read-back.
+ *
+ * Rasterising the depth pass is free on a GPU; getting it back into JavaScript
+ * is not — `readPixels` blocks until the driver has finished, and at half
+ * scale that is 585KB a frame and eleven to nineteen milliseconds measured.
+ * A third is a quarter of the pixels. The test it feeds is a coarse "is this
+ * point behind the mountain", already softened by several frames of hysteresis
+ * before anything disappears, so the resolution was never doing much work.
+ */
+const GL_DEPTH_SCALE = 1 / 3;
 
 /**
  * How many terrain quads across one depth polygon covers.
@@ -299,6 +312,26 @@ const GRAB_MAX_JUMP = 120;
  * rounding was already covering what the extra slack was there for.
  */
 const DEPTH_BIAS_FRAC = 0.002;
+/**
+ * And more of it on the GPU, because the GPU's depth is honest.
+ *
+ * The 2D depth pass rounds every quad's depth outward and stores its furthest
+ * corner, so a marker standing on the ground is in front of what its own quad
+ * wrote by a whole quad's depth. That conservatism is doing most of the work
+ * above; the bias only had to cover the buffer's resolution.
+ *
+ * A z-buffer has none of it. Depth is interpolated per pixel and a marker
+ * placed on the surface sits exactly on the boundary, so which side of it the
+ * comparison lands on is arithmetic noise — and the noise flickers frame to
+ * frame as the camera moves. Measured on a slow turn: eighteen appearances and
+ * disappearances over forty frames against four, and a marker on the ground in
+ * front of you counted as behind the mountain.
+ *
+ * Eight thousandths is a couple of the depth texture's own 1/255 steps plus
+ * room for the interpolation, and it costs what the comment above says it
+ * costs: a ridge under-occludes by a sliver of its own far side.
+ */
+const GL_DEPTH_BIAS_FRAC = 0.008;
 
 /**
  * The 256 greys the depth buffer is written in, built once.
@@ -855,6 +888,8 @@ export default function FallbackTerrain({
     let depthData = null;
     let depthNear = 0;
     let depthSpan = 1;
+    /** Whichever scale drew the buffer currently in `depthData`. */
+    let depthScale = DEPTH_SCALE;
     /*
      * The camera the terrain in `blur` was drawn with, and how far the current
      * one has slid from it.
@@ -878,7 +913,7 @@ export default function FallbackTerrain({
     let cachedAt = null;
     let depthShiftX = 0;
     let depthShiftY = 0;
-    const depthBias = (fieldRef.current?.span ?? 0) * DEPTH_BIAS_FRAC;
+    let depthBias = (fieldRef.current?.span ?? 0) * DEPTH_BIAS_FRAC;
     let dpr = 1;
 
     const resize = () => {
@@ -1281,6 +1316,128 @@ export default function FallbackTerrain({
      * `sample`, `hi`, `lo` and therefore the framing are identical between the
      * two and refining cannot move the camera.
      */
+    /**
+     * The same mountain, drawn by the GPU. Returns false if it could not.
+     *
+     * Everything on top of the ground is still Canvas 2D — this only replaces
+     * the surface and the block, composited into the same offscreen the 2D
+     * path fills, so the blur, the pan cache, the margin and every overlay
+     * carry on unchanged.
+     *
+     * Why: Canvas 2D can fill a shape with one colour, so a photograph draped
+     * on a height field comes out as the photograph downsampled to the mesh.
+     * See src/map/gl.js for the numbers.
+     */
+    const drawTerrainGL = (v, cam) => {
+      if (!glr) return false;
+      const slab = propsRef.current.block ? slabFor(field) : null;
+      const drape = propsRef.current.imagery;
+
+      // Rebuilt when the mountain changes, which is per resort, not per frame.
+      if (glField !== field || glDrape !== drape) {
+        const uvFor = drape?.uv
+          ? (x, z) => {
+            const { lat, lon } = field.proj.unproject(x, z);
+            return drape.uv(lat, lon);
+          }
+          : null;
+        try {
+          glr.setField(field, { uvFor, slab });
+          glr.setTexture(drape?.image ?? null);
+        } catch {
+          glr = null;
+          return false;
+        }
+        glField = field;
+        glDrape = drape;
+      }
+
+      /*
+       * How near and how far, without looking at every vertex.
+       *
+       * `toUnit`'s depth is affine in x, y and z, so over a box its extremes
+       * are at the corners — all eight of them, exactly, rather than the
+       * running min and max the 2D path accumulates while rasterising. The
+       * slab's underside is part of the model, so it is one of the heights.
+       */
+      const lowest = slab ? slab.base : field.lo;
+      let dMin = Infinity;
+      let dMax = -Infinity;
+      for (const x of [field.minX, field.maxX]) {
+        for (const y of [lowest, field.hi]) {
+          for (const z of [field.minZ, field.maxZ]) {
+            const d = toUnit(field, x, y, z, v).depth;
+            if (d < dMin) dMin = d;
+            if (d > dMax) dMax = d;
+          }
+        }
+      }
+      const span = Math.max(1, dMax - dMin);
+      // In w, which is what the shader interpolates; the decode below undoes
+      // the constant so `visible` still reads depth in toUnit's own units.
+      const K = field.span * 1.45;
+      const range = [K + dMin, span];
+
+      // The offscreen reaches TERRAIN_MARGIN past the canvas on every side,
+      // so the GPU is drawing into a slightly bigger frame with the camera
+      // shifted by the same amount.
+      const w = width + TERRAIN_MARGIN * 2;
+      const h = height + TERRAIN_MARGIN * 2;
+      const shifted = { f: cam.f, ox: cam.ox + TERRAIN_MARGIN, oy: cam.oy + TERRAIN_MARGIN };
+      const matrix = glMatrix(field, v, shifted, w, h);
+
+      glr.resize(Math.round(w * dpr), Math.round(h * dpr));
+      glr.draw({
+        matrix,
+        depth: range,
+        snow: SNOW,
+        sky: SKY_HORIZON,
+        // A uniform, not a rebuild: the shading is baked into the vertex
+        // buffer and turning the sun off must not cost a mesh upload.
+        shadows: shadowsOn,
+      });
+
+      offCtx.setTransform(1, 0, 0, 1, 0, 0);
+      offCtx.clearRect(0, 0, off.width, off.height);
+      offCtx.drawImage(glr.canvas, 0, 0, off.width, off.height);
+
+      depthNear = dMin;
+      depthSpan = span;
+      depthScale = GL_DEPTH_SCALE;
+      depthBias = field.span * GL_DEPTH_BIAS_FRAC;
+      const t0 = mapTest ? performance.now() : 0;
+      depthData = glr.depthImage(
+        Math.max(1, Math.round(w * GL_DEPTH_SCALE)),
+        Math.max(1, Math.round(h * GL_DEPTH_SCALE)),
+        { matrix, depth: range }
+      );
+      if (mapTest) window.__skisDepthMs = Math.round((performance.now() - t0) * 10) / 10;
+
+      if (mapTest) {
+        window.__skisSurface = { flat: 0, textured: glr.textured ? 1 : 0, cells: 0, patch: 0, gpu: true };
+        window.__skisMesh = { step: 1, grid: GRID, quads: GRID * GRID, gpu: true };
+      }
+      return true;
+    };
+
+    /** Time a GPU redraw, and hand the map back to Canvas 2D if it is losing. */
+    const judgeGpu = (ms) => {
+      if (!glr || forced === "1" || glTrial === null) return;
+      glTrial.push(ms);
+      if (glTrial.length < GL_TRIAL_SKIP + GL_TRIAL_FRAMES) return;
+      const runs = glTrial.slice(GL_TRIAL_SKIP).sort((a, b) => a - b);
+      const median = runs[Math.floor(runs.length / 2)];
+      glTrial = null;
+      if (median <= GL_BUDGET_MS) return;
+      glr = null;
+      glField = null;
+      glDrape = null;
+      // Nothing on the offscreen came from a renderer that still exists.
+      cachedAt = null;
+      dirty.current = true;
+      if (mapTest) window.__skisGpuGaveUp = Math.round(median);
+    };
+
     const drawTerrain = (v, cam, g, dep, step = 1) => {
       const { heights, at, shades, shadows, grains, qAt, minX, maxX, minZ, maxZ, lo, hi } = field;
       const dx = (maxX - minX) / GRID;
@@ -1679,8 +1836,8 @@ export default function FallbackTerrain({
      */
     const visible = (p) => {
       if (!depthData) return true;
-      const px = Math.round((p.x - depthShiftX + TERRAIN_MARGIN) * DEPTH_SCALE);
-      const py = Math.round((p.y - depthShiftY + TERRAIN_MARGIN) * DEPTH_SCALE);
+      const px = Math.round((p.x - depthShiftX + TERRAIN_MARGIN) * depthScale);
+      const py = Math.round((p.y - depthShiftY + TERRAIN_MARGIN) * depthScale);
       if (px < 0 || py < 0 || px >= depthData.width || py >= depthData.height) return true;
       const i = (py * depthData.width + px) * 4;
       if (depthData.data[i + 3] === 0) return true; // sky
@@ -2583,8 +2740,55 @@ export default function FallbackTerrain({
     /** The camera as of the last frame, and when it last differed. */
     let lastSig = "";
     let stillSince = 0;
+    /** Whether the picture currently on the offscreen came from the GPU. */
+    let onGpu = false;
     /** The stride the picture on the offscreen was drawn at. */
     let drawnStep = MESH_STRIDE;
+    /*
+     * The GPU, if this browser has one to give.
+     *
+     * Null is a supported answer and the 2D path below is what answers it: a
+     * complete renderer that needs nothing but a canvas, which is also what
+     * runs in every check that does not ask for WebGL. Created once and kept,
+     * because a context is expensive and there is a hard limit on how many a
+     * page may hold.
+     */
+    let glr = null;
+    let glField = null;
+    let glDrape = null;
+    /*
+     * Whether to use it at all, decided by timing it rather than by asking.
+     *
+     * WebGL being present says nothing about WebGL being fast. A phone runs it
+     * on the GPU and a textured mesh is a millisecond; a machine with no GPU
+     * falls back to a software rasteriser — SwiftShader, which is what this is
+     * developed against — and the same mesh is a hundred and forty. That is
+     * slower than the 2D path it replaced, and the 2D path is still here and
+     * still complete.
+     *
+     * So the first few redraws are timed and the loser is dropped. The first
+     * two are skipped: they carry the shader compile and the mesh upload, and
+     * judging a renderer on its startup cost would fail every real device.
+     */
+    /*
+     * 200ms, which is "this is broken", not "this is slower than 2D".
+     *
+     * Measured head to head against the 2D path on a software rasteriser with
+     * no GPU at all — the worst case anything real will hit — with the drape
+     * on: 142ms against 125 at rest, then 114 against 179, 100 against 158 and
+     * 74 against 123 as you zoom in. The GPU wins nearly everywhere even
+     * there, and wins by more the closer you get, which is where the 2D path
+     * was falling apart. So the budget is not a race between the two; it is a
+     * floor under a device whose WebGL is a stub.
+     */
+    const GL_BUDGET_MS = 200;
+    const GL_TRIAL_SKIP = 2;
+    const GL_TRIAL_FRAMES = 6;
+    let glTrial = [];
+    const forced = typeof window !== "undefined" && mapTest
+      ? new URLSearchParams(window.location.search).get("gl")
+      : null;
+    if (forced !== "0") glr = createTerrainGL();
     const frame = () => {
       const v = view.current;
 
@@ -2773,23 +2977,30 @@ export default function FallbackTerrain({
         } else {
           depthShiftX = 0;
           depthShiftY = 0;
-          offCtx.setTransform(1, 0, 0, 1, 0, 0);
-          offCtx.clearRect(0, 0, off.width, off.height);
-          offCtx.setTransform(dpr, 0, 0, dpr, TERRAIN_MARGIN * dpr, TERRAIN_MARGIN * dpr);
-          depthCtx.setTransform(1, 0, 0, 1, 0, 0);
-          depthCtx.clearRect(0, 0, depth.width, depth.height);
-          depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE,
-            TERRAIN_MARGIN * DEPTH_SCALE, TERRAIN_MARGIN * DEPTH_SCALE);
-          drawTerrain(v, cam, offCtx, depthCtx, step);
-          // One readback for the frame. Per-point getImageData is the obvious
-          // way to write this and is orders of magnitude slower: every call
-          // synchronises with the compositor, and there are thousands of
-          // points.
-          depthData = depth.width && depth.height
-            ? depthCtx.getImageData(0, 0, depth.width, depth.height)
-            : null;
+          const gpuStart = performance.now();
+          onGpu = drawTerrainGL(v, cam);
+          if (onGpu) judgeGpu(performance.now() - gpuStart);
+          if (!onGpu) {
+            offCtx.setTransform(1, 0, 0, 1, 0, 0);
+            offCtx.clearRect(0, 0, off.width, off.height);
+            offCtx.setTransform(dpr, 0, 0, dpr, TERRAIN_MARGIN * dpr, TERRAIN_MARGIN * dpr);
+            depthCtx.setTransform(1, 0, 0, 1, 0, 0);
+            depthCtx.clearRect(0, 0, depth.width, depth.height);
+            depthCtx.setTransform(DEPTH_SCALE, 0, 0, DEPTH_SCALE,
+              TERRAIN_MARGIN * DEPTH_SCALE, TERRAIN_MARGIN * DEPTH_SCALE);
+            depthScale = DEPTH_SCALE;
+            depthBias = field.span * DEPTH_BIAS_FRAC;
+            drawTerrain(v, cam, offCtx, depthCtx, step);
+            // One readback for the frame. Per-point getImageData is the obvious
+            // way to write this and is orders of magnitude slower: every call
+            // synchronises with the compositor, and there are thousands of
+            // points.
+            depthData = depth.width && depth.height
+              ? depthCtx.getImageData(0, 0, depth.width, depth.height)
+              : null;
+          }
           cachedAt = { what: now2, ox: cam.ox, oy: cam.oy };
-          drawnStep = step;
+          drawnStep = onGpu ? 1 : step;
         }
 
         // Blur it, then cut the blur back to the sharp shape.
@@ -2801,7 +3012,11 @@ export default function FallbackTerrain({
         // terrain covers, so the silhouette and the slab's edges stay crisp
         // while the facets inside them dissolve. That buys a blur wide enough
         // to actually work.
-        if (!reuse) {
+        // Not on the GPU. The blur exists to dissolve the steps between flat
+        // quads, and there are none: the shading is interpolated across each
+        // triangle and the drape is a filtered texture, so blurring would only
+        // throw away the detail this was all for.
+        if (!reuse && !onGpu) {
           blurCtx.setTransform(1, 0, 0, 1, 0, 0);
           blurCtx.clearRect(0, 0, blur.width, blur.height);
           blurCtx.filter = `blur(${blurFor(cam.f, !!propsRef.current.imagery, step) * dpr}px)`;
@@ -2815,7 +3030,8 @@ export default function FallbackTerrain({
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         // Offset in device pixels, because that is what the offscreen is in.
-        ctx.drawImage(blur, (depthShiftX - TERRAIN_MARGIN) * dpr, (depthShiftY - TERRAIN_MARGIN) * dpr);
+        ctx.drawImage(onGpu ? off : blur,
+          (depthShiftX - TERRAIN_MARGIN) * dpr, (depthShiftY - TERRAIN_MARGIN) * dpr);
         ctx.restore();
         drawGraph(v, cam);
         drawRoute(v, cam);
@@ -2865,7 +3081,7 @@ export default function FallbackTerrain({
        * does the rest — the stride is part of the cache key, so it redraws
        * rather than reusing what it has.
        */
-      if (drawnStep > 1 && lastSig && !view.current.dragging &&
+      if (!onGpu && drawnStep > 1 && lastSig && !view.current.dragging &&
           now - stillSince >= MESH_SETTLE_MS) {
         dirty.current = true;
       }

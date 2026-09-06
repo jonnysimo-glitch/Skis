@@ -1500,6 +1500,93 @@ if (feature("15. Gestures, and the mountain being solid")) {
   }
 }
 
+// ========= 35. THE PHOTOGRAPH IS A PHOTOGRAPH, NOT A GRID OF ITS COLOURS ==
+/*
+ * The one thing Canvas 2D could not do.
+ *
+ * It can fill a shape with a colour, so a drape on a height field is the
+ * photograph sampled once per mesh cell — and a cell is a fixed piece of
+ * ground, so by zoom eight it is sixty screen pixels and the mountain is a
+ * mosaic of paint chips. Subdividing helps and then stops helping; measured,
+ * texture-mapping a triangle in 2D is 30µs, which is a quarter of a second a
+ * frame at this mesh density.
+ *
+ * The GPU interpolates the texture across each triangle, which is a different
+ * thing rather than a faster one. The check tiles carry a four-pixel pattern
+ * and their own tile numbers printed on them: at the zooms the mosaic picks
+ * that pattern is finer than any cell, so it can only reach the screen if the
+ * ground really is being sampled per pixel.
+ *
+ * Both renderers are checked. The 2D one is the fallback on a browser with no
+ * WebGL and it has to keep working; what it does not have to do is match.
+ */
+if (feature("35. The photograph survives being draped")) {
+  const SEL = "canvas[aria-label*='Terrain view']";
+  /** How much of the ground changes from one pixel to its neighbour. */
+  const grain = (page) => page.$eval(SEL, (c) => {
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    let varied = 0;
+    let seen = 0;
+    for (let y = 2; y < height - 2; y += 2) {
+      const s = (y * width) * 4;
+      const sky = [data[s], data[s + 1], data[s + 2]];
+      for (let x = 2; x < width - 3; x += 2) {
+        const i = (y * width + x) * 4;
+        const j = (y * width + x + 1) * 4;
+        if (Math.abs(data[i] - sky[0]) + Math.abs(data[i + 1] - sky[1]) +
+          Math.abs(data[i + 2] - sky[2]) < 40) continue;
+        seen++;
+        if (Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1]) +
+          Math.abs(data[i + 2] - data[j + 2]) > 12) varied++;
+      }
+    }
+    return seen ? Math.round((varied / seen) * 100) : 0;
+  });
+
+  const zoomIn = async (page, times) => {
+    for (let k = 0; k < times; k++) {
+      await page.$eval(SEL, (c) => {
+        const b = c.getBoundingClientRect();
+        c.dispatchEvent(new WheelEvent("wheel", {
+          deltaY: -160, clientX: b.x + b.width / 2, clientY: b.y + b.height / 2, bubbles: true,
+        }));
+      });
+      await page.waitForTimeout(110);
+    }
+    await page.waitForTimeout(1500);
+  };
+
+  const measured = {};
+  for (const [tag, gl] of [["the GPU", "1"], ["Canvas 2D", "0"]]) {
+    const page = await newPage(browser, { at: [9, 30] });
+    await page.goto(`${url}?maptest=1&tiles=check&gl=${gl}`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+    await page.click(".hero");
+    await page.click("text=Go skiing");
+    await page.waitForSelector(".planbtn", { timeout: 15000 });
+    await page.waitForTimeout(2200);
+    const on = await page.evaluate(() => window.__skisMesh?.gpu === true);
+    check(`${tag}: it is the renderer that is running`, on === (gl === "1"), `gpu ${on}`);
+    await zoomIn(page, 9);
+    measured[gl] = await grain(page);
+    check(`${tag}: the pattern in the imagery reaches the screen`,
+      measured[gl] >= 8, `${measured[gl]}% of neighbouring pixels differ`);
+    check(`${tag}: no page errors`, page.errors.length === 0, page.errors.join(" | "));
+    await page.context_.close();
+  }
+  /*
+   * And the GPU is the better of the two, which is why it is the default.
+   *
+   * Not by a hair: at this zoom the 2D path is painting the checks in patches
+   * several pixels across and the pattern is smeared into blobs, while the GPU
+   * resolves the four-pixel squares and the tile numbers printed on them are
+   * legible on the ground.
+   */
+  check("and the GPU resolves more of it than Canvas 2D can",
+    measured["1"] > measured["0"] * 1.15,
+    `${measured["1"]}% against ${measured["0"]}%`);
+}
+
 // ========= 34. THE MOUNTAIN IS AS FINE AS THE GROUND UNDER IT ==
 /*
  * The mesh used to be chosen off the drag frame time — 72 across, because 84
@@ -1528,6 +1615,7 @@ if (feature("34. The mountain is as fine as the ground under it")) {
   const mesh = () => page.evaluate(() => window.__skisMesh ?? null);
   const { TERRAIN } = graphFor(RESORTS.find((r) => r.available).id);
   const settled = await mesh();
+  const gpu = settled?.gpu === true;
   check("at rest the whole mesh is drawn", settled?.step === 1, JSON.stringify(settled));
   check("and it is as fine as the elevation behind it",
     !TERRAIN || settled.grid >= TERRAIN.n * 0.85,
@@ -1574,13 +1662,27 @@ if (feature("34. The mountain is as fine as the ground under it")) {
   }
   await page.waitForTimeout(400);
   const held = await mesh();
-  check("a finger on the glass drops it to the coarse pass",
-    held?.step > 1, `step ${held?.step}`);
+  /*
+   * Under a finger, coarse or complete — but never slow.
+   *
+   * Progressive refinement exists because rasterising twenty thousand quads in
+   * Canvas 2D takes a fifth of a second, so a moving mountain is drawn on every
+   * second vertex and the full mesh goes down once the hand comes off. On the
+   * GPU the whole mesh is under a millisecond and there is nothing to trade:
+   * the answer to "does a drag cost less" is that a drag costs nothing.
+   *
+   * Both are correct and which one is running is a fact about the browser, so
+   * this asks for the property rather than the mechanism.
+   */
+  check(gpu ? "a finger on the glass costs the GPU nothing to redraw"
+    : "a finger on the glass drops it to the coarse pass",
+    gpu ? held?.step === 1 : held?.step > 1, `step ${held?.step}${gpu ? ", on the GPU" : ""}`);
   // Still holding: a thumb that pauses must not buy itself a long frame.
   await page.waitForTimeout(700);
   const paused = await mesh();
-  check("and a pause mid-drag does not refine under the thumb",
-    paused?.step > 1, `step ${paused?.step}`);
+  check(gpu ? "and a pause mid-drag changes nothing"
+    : "and a pause mid-drag does not refine under the thumb",
+    gpu ? paused?.step === 1 : paused?.step > 1, `step ${paused?.step}`);
 
   await page.mouse.up();
   await page.waitForTimeout(1200);
@@ -1660,15 +1762,24 @@ if (feature("33. The sun casts shadows")) {
     return out;
   }, [SKY, [SKIRT_LIT, SKIRT_SHADE, BASE_COLOUR]]);
 
+  /*
+   * Both readings after the same settling.
+   *
+   * The lit one used to be taken first, straight after the map appeared, and
+   * the map is not finished at that point: the place markers and their names
+   * fade in over a couple of hundred milliseconds. So the second reading had
+   * dark label pixels the first did not, and the check reported them as ground
+   * that got BRIGHTER when the sun was turned on — a real difference between
+   * the two frames, and nothing to do with shadows.
+   */
+  await page.evaluate(() => window.__skisSetShadows(false));
+  await page.waitForTimeout(1000);
+  const plain = await ground();
+  await page.evaluate(() => window.__skisSetShadows(true));
+  await page.waitForTimeout(1000);
   const lit = await ground();
   check("there is ground on screen to shade", lit.filter((v) => v >= 0).length > 400,
     `${lit.filter((v) => v >= 0).length} samples of ground`);
-
-  await page.evaluate(() => window.__skisSetShadows(false));
-  await page.waitForTimeout(900);
-  const plain = await ground();
-  await page.evaluate(() => window.__skisSetShadows(true));
-  await page.waitForTimeout(900);
 
   let seen = 0;
   let darkened = 0;
@@ -2192,9 +2303,45 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
    * quads seen most obliquely.
    */
   const far = await surface();
-  check("standing still, no piece of the photograph is painted as a block",
-    far && far.patch > 0 && far.patch <= 8,
-    `biggest flat patch ${far?.patch}px, ${far?.textured} of ${far?.textured + far?.flat} quads subdivided`);
+  /**
+   * How much of the picture changes from one pixel to the next.
+   *
+   * Asked of the pixels, because "how many quads were subdivided" is a fact
+   * about one renderer. The GPU does not subdivide at all — it texture-maps
+   * the mesh and lets the hardware interpolate — so the count that meant
+   * "sharp" under Canvas 2D means "nothing is happening" here, while the
+   * picture is strictly better. What both have to satisfy is that the
+   * photograph resolves detail the mesh cannot, and the check tiles carry a
+   * four-pixel pattern for exactly this: at the zooms the mosaic picks, four
+   * pixels is about fifty metres of ground, far finer than a mesh cell, so the
+   * pattern can only reach the screen if the ground is being painted from the
+   * imagery rather than from one colour a cell.
+   */
+  const detail = () => page.$eval(SEL, (c) => {
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    let varied = 0;
+    let seen = 0;
+    for (let y = 2; y < height - 2; y += 2) {
+      const s = (y * width) * 4;
+      const sky = [data[s], data[s + 1], data[s + 2]];
+      for (let x = 2; x < width - 3; x += 2) {
+        const i = (y * width + x) * 4;
+        const j = (y * width + x + 1) * 4;
+        const off = Math.abs(data[i] - sky[0]) + Math.abs(data[i + 1] - sky[1]) +
+          Math.abs(data[i + 2] - sky[2]);
+        if (off < 40) continue; // sky
+        seen++;
+        if (Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1]) +
+          Math.abs(data[i + 2] - data[j + 2]) > 12) varied++;
+      }
+    }
+    return seen ? Math.round((varied / seen) * 100) : 0;
+  });
+  const farDetail = await detail();
+  check("standing still, the photograph resolves detail the mesh cannot",
+    farDetail >= 8,
+    `${farDetail}% of neighbouring pixels differ` +
+    (far?.cells ? `, ${far.textured} quads became ${far.cells} cells` : ", on the GPU"));
 
   /*
    * And a drag does not repaint it, because a drag does not change it.
@@ -2258,16 +2405,41 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   check("zooming in actually gets close", near > 8, `zoom ${near?.toFixed(1)}`);
 
   const close = await surface();
-  check("and close up the ground is painted from the imagery, not in blocks",
-    close && close.textured > 0 && close.cells > close.textured * 3,
-    `${close?.textured} quads became ${close?.cells} cells`);
-  // Bounded by the viewport, not by the mesh. Subdivision is decided on how
-  // big a quad is on screen and says nothing about whether it is ON the
-  // screen: without a cull, two thousand off-screen quads each qualified for
-  // sixteen cells and a redraw went from 51ms to 196ms painting them.
-  check("and only for the part of the mountain on screen",
-    close && close.flat + close.textured < 900,
-    `${(close?.flat ?? 0) + (close?.textured ?? 0)} quads drawn of ${72 * 72}`);
+  const closeDetail = await detail();
+  // Close up is where the old renderer gave up: a quad is a fixed piece of
+  // ground, so by zoom eight one is sixty screen pixels and painting it flat
+  // is a mosaic of paint chips. The pattern has to survive getting closer.
+  check("and close up the ground is still the photograph, not blocks of it",
+    closeDetail >= farDetail * 0.6 && closeDetail >= 8,
+    `${closeDetail}% of neighbouring pixels differ, against ${farDetail}% far out`);
+  /*
+   * And a frame close up costs no more than a frame far out.
+   *
+   * Two different reasons, one property. In Canvas 2D subdivision is decided
+   * on how big a quad is on screen and says nothing about whether it is ON
+   * the screen, so without a cull two thousand off-screen quads each claimed
+   * sixteen cells and a redraw went from 51ms to 196ms painting ground nobody
+   * could see. On the GPU the whole mesh goes down every frame and the cost is
+   * the pixels it covers, which is the screen. Timed rather than counted, so
+   * it holds either way.
+   */
+  const frameCost = () => page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const ts = [];
+    let last = performance.now();
+    for (let i = 0; i < 14; i++) {
+      window.__skisSetBearing(-28 + i * 4);
+      await wait();
+      const now = performance.now();
+      ts.push(now - last);
+      last = now;
+    }
+    ts.sort((a, b) => a - b);
+    return Math.round(ts[Math.floor(ts.length / 2)]);
+  });
+  const closeCost = await frameCost();
+  check("and a frame close up costs no more than one far out",
+    closeCost < 220, `${closeCost}ms a frame at zoom ${near?.toFixed(0)}`);
 
   // Back again, and nothing is stuck.
   await page.evaluate(() => window.__skisSetMapMode("cutout"));

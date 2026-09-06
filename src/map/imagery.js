@@ -152,6 +152,23 @@ export async function loadImagery({ bounds, urlFor, budget = 96, load = loadImag
     z,
     width,
     height,
+    /**
+     * The mosaic itself, for the GPU to sample.
+     *
+     * Kept rather than thrown away after the read-back. Canvas 2D can only ask
+     * this for one colour at a time, which is why `at` exists and why the 2D
+     * renderer paints the ground in flat patches; WebGL takes the whole thing
+     * as a texture and interpolates it, which is the difference between a
+     * photograph and a mosaic of paint chips.
+     */
+    image: canvas,
+    /** Where a position falls in the mosaic, as 0..1 texture coordinates. */
+    uv(lat, lon) {
+      return {
+        u: ((lonToTileX(lon, z) - t.x0) * size) / width,
+        v: ((latToTileY(lat, z) - t.y0) * size) / height,
+      };
+    },
     /** The colour at a position, or null outside the tiles that were fetched. */
     at(lat, lon) {
       const sx = Math.round((lonToTileX(lon, z) - t.x0) * size);
