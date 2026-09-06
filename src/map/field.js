@@ -129,6 +129,41 @@ export const SKIRT = 0.17;
 export const FIELD_PAD = 0.55;
 
 /**
+ * How square the apron is made to be, whatever shape the resort is.
+ *
+ * A fraction of each axis's own span is the obvious rule and it is wrong for a
+ * resort that is long and thin. Monterosa is 15.8km east to west and 5.4 north
+ * to south, so it got 8.7km of ground off its ends and 3.0km off its sides —
+ * and Champoluc sits on a side, which is why the block appeared to be cut out
+ * right at the village while the same rule gave Kronplatz, which is nearly
+ * square, five to six kilometres everywhere.
+ *
+ * The apron is context: how far you can see up the valley the resort sits in.
+ * That is a distance, and it has nothing to do with how elongated the pistes
+ * happen to be. So the short axis is treated as at least this much of the long
+ * one before the pad is taken off it. Only elongated resorts move — the other
+ * three here are within 1.21 of square and are untouched.
+ */
+export const APRON_SQUARENESS = 0.62;
+
+/**
+ * How far the mesh reaches past the nodes, in the projector's own metres.
+ *
+ * One function, because two places need the answer and they must agree: the
+ * mesh is built from it here, and the elevation is baked over it by
+ * scripts/build-resort.mjs. A DEM that stops short of the mesh leaves the
+ * outermost ring of the mountain with no measurement under it, which looks
+ * exactly like a smooth invented apron around a real mountain, because it is.
+ */
+export function apronFor(spanX, spanZ) {
+  const long = Math.max(spanX, spanZ);
+  return {
+    padX: Math.max(spanX, long * APRON_SQUARENESS) * FIELD_PAD,
+    padZ: Math.max(spanZ, long * APRON_SQUARENESS) * FIELD_PAD,
+  };
+}
+
+/**
  * The slab's faces.
  *
  * Exported because the feature tests identify slab pixels by exact value, and
@@ -294,8 +329,7 @@ export function buildField(nodes, makeProjector, terrain = null) {
     minZ: Math.min(...zs),
     maxZ: Math.max(...zs),
   };
-  const padX = (resort.maxX - resort.minX) * FIELD_PAD;
-  const padZ = (resort.maxZ - resort.minZ) * FIELD_PAD;
+  const { padX, padZ } = apronFor(resort.maxX - resort.minX, resort.maxZ - resort.minZ);
   const minX = resort.minX - padX;
   const maxX = resort.maxX + padX;
   const minZ = resort.minZ - padZ;

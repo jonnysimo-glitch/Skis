@@ -6,7 +6,7 @@
  * when the resort changes" means in numbers: nothing about the slab is a
  * constant, and every dimension moves with the terrain it is under.
  */
-import { buildField, slabFor, toUnit, SKIRT, GRID, FIELD_PAD } from "./field.js";
+import { buildField, slabFor, toUnit, SKIRT, GRID, FIELD_PAD, apronFor } from "./field.js";
 import { GRAPHS } from "../resorts/graphs.js";
 import { NODES as MONTEROSA, projector as monterosaProjector } from "../resort.js";
 import { projectorFor } from "../lib/projector.js";
@@ -179,6 +179,39 @@ console.log("\nAND A RIDGE PUTS THE GROUND BEHIND IT IN SHADOW");
  * like one. Nothing failed; the fallback is there for the hand-typed graph and
  * it did its job silently.
  */
+/*
+ * The apron is about as wide on every side, whatever shape the resort is.
+ *
+ * A fraction of each axis's own span is the obvious rule and it fails on a
+ * resort that is long and thin: Monterosa is 15.8km by 5.4, so it had 8.7km of
+ * ground off its ends and 3.0km off its sides — and Champoluc is on a side,
+ * which is why the block looked cut out at the village. What the apron is for
+ * is seeing where the valley goes, and that is a distance.
+ */
+console.log("\nTHE GROUND AROUND A RESORT IS NOT A SLIVER");
+for (const [id, mod] of Object.entries(GRAPHS)) {
+  const proj = projectorFor(mod.NODES);
+  const pts = Object.values(mod.NODES).map((n) => proj.project(n.lat, n.lon));
+  const xs = pts.map((q) => q.x);
+  const zs = pts.map((q) => q.z);
+  const spanX = Math.max(...xs) - Math.min(...xs);
+  const spanZ = Math.max(...zs) - Math.min(...zs);
+  const { padX, padZ } = apronFor(spanX, spanZ);
+  const ratio = Math.max(padX, padZ) / Math.min(padX, padZ);
+  check(`${id}: neither side is much thinner than the other`, ratio <= 1.65,
+    `${(padX / 1000).toFixed(1)}km by ${(padZ / 1000).toFixed(1)}km, ` +
+    `on a resort ${(spanX / 1000).toFixed(1)} by ${(spanZ / 1000).toFixed(1)}`);
+}
+// And it is still an apron, not a second resort's worth of empty ground.
+{
+  const wide = apronFor(20000, 2000);
+  check("a very long thin resort is not padded into a square",
+    wide.padZ < wide.padX, `${(wide.padX / 1000).toFixed(1)}km by ${(wide.padZ / 1000).toFixed(1)}km`);
+  const square = apronFor(8000, 8000);
+  check("and a square one is padded exactly as it always was",
+    Math.abs(square.padX - 8000 * FIELD_PAD) < 1e-6, `${(square.padX / 1000).toFixed(2)}km`);
+}
+
 console.log("\nTHE ELEVATION REACHES AS FAR AS THE MESH");
 for (const [id, mod] of Object.entries(GRAPHS)) {
   if (!mod.TERRAIN) continue;

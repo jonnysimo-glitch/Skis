@@ -19,7 +19,8 @@ import { prune, check } from "./osm/validate.mjs";
 import { elevationFor, bakeTerrain } from "./osm/elevation.mjs";
 import { emit } from "./osm/emit.mjs";
 import { writeRegistry } from "./osm/registry.mjs";
-import { FIELD_PAD } from "../src/map/field.js";
+import { apronFor } from "../src/map/field.js";
+import { projectorFor } from "../src/lib/projector.js";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
 import { contractChains, nameRuns } from "./osm/simplify.mjs";
 
@@ -51,20 +52,36 @@ const TERRAIN_SAMPLES = 160;
  * with the valley bases on its edge, and the mountain looks like it was cut
  * out of something rather than standing in something.
  *
- * BAKE_PAD is FIELD_PAD with a little over, and the "little over" is the whole
- * reason this is a named constant rather than a number: the app's mesh spans
- * exactly FIELD_PAD, and a bake that stops a metre short leaves its outermost
- * ring of quads with no measurement behind them.
+ * A little past the mesh, not a lot: enough that rounding cannot leave the
+ * outermost ring of quads reading elevation that was never baked.
  */
-const BAKE_PAD = FIELD_PAD + 0.05;
+const BAKE_SLACK = 1.05;
 const boxAround = (nodes) => {
-  const lats = Object.values(nodes).map((n) => n.lat);
-  const lons = Object.values(nodes).map((n) => n.lon);
-  const padLon = (Math.max(...lons) - Math.min(...lons)) * BAKE_PAD;
-  const padLat = (Math.max(...lats) - Math.min(...lats)) * BAKE_PAD;
+  /*
+   * Through the projector, so this is the mesh's own box and not a lookalike.
+   *
+   * These two used to be computed separately — the mesh in projected metres
+   * here, the bake in degrees of latitude and longitude — with five per cent
+   * of slack papering over the difference. That worked while the pad was a
+   * plain fraction of each axis and stops working the moment it is not, which
+   * is a silent failure: a DEM that stops short of the mesh does not error, it
+   * hands back nothing and the terrain falls through to interpolating between
+   * lift stations. One function, called from both.
+   */
+  const proj = projectorFor(nodes);
+  const pts = Object.values(nodes).map((n) => proj.project(n.lat, n.lon));
+  const xs = pts.map((q) => q.x);
+  const zs = pts.map((q) => q.z);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+  const { padX, padZ } = apronFor(maxX - minX, maxZ - minZ);
+  const a = proj.unproject(minX - padX * BAKE_SLACK, minZ - padZ * BAKE_SLACK);
+  const b = proj.unproject(maxX + padX * BAKE_SLACK, maxZ + padZ * BAKE_SLACK);
   return [
-    Math.min(...lons) - padLon, Math.min(...lats) - padLat,
-    Math.max(...lons) + padLon, Math.max(...lats) + padLat,
+    Math.min(a.lon, b.lon), Math.min(a.lat, b.lat),
+    Math.max(a.lon, b.lon), Math.max(a.lat, b.lat),
   ];
 };
 
