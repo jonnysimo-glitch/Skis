@@ -316,14 +316,24 @@ const CULL_PAD = TERRAIN_MARGIN + 240;
 /**
  * How many mountain places to show, as `count = base * zoom ** power`.
  *
- * Three at the framing the app opens on, ten by the time a valley fills the
- * screen, and all of them once you are looking at one bowl. The curve is
- * steeper than linear because what changes with zoom is area, not width: twice
- * as close is four times the room, so the number that fits comfortably grows
- * faster than the zoom does.
+ * Five at the framing the app opens on, ten by the time a valley fills the
+ * screen, and all of them once you are looking at one bowl.
+ *
+ * The power used to be 1.7, on the argument that twice as close is four times
+ * the room. That argument is wrong, and it is worth writing down why: what
+ * grows with zoom is the room per METRE of mountain, not the room on the
+ * screen. The screen is the same phone either way. What actually changes is
+ * that fewer places are in frame at all, so a budget that barely moves still
+ * ends up showing every one of them close in — while at the whole-resort view
+ * it holds the number down to what a person can read.
+ *
+ * At 1.7 it did the opposite. Kronplatz put eighteen restaurants and ten of
+ * their names on one phone screen showing the entire massif, twenty-eight of
+ * the thirty-seven things written on the mountain, and the stated intent two
+ * paragraphs up said ten.
  */
 const HUT_BASE_COUNT = 5;
-const HUT_ZOOM_POWER = 1.7;
+const HUT_ZOOM_POWER = 1.0;
 
 /**
  * How far the ground-holding correction is allowed to move the map in one
@@ -2030,7 +2040,7 @@ export default function FallbackTerrain({
      * segment points left, because a name written upside down is worse than no
      * name.
      */
-    const drawRunNames = (v, cam, placed) => {
+    const drawRunNames = (v, cam, placed, spoken = null) => {
       const g = propsRef.current.graph;
       if (!g?.features?.length) return placed;
       /*
@@ -2087,6 +2097,17 @@ export default function FallbackTerrain({
       const byName = new Map();
       for (const f of g.features) {
         if (f.properties.kind !== "run" || !f.properties.name) continue;
+        /*
+         * Not if another layer has already said it.
+         *
+         * A piste is very often named after the lift that serves it or the
+         * place at its top — Sonne, Belvedere, Marchner and Arndt at Kronplatz
+         * are each a lift, a junction and a run — so the same word was written
+         * two and three times over. Every other layer already went through
+         * `spoken`; this one did not, because it was the last to be written and
+         * nobody had passed it the set.
+         */
+        if (spoken?.has(f.properties.name)) continue;
         const list = byName.get(f.properties.name) ?? [];
         list.push(f);
         byName.set(f.properties.name, list);
@@ -2204,10 +2225,42 @@ export default function FallbackTerrain({
         let angle = Math.atan2(best.dy, best.dx);
         if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
 
-        // A rough box, axis aligned, which is enough for the declutterer: an
-        // exact rotated hull would reject less and cost more than it saves.
-        const half = Math.max(Math.abs(Math.cos(angle)) * w, 14) / 2;
-        const boxAt = (p) => ({ l: p.x - half, r: p.x + half, t: p.y - 8, b: p.y + 8 });
+        /*
+         * The word's footprint, followed along the word.
+         *
+         * Two wrong answers were tried first. `|cos| * w` wide by sixteen tall
+         * is the word's HORIZONTAL extent and nothing else: a piste runs down
+         * the screen, so most run names sit near vertical, and at eighty degrees
+         * that reserved fourteen pixels by sixteen for a word sixty pixels long.
+         * They were never in each other's way and every one of them drew —
+         * forty-one piste names stacked over one bowl, which is what "too many
+         * labels" looks like.
+         *
+         * The exact axis-aligned bounds of the rotated rectangle is the other
+         * wrong answer, in the other direction. At forty-five degrees a sixty
+         * pixel word gets a fifty-two pixel square, three quarters of which is
+         * the two empty triangles either side of the ink. Every diagonal name
+         * then blocked every other one and the tier went to nothing.
+         *
+         * So the word is treated as what it is — a line of glyphs — and tracked
+         * with a few small squares along its own baseline. That follows a
+         * diagonal closely, claims nothing in the corners, and is still just
+         * rectangles for a declutterer that only knows about rectangles.
+         */
+        const TALL = 13;
+        const ux = Math.cos(angle);
+        const uy = Math.sin(angle);
+        const steps = Math.max(2, Math.min(6, Math.round(w / TALL)));
+        const boxesAt = (p) => {
+          const out = [];
+          for (let i = 0; i <= steps; i++) {
+            const t = (i / steps - 0.5) * w;
+            const bx = p.x + ux * t;
+            const by = p.y + uy * t;
+            out.push({ l: bx - TALL / 2, r: bx + TALL / 2, t: by - TALL / 2, b: by + TALL / 2 });
+          }
+          return out;
+        };
 
         /*
          * If the middle is taken, slide along the piste rather than give up.
@@ -2229,8 +2282,8 @@ export default function FallbackTerrain({
         const slack = held(name) ? INCUMBENT_SLACK : 0;
         for (const t of along) {
           const p = pts[Math.min(pts.length - 1, Math.max(0, Math.round(t * (pts.length - 1))))];
-          const candidate = boxAt(p);
-          if (hits(candidate, slack)) continue;
+          const candidate = boxesAt(p);
+          if (candidate.some((b) => hits(b, slack))) continue;
           at = p;
           box = candidate;
           break;
@@ -2240,7 +2293,7 @@ export default function FallbackTerrain({
         const mid = pts[Math.floor(pts.length / 2)];
         const room = Boolean(at);
         at = at ?? mid;
-        box = box ?? boxAt(mid);
+        box = box ?? boxesAt(mid);
         const mx = at.x;
         const my = at.y;
         const keep = zoomOk && !behind && room;
@@ -2249,7 +2302,7 @@ export default function FallbackTerrain({
         // Reserved only while it is wanted. A label on its way out stops
         // holding the ground it is leaving, so the one that displaced it can
         // start arriving in the same quarter second rather than after it.
-        if (keep) placed.push(box);
+        if (keep) placed.push(...box);
         if (solid <= 0.02) continue;
 
         ctx.save();
@@ -2394,26 +2447,39 @@ export default function FallbackTerrain({
         .filter(([, n]) => n.named !== false)
         .sort((a, b) => rank(a[1]) - rank(b[1]))
         /*
-         * A name another tier is writing is faded out here, not dropped here.
+         * Keyed by the node, not by the word it says.
          *
-         * Which tier owns a name is not fixed: Belvedere at Monterosa is a
-         * rifugio and a junction, so the hut layer claims it while it has room
-         * for its marker and hands it back the moment it loses one. Filtering
-         * the loser out of the list meant its fade was never asked for, so it
-         * froze at full and the word jumped between the two positions — a full
-         * alpha step, the largest pop left on the map.
+         * Two junctions at Kronplatz are both called "Olang I - Valdaora I",
+         * and keying the fade on the name gave them one fade between them: the
+         * one that draws raised it a step each frame and the duplicate reset it
+         * to zero, so it sat at exactly one step — six per cent — forever. Seven
+         * names did that, which is the half-transparent copies on the map, and
+         * the renderer never rested because a fade was always in flight.
          *
-         * Kept in the list with `taken` set instead, so it fades out where it
-         * was while the other tier fades it in where it is going.
+         * A name another layer is already writing is not written again here.
+         *
+         * Dropped rather than faded out. Fading it was tried and was worse: a
+         * duplicate is a standing condition, not a hand-off — Kronplatz has two
+         * separate junctions both called "Olang I - Valdaora I" — so there is
+         * no moment at which the second one is on its way anywhere. Drawing it
+         * at a decaying alpha left a half-transparent copy of a dozen names
+         * sitting under the real ones, and where ownership flipped frame to
+         * frame the copy never reached zero and simply stalled there.
+         *
+         * The pop that change was meant to fix is fixed at its source instead:
+         * the hut layer now claims its name when it comes on screen rather than
+         * when it wins a slot, so ownership stops moving. The fade is reset so
+         * that if a name genuinely is handed back — the hut leaves the frame —
+         * it arrives from nothing rather than at whatever it last was.
          */
-        .map(([, n]) => {
+        .map(([key, n]) => {
           const taken = spoken.has(n.name);
           if (!taken) spoken.add(n.name);
-          return [n, taken];
+          return { key, n, taken };
         })
-        .map(([n, taken]) => {
-          const { x, z } = field.proj.project(n.lat, n.lon);
-          return { n, taken, s: project(x, field.sample(x, z), z, v, cam) };
+        .map((c) => {
+          const { x, z } = field.proj.project(c.n.lat, c.n.lon);
+          return { ...c, s: project(x, field.sample(x, z), z, v, cam) };
         })
         /*
          * The screen edge is a fade too, with a band to fade in.
@@ -2429,12 +2495,12 @@ export default function FallbackTerrain({
          * stops the label being wanted. It fades out over the band, off canvas,
          * where nothing is drawn that anyone can see.
          */
-        .filter(({ n, s }) => {
+        .filter(({ key, s }) => {
           const near = s.x > -EDGE_BAND && s.x < width + EDGE_BAND
             && s.y > -EDGE_BAND && s.y < height + EDGE_BAND;
           // Far enough out to be genuinely gone: no position to fade at, so the
           // fade is reset and it arrives from nothing next time.
-          if (!near) fades.set(`l:${n.name}`, 0);
+          if (!near) fades.set(`l:${key}`, 0);
           return near;
         })
         .map((c) => ({
@@ -2470,7 +2536,7 @@ export default function FallbackTerrain({
           ...c,
           behind: c.n.base
             ? false
-            : steady(`lo:${c.n.name}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS),
+            : steady(`lo:${c.key}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS),
         }))
         .sort((a, b) => rank(a.n) - rank(b.n) || a.n.name.localeCompare(b.n.name));
       // The sort above reads `.n`, so it has to come after the projection; the
@@ -2493,7 +2559,7 @@ export default function FallbackTerrain({
 
       const drawn = [];
       const lit = mapTest ? [] : null;
-      for (const { n, s, behind, taken, onScreen } of candidates) {
+      for (const { key, n, s, behind, onScreen, taken } of candidates) {
         const w = ctx.measureText(n.name).width;
         // Four places to put it, in order of preference. Dropping a name on the
         // first collision cost Champoluc every time, because the zoom buttons
@@ -2536,10 +2602,22 @@ export default function FallbackTerrain({
           tx = cx;
           y = spots[0].y;
         }
-        const keep = room && !behind && !taken && onScreen;
-        const solid = fadeOf(`l:${n.name}`, keep, frameDt);
-        if (solid <= 0.02) continue;
+        const keep = room && !behind && onScreen && !taken;
+        const solid = fadeOf(`l:${key}`, keep, frameDt);
+        /*
+         * The box is reserved on the decision, not on the fade.
+         *
+         * These two lines were the other way round, so a label that was wanted
+         * but still faint returned before it claimed its space. The next name
+         * in the list took that space, which made the first one unwanted on the
+         * following frame, which faded it further — and the pair settled at an
+         * equilibrium instead of resolving. Seven names at Kronplatz sat at six
+         * per cent opacity indefinitely, which is what a stalled ghost is, and
+         * the renderer never stopped repainting because a fade was always in
+         * flight.
+         */
         if (keep) placed.push(box);
+        if (solid <= 0.02) continue;
         ctx.globalAlpha = solid;
 
         ctx.beginPath();
@@ -2867,6 +2945,20 @@ export default function FallbackTerrain({
         }
         const hidden = steady(`h:${full}`, !visible(s), frameNow);
         if (hidden && why) why[full] = "behind the mountain";
+        /*
+         * The hut owns the name from here, not from wherever it ends up.
+         *
+         * This used to be claimed at the bottom of the loop, only when the
+         * marker had won a slot — so the budget and the collision test decided
+         * which layer wrote "Belvedere", and both change frame to frame. The
+         * junction of the same name took it back the moment the marker lost
+         * its room and handed it over again a moment later, and the word
+         * flickered between two positions twenty pixels apart.
+         *
+         * Being on screen is stable across a frame or two in a way that
+         * winning a slot is not, so that is what settles it.
+         */
+        if (!labelsOnly && !hidden) spoken?.add(name);
 
         const r = 6.4;
         /*
@@ -2973,8 +3065,6 @@ export default function FallbackTerrain({
         drawn.push({ name, full, kind, alt, ...box });
         hutsDrawn.add(full);
         shownAt.set(full, frameNow);
-        // So a junction of the same name does not write it a second time.
-        spoken?.add(name);
       }
       if (mapTest && !labelsOnly) {
         window.__skisPlaceWhy = why;
@@ -3541,7 +3631,7 @@ export default function FallbackTerrain({
         drawPlaces(v, cam, boxes, { only: "rest", spoken });
         // Last, because a place is a better thing to know than a piste name,
         // and there are far more piste names than there is room for.
-        drawRunNames(v, cam, boxes);
+        drawRunNames(v, cam, boxes, spoken);
         drawPins(v, cam, pins);
       }
 

@@ -4347,6 +4347,102 @@ if (feature("38. Every tier of label, the same way")) {
   await page.context_.close();
 }
 
+// ===================== 39. THE MAP SETTLES, AND IS NOT CROWDED ==
+/*
+ * Two complaints from a phone, on Kronplatz, which has more on it than any of
+ * the others: "transparent ones stalling there and too many labels".
+ *
+ * They were one fault and one judgement. The stalling was a bug — the fade was
+ * keyed on the word rather than on the place saying it, and Kronplatz has two
+ * junctions both called "Olang I - Valdaora I", so one raised the shared fade a
+ * step each frame and the other reset it to zero. Seven names sat at exactly
+ * one step of opacity forever, and the renderer never stopped repainting
+ * because a fade was always in flight. Most of what read as crowding was those
+ * ghosts sitting under the real names.
+ */
+if (feature("39. The map settles, and is not crowded")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  const heroes = await page.$$(".hero");
+  await heroes[1].click();
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  const HOOKS = {
+    place: "__skisLabelLit", run: "__skisRunLit",
+    hut: "__skisPlaceLit", hutName: "__skisPlaceNameLit",
+  };
+  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  const survey = async () => page.evaluate(async (hooks) => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    for (let i = 0; i < 10; i++) await wait();
+    const out = { total: 0, stalled: [], perTier: {} };
+    for (const [tier, hook] of Object.entries(hooks)) {
+      const list = window[hook] ?? [];
+      out.perTier[tier] = list.length;
+      out.total += list.length;
+      for (const r of list) {
+        // Neither arrived nor gone, with nothing moving: not a fade, a ghost.
+        if (r.alpha > 0.02 && r.alpha < 0.98) out.stalled.push(`${tier}:${r.name ?? r.full}=${r.alpha}`);
+      }
+    }
+    return out;
+  }, HOOKS);
+
+  let worst = { total: 0 };
+  const allStalled = [];
+  for (const clicks of [0, 3, 5]) {
+    if (clicks) {
+      for (let i = 0; i < clicks - (worst.clicks ?? 0); i++) { await zoomIn.click(); await page.waitForTimeout(420); }
+    }
+    // Long enough that every fade has had time to finish twice over.
+    await page.waitForTimeout(2500);
+    const r = await survey();
+    allStalled.push(...r.stalled);
+    if (r.total > worst.total) worst = { ...r, clicks };
+    else worst.clicks = clicks;
+  }
+  check("nothing is left half faded once the map is still", allStalled.length === 0,
+    allStalled.slice(0, 4).join(", ") || "all in or all out");
+  /*
+   * A ceiling, not a target. Twenty-nine is the most Kronplatz puts up at any
+   * zoom once the ghosts are gone and the hut budget follows its own stated
+   * intent, so this is that with a little room. It is here because the tiers
+   * are budgeted separately and nothing was watching the sum: the peak was
+   * thirty-seven, twenty-eight of them restaurants, on a view of the whole
+   * massif.
+   */
+  check("and the mountain is not buried in labels", worst.total <= 32,
+    `${worst.total} at the busiest zoom: ${JSON.stringify(worst.perTier)}`);
+
+  /*
+   * And the map stops drawing when nothing is happening.
+   *
+   * A phone in a pocket on a chairlift is the case this matters for. It is also
+   * the tell for a stuck fade: `fadingPlaces` keeps the loop alive, so a fade
+   * that never resolves is a redraw every frame for as long as the app is open.
+   * Before the fix this ran at a hundred per cent for ever.
+   */
+  const quiet = await page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    for (let i = 0; i < 10; i++) await wait();
+    const from = window.__skisFadeClock ?? 0;
+    const wall = performance.now();
+    for (let i = 0; i < 60; i++) await wait();
+    return {
+      drawn: Math.round((window.__skisFadeClock ?? 0) - from),
+      wall: Math.round(performance.now() - wall),
+    };
+  });
+  check("and stops redrawing once it has settled", quiet.drawn <= quiet.wall * 0.05,
+    `${quiet.drawn}ms of redraw in ${quiet.wall}ms`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ===================== 37. A CONNECTOR IS NOT A PISTE ==
 // Kronplatz's Ried is six kilometres of piste that OSM leaves 250 m short of
 // the gondola that serves it, so the whole run was being pruned as somewhere
