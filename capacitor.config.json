@@ -1,6 +1,6 @@
 {
-  "appId": "ski.skis.app",
-  "appName": "Skis",
+  "appId": "ski.slalom.app",
+  "appName": "Slalom",
   "webDir": "dist",
   "ios": {
     "contentInset": "never",

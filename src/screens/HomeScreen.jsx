@@ -58,7 +58,7 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
     <div className="page">
       <header className="page__bar">
         <span className="wordmark wordmark--dark">
-          <Brand className="wordmark__mark" /> Skis
+          <Brand className="wordmark__mark" /> Slalom
         </span>
         <button className="iconbtn iconbtn--flat" onClick={onSettings} aria-label="Settings">
           <Gear />

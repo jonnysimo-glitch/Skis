@@ -1,4 +1,4 @@
-# Getting Skis onto the App Store
+# Getting Slalom onto the App Store
 
 **You do not need a Mac.** You do need an iPhone or iPad, an Apple Developer
 Program membership, and a hosted macOS runner for the one step that genuinely

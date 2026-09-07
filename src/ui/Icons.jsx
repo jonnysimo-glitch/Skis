@@ -129,9 +129,16 @@ export const Lift = (p) => (
  * Heavier than the 1.7 the rest of this file uses — 5.8 units of the 64 grid
  * scale to 2.2 here — and it has to be: at wordmark size a 1.7 accent flank
  * between two snow ones reads as a gap rather than as a line.
+ *
+ * The one icon here with its own viewBox, cropped to the strokes rather than
+ * left in the shared 20x20 square. The ink only ever filled the middle band of
+ * that square, so beside a word it sat two pixels low and read as sinking, and
+ * the fix was a translate nobody could later justify. Cropped, the box is the
+ * mark, which means the layout can align it like a letter: bottom on the
+ * baseline, top at the ascenders. Bounds are the paths plus half a stroke.
  */
 export const Brand = (p) => (
-  <svg {...base} strokeWidth="2.2" {...p}>
+  <svg {...base} viewBox="0.9 6.6 18.2 10" strokeWidth="2.2" {...p}>
     <path d="M2 15.5 L6.7 8.9 L9 12.4" />
     <path d="M12.9 7.7 L18 15.5" />
     <path d="M7.9 15.5 L12.9 7.7" stroke="var(--accent-line)" />

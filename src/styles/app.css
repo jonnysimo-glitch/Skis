@@ -57,12 +57,27 @@ input, select { font: inherit; color: inherit; }
 .topbar > * { pointer-events: auto; }
 .topbar__spacer { flex: 1; }
 
+/*
+ * The name, set rather than shouted.
+ *
+ * It was 15px uppercase on 0.12em of tracking, which is the default move for a
+ * wordmark and the reason so many of them look alike: letterspaced caps read
+ * as a label for the app rather than as its name. Slalom is a word with three
+ * ascenders and no descenders, so lowercase gives it a skyline of its own —
+ * which is the point, next to a mark that is two peaks. Set at the size a
+ * title would be, tracked slightly in rather than out.
+ *
+ * In San Francisco, like everything else. Archivo Bold was tried here on the
+ * grounds that a wordmark is a drawing rather than text, subset to its six
+ * letters so it cost 1.1 kB; it was a nicer piece of lettering and a worse fit,
+ * because the one word a user reads before every other word in the app should
+ * not be the one word in a different typeface.
+ */
 .wordmark {
   font-family: var(--display);
   font-weight: 700;
-  font-size: var(--t-subhead);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: var(--t-title-3);
+  letter-spacing: -0.012em;
   color: #fff;
   text-shadow: 0 1px 8px rgba(11, 26, 36, 0.6);
   display: flex; align-items: center; gap: var(--s-2);
@@ -75,13 +90,17 @@ input, select { font: inherit; color: inherit; }
  * and never noticed because at three pixels of 26% alpha nobody could see it.
  * The mark carries the brand on its own and needs no halo.
  *
- * Nudged down a pixel: the glyph's mass is in its lower two thirds, so on a
- * shared baseline with uppercase type it sits visually high.
+ * It used to be a 22px square nudged down a pixel, because the strokes only
+ * fill the middle band of the icon grid and next to a word they read as
+ * sinking. The nudge is gone and so is the square: the glyph's viewBox is now
+ * cropped to the strokes themselves (see Brand in Icons.jsx), which lets the
+ * mark be aligned like a letter rather than like a picture.
  */
 .wordmark__mark {
-  width: 22px; height: 22px;
+  /* A little taller than the ascenders it stands beside, so the mark leads the
+     lockup rather than matching it. Width follows the cropped box's 1.82:1. */
+  width: 33px; height: 18px;
   flex: none;
-  transform: translateY(1px);
 }
 
 /* 44pt tap target with a 38pt visual — the iOS convention. */

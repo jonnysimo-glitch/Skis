@@ -1,4 +1,4 @@
-# Skis
+# Slalom
 
 A route planner for a day's skiing. You tell it where you are, when you need to
 be down, and what you're comfortable on. It gives you routes with different
@@ -386,7 +386,7 @@ different emphasis, which the UI states plainly.
 ## Trying it
 
 **One file, no setup.** `npm run build:single` produces
-`dist-single/skis.html` — everything inlined, openable straight from disk with
+`dist-single/slalom.html` — everything inlined, openable straight from disk with
 no server and no hosting. Good for putting the app in front of someone quickly.
 
 What that costs: no web worker (solving runs on the main thread), no service

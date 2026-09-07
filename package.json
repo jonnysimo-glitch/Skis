@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Route planner for a day's skiing. Tell it where you are, when you need to be down, and what you're comfortable on.",
+  "description": "Slalom. Route planner for a day's skiing. Tell it where you are, when you need to be down, and what you're comfortable on.",
   "scripts": {
     "dev": "vite",
     "build": "node scripts/make-fetch-page.mjs && vite build",

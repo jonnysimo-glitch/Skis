@@ -178,13 +178,19 @@ export function staleReason(raw, resort = null) {
    * emitted no car parks at all, with no error anywhere. A cache from an older
    * question is not old data, it is the wrong data.
    *
-   * Only when the file records what it asked. An export from before this
-   * existed has no `asked` field and is left alone rather than being thrown
-   * away wholesale: the bbox and shape checks still cover it, and refetching
-   * every resort on upgrade is not a decision this function should be making.
+   * An export from before this field existed counts as a different question
+   * too, and the first version of this check exempted it — which meant the
+   * check could not fire at all. Every export on disk predated the field, so
+   * every one of them took the exemption, and the CI run that was supposed to
+   * pick up the car parks read all four from cache and pushed nothing. The
+   * cost of not exempting them is one re-fetch per resort, once, on the runner
+   * that has the network; the cost of exempting them is that the parking query
+   * never runs.
    */
-  if (resort?.bbox && raw.asked && raw.asked !== asked(resort)) {
-    return "fetched for a different query, so it cannot answer this one";
+  if (resort?.bbox && raw.asked !== asked(resort)) {
+    return raw.asked
+      ? "fetched for a different query, so it cannot answer this one"
+      : "fetched before the query was recorded, so it cannot be shown to answer this one";
   }
   const ways = raw.elements.filter((el) => el.type === "way" && el.geometry);
   if (!ways.length) return "no ways with geometry";

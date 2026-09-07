@@ -59,7 +59,7 @@ next design decision is made against something rather than from taste.
 
 ## What we measure at
 
-| | Skis |
+| | Slalom |
 |---|---|
 | Primary button | 52px tall, full-width, pill, 17px/700 |
 | Secondary | 46-48px, pill |

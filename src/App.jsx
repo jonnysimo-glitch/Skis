@@ -1,5 +1,5 @@
 /**
- * Skis.
+ * Slalom.
  *
  * Resort → Plan → Solving → Choose → Detail → Navigate → Summary, plus a
  * genuine empty state when the clocks do not allow a route.

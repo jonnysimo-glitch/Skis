@@ -4320,7 +4320,9 @@ if (feature("36. Every name arrives the same way")) {
   await page.click(".hero");
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(1800);
+  // On the renderer, not the clock: a fade measured next is only settled
+  // when nothing has been redrawn for a beat. See atRest in harness.mjs.
+  await atRest(page, { quiet: 500, limit: 12000 });
 
   /*
    * Crossing the naming zoom is a fade, not a switch.
@@ -4464,7 +4466,9 @@ if (feature("38. Every tier of label, the same way")) {
   await page.click(".hero");
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(1800);
+  // On the renderer, not the clock: a fade measured next is only settled
+  // when nothing has been redrawn for a beat. See atRest in harness.mjs.
+  await atRest(page, { quiet: 500, limit: 12000 });
 
   // Every alpha hook on the map, by the name a person would use for it.
   const TIERS = {
@@ -4558,7 +4562,9 @@ if (feature("38. Every tier of label, the same way")) {
   await page.click("text=Find routes");
   await page.waitForSelector(".routecard", { timeout: 25000 });
   await page.click(".routecard");
-  await page.waitForTimeout(1800);
+  // On the renderer, not the clock: a fade measured next is only settled
+  // when nothing has been redrawn for a beat. See atRest in harness.mjs.
+  await atRest(page, { quiet: 500, limit: 12000 });
   const pins = await page.evaluate(async () => {
     const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const seen = new Set();
@@ -5497,7 +5503,7 @@ if (feature("39. The map settles, and is not crowded")) {
   await heroes[1].click();
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(1800);
+  await atRest(page, { quiet: 500, limit: 12000 });
 
   const HOOKS = {
     place: "__skisLabelLit", run: "__skisRunLit",
@@ -5528,15 +5534,23 @@ if (feature("39. The map settles, and is not crowded")) {
       for (let i = 0; i < clicks - (worst.clicks ?? 0); i++) { await zoomIn.click(); await page.waitForTimeout(420); }
     }
     /*
-     * Long enough for the whole tail.
+     * Long enough for the whole tail, on a machine of any speed.
      *
      * A label that loses its place holds it for RUN_NAME_OCCLUSION_MS — 1.1s,
      * so that a name grazing an edge or a ridge does not blink — and only then
      * starts a 460 ms fade, which is exponential and takes about 1.5s to reach
      * two per cent. Two and a half seconds caught the last of them still at
      * three per cent and read it as a stall.
+     *
+     * Four seconds of wall clock covered that when the machine was idle and
+     * not when it was not: the fades advance on drawn frames, and under load
+     * four seconds buys fewer of them. So the hold is waited out on the clock,
+     * because that is the clock it is on, and the fade after it is waited out
+     * on the renderer — `atRest` returns once nothing has been redrawn for a
+     * beat, which is the definition of the tail being over.
      */
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(1600);
+    await atRest(page, { quiet: 700, limit: 15000 });
     const r = await survey();
     allStalled.push(...r.stalled);
     if (r.total > worst.total) worst = { ...r, clicks };
@@ -5688,6 +5702,80 @@ if (feature("37. A connector is not a piste")) {
   check("and the map is willing to write its name on it",
     onMap.length >= 4 && onMap.every((n) => !/^Link to /.test(n) || true),
     `${onMap.length} names`);
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+if (feature("46. The name and the mark are one lockup")) {
+  /*
+   * The two halves of the wordmark, measured as ink rather than as boxes.
+   *
+   * A mark and a word beside it are centred when their ink is centred, and
+   * `align-items: center` centres their boxes — which is not the same thing
+   * and was two pixels out for as long as the mark sat in a square icon grid
+   * whose strokes only filled the middle band. The fix was to crop the glyph's
+   * viewBox to its own strokes, and the only way to know it stayed fixed is to
+   * look at the pixels: find the topmost and bottommost lit row under the mark
+   * and under the letters, and compare the midpoints.
+   */
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".wordmark", { timeout: 20000 });
+  await atRest(page, { quiet: 400, limit: 8000 });
+
+  const box = await page.evaluate(() => {
+    const el = document.querySelector(".wordmark");
+    const mark = el.querySelector(".wordmark__mark");
+    const a = el.getBoundingClientRect();
+    const b = mark.getBoundingClientRect();
+    return {
+      left: Math.floor(a.left), right: Math.ceil(a.right),
+      top: Math.floor(a.top) - 6, bottom: Math.ceil(a.bottom) + 6,
+      split: Math.round(b.right),
+    };
+  });
+  const shot = PNG.sync.read(await page.screenshot());
+  const at = (x, y) => {
+    const i = (y * shot.width + x) * 4;
+    return [shot.data[i], shot.data[i + 1], shot.data[i + 2]];
+  };
+  // The bar's own background, sampled well clear of any glyph.
+  const bg = at(box.left + 2, box.top + 1);
+  const lit = (x, y) => {
+    const [r, g, b] = at(x, y);
+    return Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]) > 40;
+  };
+  const band = (x0, x1) => {
+    let top = null, bot = null;
+    for (let y = box.top; y < box.bottom; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (lit(x, y)) { if (top === null) top = y; bot = y; break; }
+      }
+    }
+    return top === null ? null : { top, bot, mid: (top + bot) / 2, h: bot - top + 1 };
+  };
+  const mark = band(box.left, box.split);
+  const word = band(box.split + 2, box.right);
+
+  check("the mark and the name are both drawn", mark !== null && word !== null,
+    `mark ${mark ? `${mark.h}px` : "missing"}, name ${word ? `${word.h}px` : "missing"}`);
+  if (mark && word) {
+    /*
+     * One pixel, not zero. The two are different heights, so when one spans an
+     * odd number of rows and the other an even number their midpoints are half
+     * a pixel apart however well they are aligned, and rounding can carry that
+     * to one. Two would be the old bug back.
+     */
+    check("and their centres line up", Math.abs(mark.mid - word.mid) <= 1,
+      `${(mark.mid - word.mid).toFixed(1)}px apart`);
+    // Leading, not matching, and not looming: the mark is the taller of the
+    // two by a little. Below the word's height it stops reading as the mark.
+    check("with the mark a little the taller of the two",
+      mark.h > word.h && mark.h <= word.h * 1.5,
+      `mark ${mark.h}px against ${word.h}px of lettering`);
+  }
+  // Left, where it has always been. Centred in the bar was tried and undone.
+  check("and the lockup is at the left of the bar", box.left <= 24, `${box.left}px in`);
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }

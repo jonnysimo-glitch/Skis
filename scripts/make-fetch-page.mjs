@@ -36,7 +36,7 @@ const html = `<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Skis: fetch the resort data</title>
+<title>Slalom: fetch the resort data</title>
 <link rel="icon" href="favicon.svg">
 <style>
   :root {

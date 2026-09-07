@@ -71,7 +71,7 @@ function inlineEverything() {
       // leave them 404ing in the console.
       html = html.replace(/<link[^>]*rel="(icon|apple-touch-icon)"[^>]*>/g, "");
 
-      writeFileSync(join(out, "skis.html"), html);
+      writeFileSync(join(out, "slalom.html"), html);
       rmSync(join(out, "index.html"), { force: true });
     },
   };

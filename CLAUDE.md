@@ -1,4 +1,4 @@
-# Skis — build brief
+# Slalom — build brief
 
 A route planner for a day's skiing. You tell it where you are, when you need to
 be down, and what you're comfortable on. It gives you three routes with
