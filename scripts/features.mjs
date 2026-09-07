@@ -4423,9 +4423,19 @@ if (feature("36. Every name arrives the same way")) {
   check("and they hold while the mountain turns", rate <= 0.10,
     `${rate.toFixed(3)} changes per name per frame — ${churn.flips} over ` +
     `${churn.frames} frames with ${churn.avg.toFixed(1)} names up`);
-  // Holding still by writing nothing on the mountain would satisfy that
-  // perfectly, and a rate has the same blind spot a count does.
-  check("without holding still by naming nothing", churn.avg >= 6,
+  /*
+   * Holding still by writing nothing on the mountain would satisfy that
+   * perfectly, and a rate has the same blind spot a count does. So: there has
+   * to be something up there for the rate to be about.
+   *
+   * Four, not six. Six was where the reading sits — measured across four runs
+   * at 5.8, 5.9, 6.0 and 6.2 — so the guard was on top of the value it was
+   * guarding and failed about two runs in five for no reason anybody could
+   * act on. A floor belongs clearly below the real number: holding still by
+   * naming nothing reads zero or one, and four is nowhere near that while
+   * leaving the ordinary spread alone.
+   */
+  check("without holding still by naming nothing", churn.avg >= 4,
     `${churn.avg.toFixed(1)} names on the mountain on average`);
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
