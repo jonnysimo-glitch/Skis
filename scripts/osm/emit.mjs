@@ -162,8 +162,24 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
    * by any reading, and both were being dropped.
    */
   const NEAR_PISTE = 200;
-  const NEAR_BASE = 600;
-  const NEAR_NODE = 250;
+  /*
+   * How far from the mountain a place you drive to is allowed to be.
+   *
+   * Nine hundred metres, and it used to be six, and the six was a guess.
+   * Kronplatz names its ski car parks P1 to P4 and they sit 725, 731, 735 and
+   * 775 m from the nearest base — so the guess dropped all four of the car
+   * parks the resort itself signposts, and kept two of sixty-eight. Nine
+   * hundred keeps seven, including all four Ps, and adds nothing at Latemar,
+   * where Parking 1 to 4 are inside a hundred and twenty metres anyway. The
+   * next thing out is at 1,018 m and then nothing until 2.1 km, so this sits
+   * in a gap rather than on a slope.
+   *
+   * It is not a surprising number once measured: at a resort you park below
+   * the village and walk or take the shuttle. Six hundred metres is a car park
+   * at the lift, which is the one case that was never in doubt.
+   */
+  const NEAR_BASE = 900;
+  const NEAR_NODE = 350;
   const OURS = 250;
   const spanM = (a, b) => {
     const R = 6371000;

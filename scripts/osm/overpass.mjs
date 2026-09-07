@@ -229,9 +229,12 @@ export async function fetchResort(resort, { force = false, offline = false, endp
     if (offline) {
       // A bounding box that has moved is a reason to refetch, not a reason to
       // refuse: the cached export is still real data, just covering less than
-      // the config now asks for. Anything else — an export with no node
-      // references, say — cannot build at all and still stops here.
-      if (/bounding box/.test(stale)) {
+      // the config now asks for. A widened query is the same shape of problem
+      // — the cache answers a narrower question than the one being asked, and
+      // narrower is not wrong. Both say so loudly and carry `narrow` so the
+      // caller knows what it is holding. Anything else — an export with no
+      // node references, say — cannot build at all and still stops here.
+      if (/bounding box|different query|before the query was recorded/.test(stale)) {
         console.log(`  cache       ${stale}; building from what is cached`);
         return { ...raw, source: "cache", path, narrow: true };
       }

@@ -3,14 +3,15 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- latemar` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-05T17:27:45.976Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-07T22:42:27.325Z
+ * Places:    OpenStreetMap
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
  *
  * What had to be assumed:
  *   - 1 piste had no piste:difficulty and were taken as red
  *   - 55 runs were unnamed and are described by their endpoints
- *   - 55 nodes, 18 lifts and 60 runs were outside the largest strongly connected component and were dropped
+ *   - 55 nodes, 18 lifts and 61 runs were outside the largest strongly connected component and were dropped
  *   - 1 connector was added, 271 m in total, to rejoin pistes OSM leaves up to 350 m apart; they are marked as links, not counted as piste, and timed at walking pace
  *   - 41 pistes mapped as an area rather than a line were skipped: the outline of a snow field is not a way down it
  *   - endpoints within 60 m of each other were treated as the same place
@@ -294,7 +295,13 @@ export const PLACES = [
   ["In.Treska", "restaurant", 46.33151, 11.55807, 2191],
   ["Latemar Hütte", "restaurant", 46.34822, 11.54515, 1971],
   ["Mayrl Alm", "restaurant", 46.36172, 11.54371, 2037],
+  ["Obereggen Latemar Skicenter", "parking", 46.38344, 11.52503, 1538, {"fee":"no"}],
+  ["Obereggen parking", "parking", 46.3859, 11.52463, 1559, {"spaces":50,"fee":"no"}],
   ["Oberholz Hütte", "restaurant", 46.37164, 11.54258, 2060],
+  ["Parking 1", "parking", 46.34166, 11.54058, 1770],
+  ["Parking 2", "parking", 46.34144, 11.53997, 1767, {"fee":"no"}],
+  ["Parking 3", "parking", 46.34118, 11.53931, 1763, {"fee":"no"}],
+  ["Parking 4", "parking", 46.34043, 11.5378, 1750, {"fee":"no"}],
   ["Platzl Mountain Lounge", "restaurant", 46.38365, 11.52644, 1549],
   ["Rifugio Monte Agnello", "hut", 46.33367, 11.54779, 2165],
   ["Ski Bar", "cafe", 46.34154, 11.54098, 1773],
@@ -302,6 +309,16 @@ export const PLACES = [
   ["Weigler Schupf", "restaurant", 46.35819, 11.54071, 1949],
   ["Zischgalm", "restaurant", 46.34972, 11.54802, 1996],
 ];
+
+/*
+ * Who the places came from, for the credit in Settings.
+ *
+ * OpenStreetMap is always in here and is always required — ODbL asks for
+ * attribution wherever the data is shown. The rest are here because a person
+ * reading "412 spaces" should be able to find out who counted, whether or not
+ * that source's licence obliges it.
+ */
+export const PLACE_SOURCES = ["OpenStreetMap"];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 

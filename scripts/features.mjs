@@ -5369,10 +5369,14 @@ if (feature("44. The gestures a real hand makes")) {
 if (feature("45. Somewhere to eat, and how to look it up")) {
   /*
    * The count is a floor, not a target. It is here so the filter cannot
-   * quietly narrow again: these are the numbers after the fix, less a couple
-   * of places of slack for OSM moving under us.
+   * quietly narrow again: these are the numbers now, less a couple of places
+   * of slack for OSM moving under us.
+   *
+   * Raised when the car parks arrived — 54, 51, 16 and 24 against 44, 41, 14
+   * and 18 — because a floor set before a whole kind of place existed stops
+   * being a floor and becomes a number nobody has looked at.
    */
-  const FLOOR = { monterosa: 42, kronplatz: 43, paganella: 12, latemar: 16 };
+  const FLOOR = { monterosa: 52, kronplatz: 49, paganella: 14, latemar: 22 };
   for (const [id, floor] of Object.entries(FLOOR)) {
     const mod = await import(`../src/resorts/${id}.js`);
     const kinds = {};
