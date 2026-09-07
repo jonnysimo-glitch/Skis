@@ -288,7 +288,23 @@ export function build(osm, { tolerance = 45, elevation }) {
     .map((el) => ({
       name: el.tags.name ? label(el.tags.name) : null,
       kind: KIND(el.tags),
+      /*
+       * What a driver wants to know before choosing between two car parks,
+       * where OSM has bothered to record it: how many spaces, whether it
+       * costs, and whether the car is under cover — which in an alpine
+       * February is the difference between driving away and digging.
+       *
+       * `fee` is a yes/no/unknown rather than a boolean, because "not tagged"
+       * and "free" are different answers and the card should not claim the
+       * second when it only knows the first. Multi-storey and underground both
+       * count as covered; `covered=yes` says so directly.
+       */
       spaces: Number.parseInt(el.tags.capacity, 10) || null,
+      fee: el.tags.fee === "yes" ? "yes" : el.tags.fee === "no" ? "no" : null,
+      covered: el.tags.covered === "yes" ||
+        el.tags.parking === "underground" || el.tags.parking === "multi-storey"
+        ? true
+        : null,
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
     }))

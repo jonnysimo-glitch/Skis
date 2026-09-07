@@ -15,7 +15,7 @@ import Sheet from "./ui/Sheet.jsx";
 import MountainMap from "./map/MountainMap.jsx";
 import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
 import { fieldBounds } from "./map/field.js";
-import { describe } from "./lib/places.js";
+import { describe, facts } from "./lib/places.js";
 
 // MapLibre is ~800KB and not needed until the map is on screen, so it is split
 // out. If the chunk cannot be fetched at all — offline before it was ever
@@ -1233,6 +1233,15 @@ export default function App() {
             <div className="placecard__n">{openPlace.full}</div>
             <div className="placecard__k">
               {describe(openPlace.full, openPlace.kind, openPlace.alt)}
+              {/*
+                * Car parks get a second clause, where OSM recorded one. It is
+                * on the same line rather than its own row because the card
+                * floats over the map and every row it grows is a row of
+                * mountain it covers.
+                */}
+              {facts(openPlace.kind, openPlace.facts) && (
+                <> · {facts(openPlace.kind, openPlace.facts)}</>
+              )}
             </div>
           </div>
           <a

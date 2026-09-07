@@ -5430,6 +5430,56 @@ if (feature("45. Somewhere to eat, and how to look it up")) {
         : "no short name is shared");
   }
 
+  /*
+   * A link for every kind, not just for whichever pin the tap happens to hit.
+   *
+   * The rendered check below taps one marker, and which one depends on what is
+   * on screen at that zoom — so on its own it can only ever prove the link
+   * works for a restaurant. Ski hire is the kind a skier looks up before they
+   * have skied anywhere, and it was never the one under the tap. This asks the
+   * same question of every place in every resort, from the data.
+   */
+  const { describe: say, facts: parkFacts } = await import("../src/lib/places.js");
+  const link = (p) =>
+    `https://www.google.com/maps/search/${encodeURIComponent(p[0])}/@${p[2]},${p[3]},16z`;
+  for (const id of Object.keys(FLOOR)) {
+    const mod = await import(`../src/resorts/${id}.js`);
+    const kinds = [...new Set(mod.PLACES.map((p) => p[1]))];
+    const bad = mod.PLACES.filter((p) => {
+      const url = link(p);
+      return !/^https:\/\/www\.google\.com\/maps\/search\/[^/]+\/@-?\d+(\.\d+)?,-?\d+(\.\d+)?,16z$/.test(url);
+    });
+    check(`${id} makes a Google Maps link for every kind it has`, bad.length === 0,
+      `${mod.PLACES.length} places over ${kinds.join(", ")}` +
+      (bad.length ? `; ${bad.slice(0, 3).map((p) => p[0]).join(", ")} do not` : ""));
+    const mute = mod.PLACES.filter((p) => !say(p[0], p[1], p[4]));
+    check(`${id} says what every place is`, mute.length === 0,
+      mute.length ? mute.slice(0, 3).map((p) => p[0]).join(", ") : "all described");
+  }
+
+  /*
+   * And what a car park says, which no resort file can demonstrate yet.
+   *
+   * The query asks OSM for car parks and the filter keeps them, but every
+   * export on disk was fetched before the query asked, so there are none to
+   * tap. Rather than let the line go untested until the next fetch, the
+   * formatter is asked directly — including the case that matters most, which
+   * is a car park OSM recorded nothing about. "Free" is a claim, and an
+   * untagged alpine car park is as likely to be paid as not.
+   */
+  check("a car park says its size, its price and its cover",
+    parkFacts("parking", { spaces: 400, fee: "no", covered: true }) === "400 spaces · free · covered",
+    String(parkFacts("parking", { spaces: 400, fee: "no", covered: true })));
+  check("and says only what OSM recorded",
+    parkFacts("parking", { spaces: 220 }) === "220 spaces",
+    String(parkFacts("parking", { spaces: 220 })));
+  check("and says nothing rather than guessing",
+    parkFacts("parking", {}) === null && parkFacts("parking", undefined) === null,
+    `${parkFacts("parking", {})} / ${parkFacts("parking", undefined)}`);
+  check("and a restaurant is not given a car park's line",
+    parkFacts("restaurant", { spaces: 9 }) === null,
+    String(parkFacts("restaurant", { spaces: 9 })));
+
   const page = await newPage(browser, { at: [9, 30], touch: true });
   await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });

@@ -254,10 +254,29 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
   const placeLines = withNames
     .filter((place) => !seenPlace.has(place.name) && seenPlace.add(place.name))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((place) =>
-      `  [${quote(place.name)}, ${quote(place.kind)}, ` +
-      `${Math.round(place.lat * 1e5) / 1e5}, ${Math.round(place.lon * 1e5) / 1e5}, ` +
-      `${Number.isFinite(place.alt) ? place.alt : "null"}],`);
+    .map((place) => {
+      /*
+       * A sixth field, and only where there is something in it.
+       *
+       * Everywhere else the five say all there is to say: what it is called,
+       * what it is, where it is, how high. A car park has facts none of those
+       * carry and a driver chooses on — spaces, whether it costs, whether it
+       * is covered — and they are written as an object rather than as three
+       * more slots so that a resort with no car parks reads exactly as it did
+       * before, and so a fourth fact later is a key rather than a migration.
+       */
+      const facts = place.kind === "parking"
+        ? Object.fromEntries(Object.entries({
+          spaces: place.spaces ?? null,
+          fee: place.fee ?? null,
+          covered: place.covered ?? null,
+        }).filter(([, v]) => v !== null))
+        : {};
+      const tail = Object.keys(facts).length ? `, ${JSON.stringify(facts)}` : "";
+      return `  [${quote(place.name)}, ${quote(place.kind)}, ` +
+        `${Math.round(place.lat * 1e5) / 1e5}, ${Math.round(place.lon * 1e5) / 1e5}, ` +
+        `${Number.isFinite(place.alt) ? place.alt : "null"}${tail}],`;
+    });
 
   const nodeLines = nodeKeys.map((key) => {
     const n = NODES[key];

@@ -556,10 +556,16 @@ Everything geometric comes from OpenStreetMap.
 The pipeline is `scripts/osm/`:
 
 - **`overpass.mjs`** builds and runs one query per resort, asking for downhill
-  pistes, aerialways, named stations and peaks, and mountain restaurants.
-  Responses are cached under `data/osm/` and committed, so a build is
-  reproducible and OSM's donated hardware is not asked twice for the same
-  data.
+  pistes, aerialways, named stations and peaks, mountain restaurants, ski
+  rental, and car parks with a name or a capacity. Responses are cached under
+  `data/osm/` and committed, so a build is reproducible and OSM's donated
+  hardware is not asked twice for the same data.
+
+  A cache answers the question it was asked and only that one, so each export
+  records the tag selectors it was fetched with and is refused when they no
+  longer match. Widening the query is therefore enough to make the next run
+  re-fetch; an export from before the question was recorded is refused too,
+  because it cannot be shown to answer the current one.
 - **`elevation.mjs`** reads height from the same terrarium tiles the map draws,
   bilinear between pixels. Every gradient and vertical total depends on this,
   so it is measured rather than assumed, and a missing tile is a hard error

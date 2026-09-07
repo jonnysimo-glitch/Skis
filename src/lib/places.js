@@ -90,3 +90,27 @@ export function describe(name, kind, alt) {
     : implied?.[1] ?? BY_KIND[kind] ?? "Mountain restaurant";
   return Number.isFinite(alt) ? `${what}, ${alt.toLocaleString()} m` : what;
 }
+
+/**
+ * What is worth knowing about a car park, in one short line.
+ *
+ * Only what OSM actually recorded. A car park with nothing tagged returns
+ * nothing and the card shows one line instead of two, which is honest — the
+ * alternative is a row of "unknown", which takes up the same space and tells a
+ * driver less than silence does.
+ *
+ * "Free" is only said when OSM says `fee=no`. An untagged car park in the Alps
+ * is as likely to be paid as not, and a skier who parks somewhere because the
+ * app called it free has been actively misled rather than merely underserved.
+ */
+export function facts(kind, info) {
+  if (kind !== "parking" || !info) return null;
+  const parts = [];
+  if (Number.isFinite(info.spaces)) {
+    parts.push(`${info.spaces.toLocaleString()} space${info.spaces === 1 ? "" : "s"}`);
+  }
+  if (info.fee === "no") parts.push("free");
+  else if (info.fee === "yes") parts.push("paid");
+  if (info.covered) parts.push("covered");
+  return parts.length ? parts.join(" · ") : null;
+}

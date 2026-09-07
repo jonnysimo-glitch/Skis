@@ -3497,7 +3497,7 @@ export default function MountainMap({
         if (shortSeen.has(short)) ambiguous.add(short);
         shortSeen.add(short);
       }
-      for (const [full, kind, lat, lon, alt] of order) {
+      for (const [full, kind, lat, lon, alt, facts] of order) {
         const short = shortName(full);
         const name = ambiguous.has(short) ? full : short;
         const { x, z } = field.proj.project(lat, lon);
@@ -3640,7 +3640,7 @@ export default function MountainMap({
           continue;
         }
 
-        drawn.push({ name, full, kind, alt, lat, lon, x: s.x, y: s.y, ...box });
+        drawn.push({ name, full, kind, alt, lat, lon, facts, x: s.x, y: s.y, ...box });
         hutsDrawn.add(full);
         shownAt.set(full, frameNow);
       }
@@ -4650,7 +4650,7 @@ export default function MountainMap({
       }
       return best
         ? { name: place0(best), full: best.full, kind: best.kind,
-            alt: best.alt, lat: best.lat, lon: best.lon }
+            alt: best.alt, lat: best.lat, lon: best.lon, facts: best.facts }
         : null;
     };
     const place0 = (p) => p.full ?? p.name;

@@ -86,9 +86,14 @@ for (const id of ["monterosa", "kronplatz", "paganella", "latemar"]) {
   }
 
   // --- places: on the mountain, with a real kind ---------------------------
+  //
+  // "parking" is in this list because it would otherwise fail the day the data
+  // arrives rather than the day the code was written: the Overpass query asks
+  // for car parks and the filter keeps them, but every export on disk predates
+  // the question, so no resort file has one yet and nothing was watching.
   for (const p of M.PLACES ?? []) {
     const [nm, kind, lat, lon, alt] = p;
-    if (!["hut", "restaurant", "cafe", "rental"].includes(kind)) bad.push(`place "${nm}": kind "${kind}"`);
+    if (!["hut", "restaurant", "cafe", "rental", "parking"].includes(kind)) bad.push(`place "${nm}": kind "${kind}"`);
     if (alt !== null && (alt < 200 || alt > 4000)) bad.push(`place "${nm}": altitude ${alt}`);
     const near = Math.min(...Object.values(M.NODES).map((n) => metres(lat, lon, n.lat, n.lon)));
     if (near > 3000) bad.push(`place "${nm}": ${Math.round(near)} m from the nearest node`);
