@@ -613,21 +613,26 @@ const ZOOM_MIN = 0.34;
  *
  *   zoom  1    11,119 m      the whole massif, which is the opening view
  *   zoom 16     1,011 m      the old ceiling: a kilometre still in shot
- *   zoom 48       410 m      one bowl, one summit, one lift line
- *   zoom 400       58 m      past any detail either the mesh or the drape has
+ *   zoom 32       650 m      one bowl, one lift line, still a photograph
+ *   zoom 48       410 m      magnified past the drape: a wash
  *
  * A kilometre across the screen is not close, and it was the closest the map
- * would go: pressing zoom-in a fourth time past the tenth did nothing. 410 m
- * is a summit filling the frame, and it is about as far as the data goes —
- * the elevation grid is 160 samples across the field, so the terrain has no
- * shape finer than about 200 m, and the satellite drape is between 1.6 and
- * 3.3 metres a pixel depending on the resort. Past here the mountain is being
- * magnified rather than resolved, and it looks it.
+ * would go: pressing zoom-in a fourth time past the tenth did nothing.
+ *
+ * Where it stops is set by the imagery rather than by taste, and 48 was too
+ * far. The check in features 30 measures how much of the drape's own pattern
+ * survives to the screen — how many neighbouring pixels differ — and it reads
+ * 47% at zoom 8, 14% at 33 and 2% at 48. Two per cent is not soft, it is one
+ * tone: the composited drape is between 1.6 and 3.3 metres a pixel depending
+ * on the resort, and by 48 every screen pixel is sampling inside one of them.
+ * The terrain under it runs out at about the same place — the elevation grid
+ * is 160 samples across the field, so there is no shape finer than about
+ * 200 m. So this stops where there is still a picture.
  *
  * The pan limit grows with the excess zoom, so this also buys the reach to
- * bring that summit to the middle of the screen once you are in on it.
+ * bring that bowl to the middle of the screen once you are in on it.
  */
-const ZOOM_MAX = 48;
+const ZOOM_MAX = 32;
 /*
  * Navigating: you, put on the screen, at a fixed scale, facing your way.
  *

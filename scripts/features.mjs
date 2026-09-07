@@ -2643,12 +2643,13 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
     `${closeDetail}% of neighbouring pixels differ at zoom ${near?.toFixed(1)}, ` +
     `against ${farDetail}% far out`);
   /*
-   * And at the ceiling it goes soft rather than blocky.
+   * And at the ceiling there is still a picture.
    *
-   * Which is the honest cost of the reach, recorded here rather than left to
-   * be discovered: past the drape's own resolution the picture is magnified,
-   * and magnified photography is soft. Blocky would be the renderer's fault
-   * and would read near zero.
+   * This is what set the ceiling. The reading is 47% at zoom 8, 14% at 33 and
+   * 2% at 48 — and two per cent is not softness, it is one tone: by then every
+   * screen pixel samples inside a single drape pixel. So ZOOM_MAX came back to
+   * 32, where there is still a photograph to look at, and this check is what
+   * stops it drifting out again.
    */
   for (let n = 0; n < 6; n++) {
     await page.$eval(SEL, (c) => {
@@ -2661,7 +2662,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   }
   await page.waitForTimeout(1600);
   const atCeiling = await detail();
-  check("and right in at the ceiling it is soft, not blocky", atCeiling >= 8,
+  check("and right in at the ceiling there is still a picture", atCeiling >= 8,
     `${atCeiling}% of neighbouring pixels differ at zoom ` +
     `${(await page.evaluate(() => window.__skisView?.zoom))?.toFixed(1)}`);
   /*
