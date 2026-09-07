@@ -305,6 +305,13 @@ export function build(osm, { tolerance = 45, elevation }) {
         el.tags.parking === "underground" || el.tags.parking === "multi-storey"
         ? true
         : null,
+      // Whether anyone traced it, which is the only evidence an untagged car
+      // park gives that it is a car park rather than a passing place. A node
+      // is a dropped pin; a way or a relation is an area somebody drew.
+      drawn: el.type !== "node",
+      // Where the facts came from, so a merge with another source can say
+      // which one won and the app can attribute it.
+      source: "osm",
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
     }))

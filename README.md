@@ -579,6 +579,56 @@ The pipeline is `scripts/osm/`:
   replacing it. Its Champoluc is about 1.4 km from the real one, far enough up
   the valley side that the ground there is 558 m higher, so the 3D map is
   currently drawing that node most of a Munro up the wrong slope.
+### More than one source
+
+OpenStreetMap is the base and stays the base: it is the only source that covers
+every resort in the Alps, and it is the one that has the geometry. It is also,
+for car parks, mostly an outline with nothing attached — a mapper tracing an
+aerial photograph can see the shape of the tarmac and not the sign beside it.
+About a third of the car parks in these four boxes carry a name and fewer carry
+a capacity, and the capacity is the number a driver actually chooses on.
+
+So `scripts/sources/` asks other people too. OSM says **where**; a source that
+counted says **what**.
+
+| Source | Covers | Gives | Licence |
+|---|---|---|---|
+| OpenStreetMap, via Overpass | everywhere | position, outline, whatever tags exist | ODbL |
+| [Open Data Hub South Tyrol](https://opendatahub.com/) | Kronplatz, Latemar | capacity, whether it costs, and live occupancy for the SKIDATA sites | CC0 |
+
+The merge is field by field, not record by record. Two records within 120 m of
+each other and of the same kind are the same place — a car park is not a point,
+and the centroid of a traced polygon and the operator's ticket machine are
+routinely eighty metres apart at opposite ends of the same tarmac. The merged
+place keeps OSM's position and takes the other source's capacity only where OSM
+has none, and each fact remembers who supplied it. `node
+scripts/sources/merge.test.mjs` is the whole rule, stated as cases.
+
+The credit goes in **Settings → Resort data**, built from the places themselves
+rather than declared, so a source that was asked and had nothing to add does
+not take the credit. It is not on the place card: that card floats over the
+map, and every row it grows is a row of mountain it covers.
+
+Which source answers is decided by the resort's centre, not by whether its
+bounding box overlaps a province. Paganella's box reaches two kilometres over
+the South Tyrolean border and the resort is entirely in Trentino; overlap
+claimed it and the centre does not.
+
+Two things deliberately not done. **Live occupancy is not baked in**: the API
+offers it, and a number that was true at build time is worse than no number on
+a phone reading a committed graph with no signal. It belongs to a runtime fetch
+that degrades to silence. And **no commercial parking API**: Google Places and
+the rest forbid caching what this pipeline exists to cache, and a source whose
+licence is incompatible with republishing cannot be added whatever its
+coverage. Mixing CC0 into an ODbL-derived database leaves the result ODbL,
+which is what this already is.
+
+Still missing, and the obvious next ones: **dati.trentino.it** for Paganella
+and the **Valle d'Aosta and Piedmont** geoportals for Monterosa, both CKAN or
+WFS and both open. And the resorts themselves, which is the B2B side of this
+anyway — last-lift times and queue estimates are not in any open dataset and
+never will be.
+
 - **`graph.mjs`** turns ways into nodes and edges. This is where the mess is
   handled: endpoints within a tolerance become one place, lifts are stored
   uphill and runs downhill whichever way the mapper drew them, `piste:difficulty`

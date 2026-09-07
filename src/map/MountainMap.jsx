@@ -3945,8 +3945,37 @@ export default function MountainMap({
 
       const gap = v.targetZoom - v.zoom;
       if (Math.abs(gap) > 0.001) {
+        const was = v.zoom;
         v.zoom += gap * (1 - Math.exp(-dt / ZOOM_EASE_MS));
+        /*
+         * A zoom that eases has to pay for its pan in instalments.
+         *
+         * `zoomAbout` shifts the pan by the whole correction the moment it is
+         * called, which is right for a pinch — the pinch snaps `zoom` to
+         * `targetZoom` on the same line, so pan and zoom never disagree. A
+         * double tap does not snap: it sets the target and lets this ease
+         * carry it over about 110 ms. So the pan jumped a frame before the
+         * zoom arrived, and for the length of the ease the map slid sideways
+         * and then settled back. That slide is the glitch.
+         *
+         * Here the correction is applied per frame against the zoom that
+         * actually happened this frame, so the point under the finger stays
+         * under it for the whole animation instead of only at the end.
+         *
+         * `v.frame` is last frame's, and that is fine: ax and ay come from the
+         * viewport and the chrome, not from zoom or pan, so they do not move
+         * while a zoom eases. (Which is not the usual answer in this file —
+         * see rotateAbout, where using the last frame's camera was exactly the
+         * bug. The difference is that this reads only the layout half of it.)
+         */
+        if (v.zoomAt && v.frame && was > 0) {
+          const step = v.zoom / was;
+          v.panX += (1 - step) * (v.zoomAt.x - v.frame.ax - v.panX);
+          v.panY += (1 - step) * (v.zoomAt.y - v.frame.ay - v.panY);
+        }
         dirty.current = true;
+      } else if (v.zoomAt) {
+        v.zoomAt = null;
       }
 
       if (Math.hypot(glide.x, glide.y) > GLIDE_STOP) {
@@ -4502,10 +4531,26 @@ export default function MountainMap({
       const before = v.targetZoom;
       v.targetZoom = clampZoom(v.targetZoom * k);
       const actual = v.targetZoom / before; // k, unless the clamp took a bite
+      // A pinch is its own anchor, every frame. Any eased zoom still owed pan
+      // is cancelled rather than left to fight the fingers.
+      v.zoomAt = null;
       const f = v.frame;
       if (!f || actual === 1) return;
       v.panX += (1 - actual) * (sx - f.ax - v.panX);
       v.panY += (1 - actual) * (sy - f.ay - v.panY);
+    };
+
+    /**
+     * The same zoom, animated, holding the same point.
+     *
+     * For a zoom that arrives all at once — a double tap — where `zoomAbout`
+     * would pay the whole pan before the zoom it is paying for has happened.
+     * This only records where to hold; the ease in the frame loop pays it off
+     * as the zoom actually moves.
+     */
+    const zoomTowards = (v, k, sx, sy) => {
+      v.targetZoom = clampZoom(v.targetZoom * k);
+      v.zoomAt = { x: sx, y: sy };
     };
 
     /**
@@ -4684,9 +4729,28 @@ export default function MountainMap({
         const now = performance.now();
         press = { t: now, x: e.clientX, y: e.clientY };
         if (now - lastTap < 300) {
-          zoomAbout(view.current, 1.6, e.clientX, e.clientY);
+          zoomTowards(view.current, 1.6, e.clientX, e.clientY);
           dirty.current = true;
           lastTap = 0; // a zoom consumes the pair, so a third tap starts over
+          /*
+           * And the finger that is still down is not now dragging.
+           *
+           * `down` opens a gesture before it knows what the touch is for, so
+           * the second tap of a pair armed one — and a thumb that rolls two
+           * pixels before it lifts then dragged the map, from a grab measured
+           * against the view as it was BEFORE the zoom. The map jumped. This
+           * is the same stale-anchor fault as the one rotateAbout had, in the
+           * one place where re-arming would not help: the view keeps changing
+           * for the whole ease, so there is no moment at which a grab taken
+           * now would still be right.
+           *
+           * So the pair is a zoom and nothing else. A second finger arriving
+           * re-arms the gesture from scratch and takes over as a pinch, which
+           * is what it should be.
+           */
+          gesture.zoomTap = true;
+          press = null;
+          view.current.dragging = false;
         }
       } else {
         press = null; // a second finger is a pinch, never a tap
@@ -4697,6 +4761,9 @@ export default function MountainMap({
     const move = (e) => {
       if (!pointers.has(e.pointerId)) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      // The second tap of a double tap is a zoom. One finger still down after
+      // it does not drag; two do, because `down` re-armed the gesture.
+      if (gesture?.zoomTap && pointers.size === 1) return;
       const v = view.current;
       const c = centroid();
 

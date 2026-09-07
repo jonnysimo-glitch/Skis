@@ -216,10 +216,22 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
    * something you ski to, and measured against the pistes.
    */
   const DRIVE_TO = new Set(["rental", "parking"]);
+  /*
+   * And a car park has to look like one.
+   *
+   * The query now asks for every `amenity=parking` in the box rather than only
+   * the named ones, because the car park at the foot of a lift is routinely an
+   * untagged polygon and that is the one that matters most. The cost is every
+   * passing place in three valleys, so something has to separate them, and it
+   * is not the tags: it is whether a mapper drew an area or dropped a pin. A
+   * name or a capacity is evidence too — somebody cared enough to type it.
+   */
+  const worthParking = (place) =>
+    place.kind !== "parking" || Boolean(place.name || place.spaces || place.drawn);
   const kept = PLACES.filter((place) =>
-    DRIVE_TO.has(place.kind)
+    worthParking(place) && (DRIVE_TO.has(place.kind)
       ? nearest(place, baseList) <= NEAR_BASE || nearest(place, nodeList) <= NEAR_NODE
-      : toPistes(place) <= NEAR_PISTE);
+      : toPistes(place) <= NEAR_PISTE));
 
   /*
    * A car park called after the base it serves.
@@ -340,12 +352,29 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
     `endpoints within ${report.tolerance} m of each other were treated as the same place`,
   ].filter(Boolean);
 
+  /*
+   * Who contributed, worked out from the places rather than declared.
+   *
+   * A source that was asked and had nothing must not appear in the credits,
+   * and a source that quietly filled in half the capacities must. Both facts
+   * are in the records: `source` says who supplied a whole place and `from`
+   * says who supplied a single field of one.
+   */
+  const CREDIT = {
+    osm: "OpenStreetMap",
+    opendatahub: "Open Data Hub South Tyrol",
+  };
+  const contributors = [...new Set(
+    kept.flatMap((place) => [place.source ?? "osm", ...Object.values(place.from ?? {})])
+  )].sort().map((key) => CREDIT[key] ?? key);
+
   return `/**
  * ${meta.name} — resort graph.
  *
  * GENERATED. Do not edit by hand: run \`npm run resort -- ${id}\` instead.
  *
  * Source:    OpenStreetMap via the Overpass API, ${fetchedAt || "date unrecorded"}
+ * Places:    ${contributors.join(", ")}
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
  *
@@ -401,6 +430,16 @@ ${runLines.join("\n")}
 export const PLACES = [
 ${placeLines.join("\n")}
 ];
+
+/*
+ * Who the places came from, for the credit in Settings.
+ *
+ * OpenStreetMap is always in here and is always required — ODbL asks for
+ * attribution wherever the data is shown. The rest are here because a person
+ * reading "412 spaces" should be able to find out who counted, whether or not
+ * that source's licence obliges it.
+ */
+export const PLACE_SOURCES = ${JSON.stringify(contributors)};
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 

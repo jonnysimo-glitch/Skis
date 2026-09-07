@@ -118,12 +118,18 @@ out center tags;
 out center tags;
 // Where to leave the car, which is the other half of the mid-day case the
 // whole app is built around: "your car is at Champoluc" only means something
-// if the app knows where at Champoluc. Only the ones with a name or a real
-// capacity — an unnamed six-space layby beside a piste is noise, and the
-// filter downstream keeps only what is near a base anyway.
+// if the app knows where at Champoluc.
+//
+// All of them, not only the named ones. The first version asked for a name or
+// a capacity on the reasoning that an unnamed six-space layby is noise, and it
+// is — but so is the rule, because the car park at the bottom of a lift is
+// very often a polygon somebody traced with neither tag on it, and that is the
+// single most important one at the whole resort. What separates the two is not
+// the tags, it is whether anyone bothered to draw it: a layby is a node, a
+// real car park is an area. `out center tags` says which, so the filter
+// downstream can use it, and it still keeps only what is near a base.
 (
-  nwr["amenity"="parking"]["name"](${box});
-  nwr["amenity"="parking"]["capacity"](${box});
+  nwr["amenity"="parking"](${box});
 );
 out center tags;`;
 }

@@ -5830,6 +5830,99 @@ if (feature("46. The name and the mark are one lockup")) {
   await page.context_.close();
 }
 
+if (feature("47. A double tap zooms where you tapped")) {
+  /*
+   * Reported from a phone: "there is a bug with double click zoom it just
+   * glitches".
+   *
+   * Two faults in the same handler, both about a zoom that animates while a
+   * finger is still down.
+   *
+   * `zoomAbout` shifts the pan by the whole correction the moment it is
+   * called, which is right for a pinch because the pinch snaps the zoom on the
+   * next line. A double tap does not snap; it eases over about 110 ms, so the
+   * pan arrived a frame before the zoom it was paying for and the map slid
+   * sideways and settled back. And `down` opens a gesture before it knows what
+   * the touch is for, so the second tap of the pair had armed a drag whose
+   * grab was measured against the view as it was before the zoom — a thumb
+   * that rolled two pixels before lifting then dragged from a stale anchor.
+   *
+   * What is measured here is the thing a person sees: whether the ground under
+   * the finger is still under the finger, during the animation and after it.
+   */
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await atRest(page, { quiet: 500, limit: 12000 });
+
+  const SEL = "canvas";
+  const box = await (await page.$(SEL)).boundingBox();
+  // Off centre on purpose: a zoom about the middle of the frame holds the
+  // middle of the frame whether it is anchored or not, so the middle is the
+  // one place this check could pass by doing nothing.
+  const at = { x: Math.round(box.x + box.width * 0.32), y: Math.round(box.y + box.height * 0.38) };
+  const groundAt = (p) => page.evaluate(([x, y]) => window.__skisGroundAt(x, y), [p.x, p.y]);
+
+  const before = await groundAt(at);
+  check("there is mountain under the tap", before !== null,
+    before ? `${before.lat.toFixed(4)}, ${before.lon.toFixed(4)}` : "sky");
+
+  // __skisView is a snapshot taken every 60 ms, which is plenty either side of
+  // a settle. There is no live zoom getter and this check does not need one.
+  const zoomOf = () => page.evaluate(() => window.__skisView?.zoom ?? null);
+  const z0 = await zoomOf();
+
+  if (before) {
+    const hand = await fingers(page);
+    await hand.down([[at.x, at.y]]);
+    await hand.up([[at.x, at.y]]);
+    await page.waitForTimeout(90);              // inside the 300 ms pair
+    await hand.down([[at.x, at.y]]);
+    // Mid-ease, with the finger still down: the frame where the old code had
+    // already moved the pan and not yet moved the zoom.
+    await page.waitForTimeout(55);
+    const mid = await groundAt(at);
+    const drifted = mid && before
+      ? Math.hypot((mid.lat - before.lat) * 111320,
+        (mid.lon - before.lon) * 111320 * Math.cos((before.lat * Math.PI) / 180))
+      : Infinity;
+    /*
+     * Sixty metres, at a zoom where the screen is kilometres across. It is not
+     * zero because the ease samples one frame at a time and `groundUnder`
+     * searches a height field rather than solving it, so a few pixels of
+     * search error is normal. The fault this catches moved the ground by
+     * hundreds of metres and put it back.
+     */
+    check("the ground under the finger stays put while the zoom runs",
+      drifted <= 60, `${Math.round(drifted)} m adrift mid-ease`);
+
+    // A thumb rolls before it lifts. It must not drag the map.
+    await hand.move([[at.x + 3, at.y + 2]]);
+    await page.waitForTimeout(40);
+    await hand.up([[at.x + 3, at.y + 2]]);
+    await hand.release();
+    await hand.close();
+    await atRest(page, { quiet: 500, limit: 8000 });
+
+    const after = await groundAt(at);
+    const moved = after && before
+      ? Math.hypot((after.lat - before.lat) * 111320,
+        (after.lon - before.lon) * 111320 * Math.cos((before.lat * Math.PI) / 180))
+      : Infinity;
+    check("and is still there when the zoom has finished", moved <= 60,
+      `${Math.round(moved)} m from where it was tapped`);
+
+    const z1 = await zoomOf();
+    check("and the map did zoom in", z0 !== null && z1 !== null && z1 > z0 * 1.2,
+      `${z0?.toFixed?.(2)} to ${z1?.toFixed?.(2)}`);
+  }
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 } finally {
   await browser.close();
   server.close();

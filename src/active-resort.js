@@ -67,6 +67,16 @@ export let PLACES = builtIn.PLACES || [];
  * there, which is what every resort used to do.
  */
 export let TERRAIN = builtIn.TERRAIN || null;
+/**
+ * Who the places came from, for the credit in Settings.
+ *
+ * OpenStreetMap always, and whoever else the build asked — see
+ * scripts/sources/. The default is OSM alone because the hand-typed graph
+ * predates the pipeline and its places, such as they are, came from memory;
+ * saying OpenStreetMap there is the closest true thing, and it is what the
+ * screen said before this existed.
+ */
+export let PLACE_SOURCES = builtIn.PLACE_SOURCES || ["OpenStreetMap"];
 
 /** Which resort these bindings currently describe. */
 export const activeResortId = () => current.id;
@@ -96,6 +106,7 @@ export function setActiveResort(id, module) {
   buildEdges = module.buildEdges;
   PLACES = module.PLACES || [];
   TERRAIN = module.TERRAIN || null;
+  PLACE_SOURCES = module.PLACE_SOURCES || ["OpenStreetMap"];
   return current.id;
 }
 

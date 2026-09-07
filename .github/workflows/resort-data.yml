@@ -102,6 +102,11 @@ jobs:
       # of someone else's donated hardware. The first time the build failed
       # this way the export survived only because it had been committed before
       # the graph existed at all.
+      # Both raw sources, not just Overpass. data/sources holds what the
+      # non-OSM providers answered — see scripts/sources/ — and it is banked
+      # here for the same reason: it is an input, it took someone else's
+      # bandwidth to get, and a graph that later fails to build should not
+      # cost a second round of asking for it.
       - name: Bank the raw exports
         env:
           BRANCH: ${{ github.ref_name }}
@@ -111,8 +116,8 @@ jobs:
           # git does not track empty directories, so data/osm does not survive
           # a clone. Without this, `git add` on a run that fetched nothing
           # fails on the pathspec and reports a red X for a no-op.
-          mkdir -p data/osm
-          git add data/osm
+          mkdir -p data/osm data/sources
+          git add data/osm data/sources
           if git diff --cached --quiet; then
             echo "No new or changed export."
             exit 0
@@ -172,6 +177,7 @@ jobs:
           path: |
             resort-run.log
             data/osm/*.json
+            data/sources/*.json
             src/resorts/*.js
           if-no-files-found: warn
           retention-days: 14

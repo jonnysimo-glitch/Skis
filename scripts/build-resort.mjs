@@ -22,6 +22,7 @@ import { writeRegistry } from "./osm/registry.mjs";
 import { apronFor } from "../src/map/field.js";
 import { projectorFor } from "../src/lib/projector.js";
 import { applyOperations, fillAreas } from "./osm/operations.mjs";
+import { enrich } from "./sources/index.mjs";
 import { contractChains, nameRuns } from "./osm/simplify.mjs";
 import { stitch } from "./osm/stitch.mjs";
 
@@ -147,6 +148,37 @@ async function buildOne(id) {
   // Last, so an unsigned run is described by the nodes that survived the
   // merge and the prune, under the names they ended up with.
   graph = nameRuns(graph);
+
+  /*
+   * And what anyone other than OpenStreetMap knows.
+   *
+   * After the graph is built and before it is emitted, because the sources add
+   * places and nothing else: they have no pistes, no lifts and no opinion
+   * about connectivity. See scripts/sources/index.mjs for who is asked and
+   * what happens when two of them know the same car park.
+   */
+  const extra = await enrich(graph.PLACES ?? [], config, {
+    offline: flag("offline"),
+    force: flag("force"),
+  });
+  /*
+   * And a height for the ones that arrived without one.
+   *
+   * graph.mjs samples the terrain for every place it finds, which is where
+   * "Rifugio, 2,275 m" comes from — but that runs before the merge, so a car
+   * park only the province knows about reached the file with `alt: null`. The
+   * place check refuses that, correctly: a place with no height is one the app
+   * cannot describe or sort. Same terrain, same sampler, one step later.
+   */
+  graph = {
+    ...graph,
+    PLACES: extra.places.map((place) => {
+      if (Number.isFinite(place.alt)) return place;
+      const sampled = elevation(place.lat, place.lon);
+      return { ...place, alt: Number.isFinite(sampled) ? Math.round(sampled) : null };
+    }),
+  };
+  for (const line of extra.lines) console.log(`  sources   ${line.trim()}`);
 
   const r = graph.report;
   if (r.linksAdded) {

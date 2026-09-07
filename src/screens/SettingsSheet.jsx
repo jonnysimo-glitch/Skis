@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Close } from "../ui/Icons.jsx";
 import { hasMapKey } from "../map/config.js";
+import { PLACE_SOURCES } from "../active-resort.js";
 import { getProfile, saveProfile, clearProfile, MAX_NAME } from "../lib/friends.js";
 
 const ABILITIES = [
@@ -178,9 +179,18 @@ export default function SettingsSheet({ ability, setAbility, onClose, onProfileC
                 <span>Your data</span>
                 <span className="row__v">Stays on this phone</span>
               </li>
+              {/*
+                * Who the data came from, rather than a fixed line saying
+                * OpenStreetMap. OSM is required to be credited wherever it is
+                * shown and is always in this list; the others are here because
+                * a person reading a car park's capacity should be able to find
+                * out who counted, whether or not their licence obliges it. The
+                * list is built from the places themselves, so a source that
+                * was asked and had nothing to add does not take the credit.
+                */}
               <li className="row">
                 <span>Resort data</span>
-                <span className="row__v">OpenStreetMap</span>
+                <span className="row__v">{PLACE_SOURCES.join(", ")}</span>
               </li>
               {/*
                 * Which build is running, which is not a developer's detail on
