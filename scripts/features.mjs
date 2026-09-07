@@ -4439,6 +4439,59 @@ if (feature("39. The map settles, and is not crowded")) {
   check("and stops redrawing once it has settled", quiet.drawn <= quiet.wall * 0.05,
     `${quiet.drawn}ms of redraw in ${quiet.wall}ms`);
 
+  /*
+   * And zooming in adds names rather than shuffling them.
+   *
+   * This is the property the whole ranking exists for. What used to decide
+   * which names were shown was the collision race, so as the projection changed
+   * a different subset won and labels traded places for no reason a person
+   * could see. Now every tier is a PREFIX of a fixed order — bases before huts
+   * before junctions, longest piste first — so lengthening the prefix can only
+   * add.
+   *
+   * Measured as flicker rather than as raw disappearances, because a great many
+   * names legitimately leave: zoom in far enough and most of the resort is off
+   * the screen. A name that goes and comes BACK inside one sweep cannot have
+   * left for good, so that is the churn, and it is what the complaint was.
+   */
+  const sweep = await (async () => {
+    const zin = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+    const zout = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
+    const up = async (b, n) => { for (let i = 0; i < n; i++) { await b.click(); await page.waitForTimeout(850); } };
+    const shown = () => page.evaluate((hooks) => {
+      const out = [];
+      for (const h of Object.values(hooks)) {
+        for (const r of window[h] ?? []) if (r.alpha > 0.5) out.push(h + ":" + (r.name ?? r.full));
+      }
+      return out;
+    }, HOOKS);
+    const seq = [new Set(await shown())];
+    for (let i = 0; i < 5; i++) { await up(zin, 1); seq.push(new Set(await shown())); }
+    for (let i = 0; i < 5; i++) { await up(zout, 1); seq.push(new Set(await shown())); }
+    const flicker = (from, to) => {
+      const all = new Set();
+      for (let i = from; i <= to; i++) for (const n of seq[i]) all.add(n);
+      let count = 0;
+      for (const n of all) {
+        const on = [];
+        for (let i = from; i <= to; i++) on.push(seq[i].has(n));
+        for (let i = 1; i < on.length - 1; i++) {
+          if (on[i - 1] && !on[i] && on.slice(i + 1).some(Boolean)) { count++; break; }
+        }
+      }
+      return count;
+    };
+    return { in: flicker(0, 5), out: flicker(5, 10), counts: seq.map((x) => x.size) };
+  })();
+  // Zero, measured, on the busiest resort. The bound is three rather than zero
+  // to leave room for a label that genuinely loses a collision and gets it
+  // back, which is a different thing from the shuffling this is about — before
+  // the ranking went in the same sweep gave seven one way and twelve the other.
+  check("and zooming in adds names rather than shuffling them",
+    sweep.in <= 3 && sweep.out <= 3,
+    `${sweep.in} names went and came back zooming in, ${sweep.out} zooming out; ` +
+    `counts ${sweep.counts.join(" ")}`);
+
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }

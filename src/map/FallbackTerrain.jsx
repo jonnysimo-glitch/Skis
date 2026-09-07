@@ -336,6 +336,29 @@ const HUT_BASE_COUNT = 5;
 const HUT_ZOOM_POWER = 1.0;
 
 /**
+ * The same, for the names of the places on the mountain.
+ *
+ * This tier had no budget at all until it was measured: every named node
+ * competed at every zoom and the collision race decided the rest, which is
+ * both why the mountain was buried in names and why they moved about as you
+ * zoomed. Eight at the framing the app opens on, about fifteen once you are
+ * looking at one bowl.
+ */
+const PLACE_BASE_COUNT = 8;
+const PLACE_ZOOM_POWER = 0.35;
+
+/**
+ * And for the names written along the pistes.
+ *
+ * Nothing at all until you are close enough for the word to sit on the run it
+ * belongs to — see NAME_ZOOM — then a handful, then most of them. Ranked by
+ * how long the piste is, so the runs that define the mountain get their names
+ * first and a fifty metre link never takes the place of one.
+ */
+const RUN_NAME_BASE_COUNT = 4;
+const RUN_NAME_ZOOM_POWER = 0.7;
+
+/**
  * How far the ground-holding correction is allowed to move the map in one
  * frame, in pixels.
  *
@@ -2114,24 +2137,40 @@ export default function FallbackTerrain({
       }
 
       /*
-       * A name already on the mountain claims its space first.
+       * The longest pistes first, and only as many as this zoom has room for.
        *
-       * Without this the names churned as the view turned — 36 comings and
-       * goings over 30 frames of a slow rotation, against the 10 the place
-       * markers manage — because the collision test is greedy and the order it
-       * runs in is the graph's, which has nothing to do with what is already on
-       * screen. Two names contesting one patch would trade it back and forth
-       * every few frames, each one fading properly and the pair of them still
-       * flickering.
+       * The order used to be the graph's, which is arbitrary, and incumbency
+       * was bolted on to stop two names trading one patch as the view turned.
+       * A fixed rank does that better, and does something incumbency could not:
+       * it makes the visible set a PREFIX of an order rather than the winners
+       * of a race, so zooming in only ever adds a name and never swaps one.
+       * Length is the right rank because it is what makes a piste worth naming
+       * — the run that defines a side of the mountain gets its name before a
+       * fifty metre link off a junction does.
        *
-       * The same incumbency the place markers get, for the same reason: it does
-       * not change WHICH names are eligible, only who gets first refusal on a
-       * spot they already hold.
+       * The budget is what stops forty-one names stacking over one bowl.
        */
       const held = (name) => frameNow - (namedAt.get(name) ?? -Infinity) < PLACE_HOLD_MS;
-      const order = [...byName].sort((a, b) => (held(b[0]) ? 1 : 0) - (held(a[0]) ? 1 : 0));
+      const spanOf = (features) => features.reduce((sum, f) => {
+        const c = f.geometry.coordinates;
+        let m = 0;
+        // Degrees, with longitude squashed the way it is at these latitudes.
+        // Only the ordering matters, so the constant does not have to be exact.
+        for (let i = 1; i < c.length; i++) {
+          m += Math.hypot((c[i][0] - c[i - 1][0]) * 0.7, c[i][1] - c[i - 1][1]);
+        }
+        return sum + m;
+      }, 0);
+      const runBudget = Math.round(
+        RUN_NAME_BASE_COUNT * Math.max(1, v.zoom - NAME_ZOOM + 1) ** RUN_NAME_ZOOM_POWER);
+      // Ranked, and marked past the budget rather than removed — see the note
+      // in drawPlaces about what removing them does to the fade.
+      const order = [...byName]
+        .map(([name, features]) => ({ name, features, span: spanOf(features) }))
+        .sort((a, b) => b.span - a.span || a.name.localeCompare(b.name))
+        .map((r, i) => ({ ...r, spare: i >= runBudget }));
 
-      for (const [name, features] of order) {
+      for (const { name, features, spare } of order) {
         const w = ctx.measureText(name).width;
         /*
          * A whole piste fragment, not a link of it.
@@ -2296,8 +2335,11 @@ export default function FallbackTerrain({
         box = box ?? boxesAt(mid);
         const mx = at.x;
         const my = at.y;
-        const keep = zoomOk && !behind && room;
-        if (why && !keep) why[name] = !zoomOk ? "too far out" : behind ? "behind a ridge" : "no room anywhere along it";
+        const keep = zoomOk && !behind && room && !spare;
+        if (why && !keep) {
+          why[name] = !zoomOk ? "too far out" : spare ? "past the budget"
+            : behind ? "behind a ridge" : "no room anywhere along it";
+        }
         const solid = fadeOf(`r:${name}`, keep, frameDt);
         // Reserved only while it is wanted. A label on its way out stops
         // holding the ground it is leaving, so the one that displaced it can
@@ -2408,7 +2450,43 @@ export default function FallbackTerrain({
       // A base is where a car or a bus is, which is what a lost skier needs
       // first. A rifugio is somewhere you can stand still. Everything else is
       // a junction, useful but not urgent.
-      const rank = (n) => (n.base ? 0 : n.rifugio ? 1 : 2);
+      /*
+       * How much a place matters, as a number that never changes.
+       *
+       * This is the whole of the fix for names moving about as you zoom. What
+       * used to decide which names were shown was the collision race: every
+       * named node competed at every zoom, and as the projection changed a
+       * different subset won, so labels swapped places with each other for no
+       * reason a person could see.
+       *
+       * A rank fixes that because it lets the visible set be a PREFIX of a
+       * fixed order rather than the winners of a race. Zooming in only ever
+       * lengthens the prefix, so a name that is up stays up; zooming out only
+       * ever shortens it. Nothing swaps. Collision goes back to being what it
+       * should be — a way of dropping the leftovers — instead of deciding what
+       * matters.
+       *
+       * The order: the valley bases you drive to, then the places you can eat
+       * at, then everything else by how many ways meet there. A junction where
+       * five pistes part company is worth naming; a bend in one piste is not,
+       * and altitude only breaks the ties.
+       */
+      const byRank = (a, b) =>
+        (a.n.base ? 0 : a.n.rifugio ? 1 : 2) - (b.n.base ? 0 : b.n.rifugio ? 1 : 2)
+        || (b.n.alt ?? 0) - (a.n.alt ?? 0)
+        || a.n.name.localeCompare(b.n.name);
+
+      /*
+       * How many of them this zoom has room for.
+       *
+       * Deliberately flat. What a skier needs far out is which side of the
+       * mountain they are looking at, which is four or five names; what they
+       * need close in is the junction in front of them, and by then most of the
+       * resort is off the screen anyway so the same budget shows a much larger
+       * share of what is left. A steep curve buys nothing and costs legibility
+       * at exactly the zoom people spend most of their time at.
+       */
+      const placeBudget = Math.round(PLACE_BASE_COUNT * v.zoom ** PLACE_ZOOM_POWER);
 
       // The chrome is DOM drawn over this canvas, so anything the declutterer
       // does not know about wins the pixels: "Champoluc" rendered half under
@@ -2445,7 +2523,9 @@ export default function FallbackTerrain({
       // offer it, and none of those belong on the mountain as a label.
       const candidates = list
         .filter(([, n]) => n.named !== false)
-        .sort((a, b) => rank(a[1]) - rank(b[1]))
+        .map(([key, n]) => ({ key, n }))
+        // Ranked before the dedupe, so the best-ranked node keeps a shared name.
+        .sort(byRank)
         /*
          * Keyed by the node, not by the word it says.
          *
@@ -2472,10 +2552,10 @@ export default function FallbackTerrain({
          * that if a name genuinely is handed back — the hut leaves the frame —
          * it arrives from nothing rather than at whatever it last was.
          */
-        .map(([key, n]) => {
-          const taken = spoken.has(n.name);
-          if (!taken) spoken.add(n.name);
-          return { key, n, taken };
+        .map((c) => {
+          const taken = spoken.has(c.n.name);
+          if (!taken) spoken.add(c.n.name);
+          return { ...c, taken };
         })
         .map((c) => {
           const { x, z } = field.proj.project(c.n.lat, c.n.lon);
@@ -2538,10 +2618,24 @@ export default function FallbackTerrain({
             ? false
             : steady(`lo:${c.key}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS),
         }))
-        .sort((a, b) => rank(a.n) - rank(b.n) || a.n.name.localeCompare(b.n.name));
-      // The sort above reads `.n`, so it has to come after the projection; the
-      // rank filter above it reads the entry pair. Both orders matter and both
-      // have been got wrong here before.
+        /*
+         * Only the ones this zoom has room for, and always the same ones.
+         *
+         * The prefix of the ranking, not the winners of the collision race.
+         * This tier had no budget at all — every named node competed at every
+         * zoom — which is both why the mountain was buried in names and why
+         * they moved about: two labels contesting one patch swapped it as the
+         * projection shifted, and there was no order to appeal to.
+         */
+        /*
+         * Past the budget it fades out; it does not stop being drawn.
+         *
+         * Dropping it from the list here was the third time this exact mistake
+         * has been made in this file: a label that never reaches `fadeOf`
+         * freezes at whatever it last was, so the budget edge became a pop.
+         * The hut tier has carried a comment saying so for weeks.
+         */
+        .map(((n) => (c) => ({ ...c, spare: c.taken ? true : n++ >= placeBudget }))(0));
 
       /*
        * No encroachment allowance here, unlike the run names.
@@ -2559,7 +2653,7 @@ export default function FallbackTerrain({
 
       const drawn = [];
       const lit = mapTest ? [] : null;
-      for (const { key, n, s, behind, onScreen, taken } of candidates) {
+      for (const { key, n, s, behind, onScreen, spare } of candidates) {
         const w = ctx.measureText(n.name).width;
         // Four places to put it, in order of preference. Dropping a name on the
         // first collision cost Champoluc every time, because the zoom buttons
@@ -2602,7 +2696,7 @@ export default function FallbackTerrain({
           tx = cx;
           y = spots[0].y;
         }
-        const keep = room && !behind && onScreen && !taken;
+        const keep = room && !behind && onScreen && !spare;
         const solid = fadeOf(`l:${key}`, keep, frameDt);
         /*
          * The box is reserved on the decision, not on the fade.
