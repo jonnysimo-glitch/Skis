@@ -2605,17 +2605,65 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
     await page.waitForTimeout(150);
   }
   await page.waitForTimeout(1600);
+  const ceiling = await page.evaluate(() => window.__skisView?.zoom);
+  check("zooming in actually gets close", ceiling > 8, `zoom ${ceiling?.toFixed(1)}`);
+
+  /*
+   * Back off to where the drape still has pixels to give, and measure there.
+   *
+   * This used to measure at whatever ten notches reached, which was the zoom
+   * ceiling — and the ceiling moved from 16 to 48. At zoom 33 the imagery is
+   * being magnified three times over: the composited drape is between 1.6 and
+   * 3.3 metres a pixel depending on the resort, and the screen is asking for
+   * 0.7. Neighbouring pixels agree because there is nothing left to disagree
+   * about, and the reading fell from 48% to 14% with nothing about the
+   * renderer having changed. That is a fact about the provider, not about the
+   * drawing, and the check below is about the drawing: a quad is a fixed piece
+   * of ground, so getting closer used to break the surface into a mosaic of
+   * paint chips, and the pattern has to survive it.
+   */
+  for (let n = 0; n < 4; n++) {
+    await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      c.dispatchEvent(new WheelEvent("wheel", {
+        deltaY: 400, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true,
+      }));
+    });
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(1600);
   const near = await page.evaluate(() => window.__skisView?.zoom);
-  check("zooming in actually gets close", near > 8, `zoom ${near?.toFixed(1)}`);
+  check("and there is a zoom where the imagery is about screen resolution",
+    near > 4 && near < 20, `zoom ${near?.toFixed(1)}`);
 
   const close = await surface();
   const closeDetail = await detail();
-  // Close up is where the old renderer gave up: a quad is a fixed piece of
-  // ground, so by zoom eight one is sixty screen pixels and painting it flat
-  // is a mosaic of paint chips. The pattern has to survive getting closer.
   check("and close up the ground is still the photograph, not blocks of it",
     closeDetail >= farDetail * 0.6 && closeDetail >= 8,
-    `${closeDetail}% of neighbouring pixels differ, against ${farDetail}% far out`);
+    `${closeDetail}% of neighbouring pixels differ at zoom ${near?.toFixed(1)}, ` +
+    `against ${farDetail}% far out`);
+  /*
+   * And at the ceiling it goes soft rather than blocky.
+   *
+   * Which is the honest cost of the reach, recorded here rather than left to
+   * be discovered: past the drape's own resolution the picture is magnified,
+   * and magnified photography is soft. Blocky would be the renderer's fault
+   * and would read near zero.
+   */
+  for (let n = 0; n < 6; n++) {
+    await page.$eval(SEL, (c) => {
+      const r = c.getBoundingClientRect();
+      c.dispatchEvent(new WheelEvent("wheel", {
+        deltaY: -400, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true,
+      }));
+    });
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(1600);
+  const atCeiling = await detail();
+  check("and right in at the ceiling it is soft, not blocky", atCeiling >= 8,
+    `${atCeiling}% of neighbouring pixels differ at zoom ` +
+    `${(await page.evaluate(() => window.__skisView?.zoom))?.toFixed(1)}`);
   /*
    * And a frame close up costs no more than a frame far out.
    *
@@ -3009,17 +3057,33 @@ if (feature("16. One gesture at a time")) {
   check("the search really did find the point under the fingers",
     near.anchorFrom < 6 && far.anchorFrom < 6,
     `${near.anchorFrom.toFixed(0)}px and ${far.anchorFrom.toFixed(0)}px away`);
-  // Without the pivot fix this was 126px and 1080px for the same two twists.
-  check("what is under your fingers roughly stays under them",
-    near.drift < 80, `${near.drift.toFixed(0)}px at zoom ${near.zoom.toFixed(1)}`);
-  check("and it does not run away when you are close in",
-    far.drift < 620, `${far.drift.toFixed(0)}px at zoom ${far.zoom.toFixed(1)}`);
-  check("the same twist turns less the closer you are",
-    far.turned < near.turned * 0.85,
+  /*
+   * The anchor holds, and now it really holds.
+   *
+   * These bounds were 80px and 620px, which were monuments to the bug rather
+   * than requirements: rotateAbout corrected the pan using the camera from the
+   * last DRAWN frame, so it never accounted for the reframe the turn itself
+   * causes, and the error grew with the zoom. Solving the camera from the view
+   * as it stands takes both to nothing. The slack that is left is this check's
+   * own anchor search, which is a grid hunt for the lat/lon under the fingers
+   * and lands a few pixels out by construction — see `anchorFrom` above.
+   */
+  check("what is under your fingers stays under them",
+    near.drift < 12, `${near.drift.toFixed(0)}px at zoom ${near.zoom.toFixed(1)}`);
+  check("and it still does when you are close in",
+    far.drift < 12, `${far.drift.toFixed(0)}px at zoom ${far.zoom.toFixed(1)}`);
+  /*
+   * And the same twist turns the same amount however close you are.
+   *
+   * There was a `rotateRate(zoom)` that damped the turn to half by zoom seven,
+   * and two checks here that asserted it. Its own comment said what it was
+   * for: absorbing the drift above. With the drift gone it was correcting for
+   * nothing and costing something real — a forty degree twist came out as
+   * twelve at the ceiling, so turning right round took four separate gestures.
+   */
+  check("the same twist turns the same amount however close you are",
+    Math.abs(far.turned - near.turned) < 4,
     `${near.turned.toFixed(0)} degrees out, ${far.turned.toFixed(0)} degrees in`);
-  check("but never so little that turning round takes four goes",
-    far.turned > near.turned * 0.45,
-    `${(far.turned / near.turned).toFixed(2)} of the far rate`);
 
   check("the needle turns with the map", Math.min(turned, 360 - turned) > 20,
       `${turned} degrees round from up`);
@@ -3462,9 +3526,16 @@ if (feature("20. The mountain is labelled")) {
    * claimed boxes except the pins, which were drawn last, on top, consulting
    * nothing: on Kronplatz twelve legs in, "Belvedere" sat across "Sonne" and
    * across "Olang I - Valdaora I" at the same time, and "Obereggen" sat across
-   * "Below Ochsenweide" at Latemar. Checked mid-route rather than at the
-   * start, because that is where the position pin joins the other two and the
-   * mountain is at its most crowded.
+   * "Below Ochsenweide" at Latemar. Checked mid-route, because that is where
+   * the position pin joins the other two.
+   *
+   * Two screens, and the reason is the follow camera. Navigating used to frame
+   * the whole leg from its midpoint — nearly eight kilometres at Kronplatz —
+   * and it now frames 340 metres, so the crowd this was written against is not
+   * there any more: four names, which is the point of that screen rather than
+   * a fault. So the collision rule is checked on both, and the anti-vacuity
+   * guard is per screen: navigating has to draw SOMETHING, and the detail
+   * screen, which now holds the whole route, has to draw a crowd.
    */
   const boxesOf = (page) => page.evaluate(() => {
     const out = [];
@@ -3487,20 +3558,34 @@ if (feature("20. The mountain is labelled")) {
     for (let i = 0; i < 12; i++) await reachNext(routed);
     await routed.waitForTimeout(1200);
   }
-  const crowded = await boxesOf(routed);
-  const collisions = [];
-  for (let i = 0; i < crowded.length; i++) {
-    for (let j = i + 1; j < crowded.length; j++) {
-      const a = crowded[i];
-      const b = crowded[j];
-      if (a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t) {
-        collisions.push(`${a.tier}:${a.name} over ${b.tier}:${b.name}`);
+  const clashes = (boxes) => {
+    const out = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        if (a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t) {
+          out.push(`${a.tier}:${a.name} over ${b.tier}:${b.name}`);
+        }
       }
     }
-  }
+    return out;
+  };
+  const crowded = await boxesOf(routed);
+  const collisions = clashes(crowded);
   check("mid-route, no name is written over another",
-    crowded.length > 4 && collisions.length === 0,
+    crowded.length >= 3 && collisions.length === 0,
     collisions.length ? collisions.slice(0, 3).join("; ") : `${crowded.length} names, all clear`);
+  // And on the screen that does hold a crowd.
+  await routed.click('[aria-label="Stop navigating"]').catch(() => {});
+  await routed.waitForTimeout(2400);
+  if (await routed.$(".detail__legs")) {
+    const wide = await boxesOf(routed);
+    const wideClashes = clashes(wide);
+    check("and nor on the whole route, where the crowd is",
+      wide.length > 6 && wideClashes.length === 0,
+      wideClashes.length ? wideClashes.slice(0, 3).join("; ") : `${wide.length} names, all clear`);
+  }
 
   check("no page errors on the routed map", routed.errors.length === 0, routed.errors.join(" | "));
   await routed.context_.close();
@@ -4700,10 +4785,26 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
       const w = window.innerWidth;
       const h = window.innerHeight;
       const me = window.__skisProject(nav.at[0], nav.at[1]);
-      const far = window.__skisProject(
-        nav.coords[nav.coords.length - 1][0],
-        nav.coords[nav.coords.length - 1][1]
-      );
+      /*
+       * A fifth of the way along, not the far end.
+       *
+       * The camera faces the direction you LEAVE in, which is what the arrow
+       * uses too, and a piste that switchbacks can finish behind you: on leg 3
+       * at Monterosa the far end projected below the position while the run
+       * itself set off straight up the screen. Aiming a camera at the finish
+       * of a snaking piste points it through the mountain.
+       */
+      const pts = nav.coords;
+      const seg = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+      let total = 0;
+      for (let i = 1; i < pts.length; i++) total += seg(pts[i - 1], pts[i]);
+      let run = 0;
+      let leaving = pts[pts.length - 1];
+      for (let i = 1; i < pts.length; i++) {
+        run += seg(pts[i - 1], pts[i]);
+        if (run >= total * 0.2) { leaving = pts[i]; break; }
+      }
+      const far = window.__skisProject(leaving[0], leaving[1]);
       // Ground across the screen at your own height, which is where the scale
       // is specified: the zoom number is a multiplier on a per-resort framing
       // and means nothing on its own.
@@ -4754,9 +4855,10 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
     // seven thousand eight hundred metres across here.
     check(`the ground in shot is the next few hundred metres, leg ${leg + 1}`,
       r.across !== null && r.across < 900, r.across === null ? "on sky" : `${Math.round(r.across)} m across`);
-    // Course up: the leg runs away up the screen, not sideways or behind you.
+    // Course up: the way you leave runs away up the screen, not sideways or
+    // behind you.
     check(`the way you are going runs up the screen, leg ${leg + 1}`,
-      r.aheadUp, `far end ${r.aheadUp ? "above" : "below"} you`);
+      r.aheadUp, `the way out is ${r.aheadUp ? "above" : "below"} you`);
     /*
      * And the line is actually painted.
      *
