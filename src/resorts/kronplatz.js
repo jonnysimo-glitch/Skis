@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- kronplatz` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T22:41:45.990Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:32:21.249Z
  * Places:    OpenStreetMap
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -350,7 +350,9 @@ export const PLACES = [
   ["Herzlalm", "restaurant", 46.7545, 11.95859, 1726],
   ["Huiba Hitte", "restaurant", 46.75136, 11.98283, 1802],
   ["K1", "restaurant", 46.77221, 11.94143, 952],
+  ["Korer parking", "parking", 46.77295, 11.94025, 943, {"fee":"yes"}],
   ["Kron-Restaurant", "restaurant", 46.73907, 11.96011, 2261],
+  ["Kronplatz I parking", "parking", 46.77104, 11.94215, 968],
   ["L'Apetit", "restaurant", 46.70019, 11.93024, 1183],
   ["La Bronta", "restaurant", 46.70514, 11.93044, 1232],
   ["Lé Tablé", "restaurant", 46.70552, 11.93462, 1268],
@@ -360,6 +362,7 @@ export const PLACES = [
   ["Moosbichl Alm", "cafe", 46.75653, 11.98048, 1868],
   ["Niederegger Hütte - Rifugio alpino Niederegger", "restaurant", 46.74522, 11.99968, 1453],
   ["Oberegger Alm - Malga Oberegger", "restaurant", 46.74535, 11.99607, 1539],
+  ["Olang I - Valdaora I parking", "parking", 46.74695, 12.01136, 1166],
   ["P1", "parking", 46.75353, 12.00948, 1288, {"fee":"no"}],
   ["P2", "parking", 46.75317, 12.00946, 1289, {"fee":"no"}],
   ["P3", "parking", 46.75314, 12.0096, 1286, {"fee":"no"}],

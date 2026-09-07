@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- paganella` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T22:43:43.022Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:33:51.865Z
  * Places:    OpenStreetMap
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -210,6 +210,7 @@ export const PLACES = [
   ["Rifugio Dosson", "restaurant", 46.1535, 11.01597, 1448],
   ["Rifugio La Roda", "hut", 46.14245, 11.03693, 2106],
   ["Rifugio Meriz", "restaurant", 46.16381, 11.05063, 1427],
+  ["Santel parking", "parking", 46.17689, 11.05229, 1024, {"fee":"no"}],
   ["Ski Bar", "restaurant", 46.16021, 11.00135, 1028],
   ["Tre3", "restaurant", 46.17551, 11.05251, 1047],
 ];

@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- monterosa` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T22:42:57.808Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:33:20.851Z
  * Places:    OpenStreetMap
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -285,6 +285,7 @@ export const RUNS = [
  * skis has further to reach, because it is in the village you parked in.
  */
 export const PLACES = [
+  ["Alagna parking", "parking", 45.85565, 7.93746, 1201],
   ["Alpen stop", "restaurant", 45.86485, 7.90495, 2024],
   ["Alpenhutten Lys", "restaurant", 45.85626, 7.84532, 2323],
   ["Baita Rifugio Belvedere", "restaurant", 45.84496, 7.75166, 2285],
@@ -302,6 +303,7 @@ export const PLACES = [
   ["Campo Base", "restaurant", 45.85992, 7.75969, 2432],
   ["Chaisscheri", "restaurant", 45.85334, 7.93558, 1213],
   ["Chäisscheri", "cafe", 45.85355, 7.93509, 1220],
+  ["Champoluc parking", "parking", 45.83077, 7.72563, 1562, {"fee":"no"}],
   ["Dir und Don", "restaurant", 45.8532, 7.93757, 1181],
   ["Edelboden", "cafe", 45.83128, 7.8232, 1638],
   ["Edelweiss", "restaurant", 45.83258, 7.7422, 1967],
@@ -335,6 +337,7 @@ export const PLACES = [
   ["Ristoro Alpe Taconet - Rifugio Paradisia", "restaurant", 45.85266, 7.74557, 2087],
   ["Ristoro Colle Bettaforca", "restaurant", 45.87026, 7.78197, 2722],
   ["Ristoro Sitten", "restaurant", 45.85776, 7.79949, 2268],
+  ["Stafal parking", "parking", 45.83206, 7.82185, 1643],
   ["trattoria Fum Diss", "restaurant", 45.85518, 7.93087, 1346],
   ["Unione Alagnese", "restaurant", 45.85255, 7.93677, 1192],
   ["Wunderbar", "cafe", 45.85827, 7.81195, 1820],

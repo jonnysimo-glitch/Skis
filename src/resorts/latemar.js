@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- latemar` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T22:42:27.325Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:32:51.602Z
  * Places:    OpenStreetMap
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -294,6 +294,7 @@ export const PLACES = [
   ["Gasthof Specker", "restaurant", 46.38432, 11.52515, 1546],
   ["In.Treska", "restaurant", 46.33151, 11.55807, 2191],
   ["Latemar Hütte", "restaurant", 46.34822, 11.54515, 1971],
+  ["Latemar parking", "parking", 46.3413, 11.54896, 1865, {"fee":"no"}],
   ["Mayrl Alm", "restaurant", 46.36172, 11.54371, 2037],
   ["Obereggen Latemar Skicenter", "parking", 46.38344, 11.52503, 1538, {"fee":"no"}],
   ["Obereggen parking", "parking", 46.3859, 11.52463, 1559, {"spaces":50,"fee":"no"}],
@@ -306,6 +307,7 @@ export const PLACES = [
   ["Rifugio Monte Agnello", "hut", 46.33367, 11.54779, 2165],
   ["Ski Bar", "cafe", 46.34154, 11.54098, 1773],
   ["Sport Alm Ristorante & Bistrò", "restaurant", 46.38421, 11.52648, 1555],
+  ["Stalimen parking", "parking", 46.32652, 11.60001, 1048, {"fee":"no"}],
   ["Weigler Schupf", "restaurant", 46.35819, 11.54071, 1949],
   ["Zischgalm", "restaurant", 46.34972, 11.54802, 1996],
 ];
