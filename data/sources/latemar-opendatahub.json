@@ -1,0 +1,5 @@
+{
+ "asked": "https://mobility.api.opendatahub.com/v2/flat/ParkingStation?limit=-1&distinct=true&select=scode,sname,scoordinate,smetadata,sorigin&where=scoordinate.bbi.(11.4,46.27,11.65,46.42,4326)",
+ "fetchedAt": "2026-09-07T23:32:58.062Z",
+ "data": []
+}
