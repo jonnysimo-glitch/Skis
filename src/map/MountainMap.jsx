@@ -3473,8 +3473,33 @@ export default function MountainMap({
         ...list.filter(([full]) => holding(full)),
         ...list.filter(([full]) => !holding(full)),
       ];
+      /*
+       * A short name that two places share is not a short name.
+       *
+       * `shortName` strips the leading "Rifugio", "Bar", "Baita" and so on,
+       * which is right when it leaves something you could point at and wrong
+       * when the mountain has two of them: Monterosa has Bar Gabiet and
+       * Rifugio Gabiet, and Baita Rifugio Belvedere and Rifugio Belvedere.
+       * Both pairs collapsed to one word, and the tier drops a name it has
+       * already written rather than fading it — so whichever lost the race
+       * that frame vanished outright. Measured as a 0.43 step on "Gabiet",
+       * which is the popping this whole tier was fixed to stop.
+       *
+       * So an ambiguous short name is not used at all and the place keeps its
+       * full one. Two labels a word apart are worth more than one label and
+       * one blink, and on a screen whose job is "pick where to eat" they are
+       * the difference between a choice and a guess.
+       */
+      const ambiguous = new Set();
+      const shortSeen = new Set();
+      for (const [full] of all) {
+        const short = shortName(full);
+        if (shortSeen.has(short)) ambiguous.add(short);
+        shortSeen.add(short);
+      }
       for (const [full, kind, lat, lon, alt] of order) {
-        const name = shortName(full);
+        const short = shortName(full);
+        const name = ambiguous.has(short) ? full : short;
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
         /*

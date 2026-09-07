@@ -28,6 +28,7 @@ import {
   reachNext,
   openLegs,
   openTools,
+  atRest,
   touchDrag,
   touchTap,
   touchHold,
@@ -2615,7 +2616,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
     });
     await page.waitForTimeout(150);
   }
-  await page.waitForTimeout(1600);
+  await atRest(page);
   const ceiling = await page.evaluate(() => window.__skisView?.zoom);
   check("zooming in actually gets close", ceiling > 8, `zoom ${ceiling?.toFixed(1)}`);
 
@@ -2642,7 +2643,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
     });
     await page.waitForTimeout(150);
   }
-  await page.waitForTimeout(1600);
+  await atRest(page);
   const near = await page.evaluate(() => window.__skisView?.zoom);
   check("and there is a zoom where the imagery is about screen resolution",
     near > 4 && near < 20, `zoom ${near?.toFixed(1)}`);
@@ -2671,7 +2672,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
     });
     await page.waitForTimeout(150);
   }
-  await page.waitForTimeout(1600);
+  await atRest(page);
   const atCeiling = await detail();
   check("and right in at the ceiling there is still a picture", atCeiling >= 8,
     `${atCeiling}% of neighbouring pixels differ at zoom ` +
@@ -5388,6 +5389,41 @@ if (feature("45. Somewhere to eat, and how to look it up")) {
     !has("Rifugio Guide del Cervino") && !has("Bar Ristorante Cime Bianche Laghi"),
     "checked Rifugio Guide del Cervino, Bar Ristorante Cime Bianche Laghi");
 
+  /*
+   * And a short name two places share is not used as a short name.
+   *
+   * `shortName` strips the leading Rifugio, Bar or Baita, which is right until
+   * the mountain has two of them. Adding the missing restaurants gave
+   * Monterosa a Bar Gabiet AND a Rifugio Gabiet, and a Baita Rifugio Belvedere
+   * AND a Rifugio Belvedere; both pairs collapsed to one word, and the tier
+   * drops a name it has already written rather than fading it, so whichever
+   * lost the race that frame vanished outright — a 0.43 alpha step, which is
+   * the popping that tier exists to prevent. The check that caught it is the
+   * fade check in 38; this is the rule that fixed it, stated where the data
+   * that broke it lives.
+   */
+  const { shortName } = await import("../src/lib/places.js");
+  for (const id of Object.keys(FLOOR)) {
+    const mod = await import(`../src/resorts/${id}.js`);
+    const byShort = new Map();
+    for (const [full] of mod.PLACES) {
+      const short = shortName(full);
+      byShort.set(short, [...(byShort.get(short) ?? []), full]);
+    }
+    const clashes = [...byShort].filter(([, list]) => list.length > 1);
+    // Not an error in the data — the map falls back to the full name — but it
+    // has to be a fallback that is actually reachable, so the names it would
+    // draw are what gets asserted.
+    const drawn = [...mod.PLACES.map(([full]) =>
+      (byShort.get(shortName(full)).length > 1 ? full : shortName(full)))];
+    check(`${id} draws a distinct label for every place`,
+      new Set(drawn).size === drawn.length,
+      clashes.length
+        ? `${clashes.length} short name(s) shared, kept apart: ` +
+          clashes.map(([short]) => short).join(", ")
+        : "no short name is shared");
+  }
+
   const page = await newPage(browser, { at: [9, 30], touch: true });
   await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });
@@ -5400,7 +5436,7 @@ if (feature("45. Somewhere to eat, and how to look it up")) {
     await page.click('.maptools .iconbtn[aria-label="Zoom in"]');
     await page.waitForTimeout(420);
   }
-  await page.waitForTimeout(1600);
+  await atRest(page);
 
   const marks = await page.evaluate(() =>
     (window.__skisPlaces ?? []).map((p) => ({ full: p.full, x: Math.round(p.x), y: Math.round(p.y) })));

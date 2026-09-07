@@ -260,6 +260,41 @@ export const toMinutes = (hhmm) => {
 };
 
 /**
+ * Wait until the map has stopped drawing.
+ *
+ * Anything that samples pixels has to know the frame it is sampling is
+ * finished, and a fixed `waitForTimeout` only knows that on an idle machine.
+ * Under load — which is most of a full suite run, with a browser context per
+ * section — 1600 ms is not enough for a satellite drape to re-composite after
+ * a zoom, and the reading comes back low: the drape check dropped from 48% of
+ * neighbouring pixels differing to 12%, and from 14% to 1% at the ceiling,
+ * with nothing about the renderer having changed. Three phantom failures a
+ * run, which is worse than no check, because it teaches you to ignore it.
+ *
+ * `__skisFadeClock` accumulates a frame's dt every time the map paints, so it
+ * stops advancing exactly when the map comes to rest. Poll it, and return once
+ * it has been still for `quiet`. Gives up at `limit` rather than hanging, and
+ * says which happened.
+ */
+export async function atRest(page, { quiet = 400, limit = 9000 } = {}) {
+  const clock = () => page.evaluate(() => window.__skisFadeClock ?? -1);
+  const started = Date.now();
+  let last = await clock();
+  let since = Date.now();
+  while (Date.now() - started < limit) {
+    await page.waitForTimeout(120);
+    const now = await clock();
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+      continue;
+    }
+    if (Date.now() - since >= quiet) return true;
+  }
+  return false;
+}
+
+/**
  * A gesture held open across several steps.
  *
  * `multiTouch` opens and closes a CDP session per call, so it can only ever
