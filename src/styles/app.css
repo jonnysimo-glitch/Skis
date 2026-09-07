@@ -1119,6 +1119,29 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .row:last-child { border-bottom: 0; }
 .row__v { color: var(--ink-3); text-align: right; }
+/*
+ * A row whose right-hand side does something, rather than reporting something.
+ *
+ * The accent and the underline because it has to read as pressable at a
+ * glance: it sits in a list of six rows that are all statements of fact, and
+ * the one that is a verb should not look like the other five. Padded out to
+ * the row's full height so the tap target is the row, not the words.
+ */
+.row__link {
+  background: none;
+  border: 0;
+  padding: var(--s-2) 0;
+  margin: calc(var(--s-2) * -1) 0;
+  font: inherit;
+  /* accent-ink, not accent: this is accent-coloured text on the dark sheet,
+     and --accent is the fill a white label sits on. Using it here put a dark
+     teal word on a dark surface. */
+  color: var(--accent-ink);
+  text-align: right;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
 
 /* --------------------------------------------------------------- blank -- */
 

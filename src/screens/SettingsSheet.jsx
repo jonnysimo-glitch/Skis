@@ -15,6 +15,34 @@ const ABILITIES = [
   { v: "black", label: "Anything", swatch: "var(--piste-black)" },
 ];
 
+/**
+ * Throw away everything the phone is holding and ask the server again.
+ *
+ * Workers first, then caches, then reload. The order matters: unregistering
+ * leaves the caches behind, and deleting the caches while a worker is still
+ * controlling the page means it can put things back. Saved days live in
+ * localStorage and are deliberately not touched — everything cleared here can
+ * be fetched again, and they cannot.
+ *
+ * Everything is wrapped, because a browser in private mode refuses half of it
+ * and a person pressing this is already having a bad time. The reload happens
+ * whatever failed: a plain reload is still better than nothing, and it is what
+ * they were going to do next anyway.
+ */
+async function refetch() {
+  try {
+    const workers = await navigator.serviceWorker?.getRegistrations?.() ?? [];
+    await Promise.all(workers.map((w) => w.unregister()));
+  } catch { /* no worker, or no permission to ask */ }
+  try {
+    const names = await caches?.keys?.() ?? [];
+    await Promise.all(names.map((n) => caches.delete(n)));
+  } catch { /* no cache storage */ }
+  // Cache-busted, so the document itself comes from the network rather than
+  // from whatever the browser kept alongside the worker.
+  window.location.replace(`${window.location.pathname}?fresh=${Date.now()}`);
+}
+
 export default function SettingsSheet({ ability, setAbility, onClose, onProfileChange }) {
   // The profile is a name and a number. No picture: it is not how anyone finds
   // their friend on a mountain, and it is one more thing to be careless with.
@@ -203,6 +231,28 @@ export default function SettingsSheet({ ability, setAbility, onClose, onProfileC
               <li className="row">
                 <span>Version</span>
                 <span className="row__v">{__BUILD__}</span>
+              </li>
+              {/*
+                * And a way out when that number is wrong.
+                *
+                * An offline-first app keeps serving its cached shell, which is
+                * the point of it and also the one failure a person cannot get
+                * out of from inside the app. A worker that has stopped
+                * checking, a deploy that went somewhere else, a build that
+                * installed badly: from the outside they are identical, and the
+                * only cure anyone could offer was Settings, Safari, Advanced,
+                * Website Data, find github.io, swipe. That is not a thing to
+                * ask of someone standing in a lift queue.
+                *
+                * This throws away the workers and the caches and reloads. It
+                * does not touch the saved days, which are in localStorage and
+                * are the one thing here that cannot be fetched again.
+                */}
+              <li className="row">
+                <span>Not the version you expected?</span>
+                <button type="button" className="row__link" onClick={refetch}>
+                  Reload from the server
+                </button>
               </li>
             </ul>
             <p className="note" style={{ marginTop: "var(--s-3)" }}>
