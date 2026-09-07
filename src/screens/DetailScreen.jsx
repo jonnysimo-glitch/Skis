@@ -46,8 +46,19 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
       <SheetHead>
         <div className="detail__top">
           <div className="eyebrow eyebrow--accent">{route.label}</div>
+          {/*
+            * No number on this one.
+            *
+            * It used to read "75 legs" and sat two lines above "26 RUNS" on
+            * the same card, which invites the obvious question and answers it
+            * wrongly: a leg is a run OR a lift OR a connector, so the two
+            * counts are of different things and neither is wrong. The runs
+            * figure is the one a skier can check against a piste map, so that
+            * keeps its number and this becomes what it actually is — the way
+            * in to the day written out.
+            */}
           <button className="detail__legs" onClick={onLegs}>
-            {legsOf(route).length} legs <Arrow width="14" height="14" />
+            Leg by leg <Arrow width="14" height="14" />
           </button>
         </div>
         <h1 className="title title--sm">{route.title}</h1>

@@ -480,6 +480,28 @@ export default function App() {
     return () => { delete window.__skisSetMapMode; };
   }, []);
   const chosen = routes[pickIndex] || null;
+
+  /*
+   * The day you picked, in frame.
+   *
+   * The camera keeps whatever framing you left it in, which is right on the
+   * mountain — you zoomed in for a reason — and wrong the moment a route
+   * arrives. Zoom in four times on the explore map, plan, and pick a day, and
+   * seventy per cent of the route was off the screen: 457 of its 1,545 points
+   * in frame. The screen's whole job is "here is your day on the mountain",
+   * and it was showing a third of it.
+   *
+   * Only when the route CHANGES, so a deliberate zoom while reading a route is
+   * left alone; and the camera frames the route's own nodes once there is one,
+   * so putting the zoom back to where it started is all this has to do.
+   */
+  const framedFor = useRef(null);
+  useEffect(() => {
+    if (!chosen || !(screen === "detail" || screen === "navigate")) return;
+    if (framedFor.current === chosen.id) return;
+    framedFor.current = chosen.id;
+    mapControl.current?.resetView();
+  }, [chosen, screen]);
   const shownRoute =
     screen === "choose" ? routes[previewIndex] || routes[0] || null : chosen;
 
