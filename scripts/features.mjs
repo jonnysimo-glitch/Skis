@@ -2331,14 +2331,33 @@ if (feature("31. A drag holds the ground")) {
         }
         await wait();
       }
+      /*
+       * Measured as the gap between the thumb and the ground it grabbed, with
+       * the finger still down.
+       *
+       * The pan magnitude was the wrong ruler twice over. After `pointerup`
+       * the map coasts, and the coast comes off a velocity sampled from the
+       * last few frames, so the same eighteen moves read as 56, 67 or 104
+       * pixels depending on how the frames landed — this check was measuring
+       * the fling. And measuring the pan while held is stable but insensitive:
+       * it passes with the stale-camera bug back in.
+       *
+       * The gap is both. It is what the complaint was — "it does it too fast",
+       * meaning the map outran the finger — it is stable, and a correction
+       * that compounds shows up in it immediately.
+       */
+      const gap = window.__skisGroundGap?.() ?? null;
       send(from.x - FINGER, from.y + FINGER / 2, "pointerup");
       await wait();
-      const moved = Math.hypot(window.__skisView.panX - was.x, window.__skisView.panY - was.y);
-      return { finger: Math.hypot(FINGER, FINGER / 2), moved };
-    }, { x: start.x, y: start.y * 0.6 });
-    check("and three moves in one frame move it once",
-      runaway.moved < runaway.finger * 1.25,
-      `${runaway.moved.toFixed(0)}px of map for ${runaway.finger.toFixed(0)}px of thumb`);
+      return { finger: Math.hypot(FINGER, FINGER / 2), gap };
+      // From the point this section already proved has ground under it. Higher
+      // up the screen is sky at this pitch, and a grab that lands on nothing
+      // never takes the grab path at all, so there is nothing there to measure.
+    }, start);
+    check("and three moves in one frame keep the ground under the thumb",
+      typeof runaway.gap === "number" && runaway.gap < 24,
+      typeof runaway.gap === "number" ? `${runaway.gap.toFixed(0)}px from the thumb`
+        : JSON.stringify(runaway.gap));
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }

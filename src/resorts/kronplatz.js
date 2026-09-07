@@ -305,7 +305,7 @@ export const RUNS = [
   ["coltoron", "rara", "Rara", "blue", 0.4, 2],
   ["p49", "p96", "Seewiese", "red", 0.4, 2],
   ["kronplatzii", "p51", "Lumen", "red", 0.5, 2],
-  ["p97", "p41", "Ruipa", "blue", 0.7, 4],
+  ["p97", "p41", "Ruipa", "blue", 0.7, 2],
   ["coldancona", "piculin", "Piculin", "black", 1.8, 7],
   ["kronplatz20003", "kronplatz20002", "Link to Kronplatz 2000", "blue", 0.2, 2, 1],
   ["kronplatz20002", "kronplatz2000", "Link to Kronplatz 2000", "blue", 0.2, 2, 1],

@@ -20,6 +20,8 @@
  * no lift, and nothing that makes it somewhere in its own right.
  */
 
+import { runMinutes } from "../../src/lib/pace.js";
+
 /** Places that stay whatever their degree: you start, finish or eat there. */
 const KEEP = (node) => node.base || node.rifugio;
 
@@ -74,6 +76,11 @@ export function contractChains({ NODES, LIFTS, RUNS, PLACES = [], report = {} })
       drop.add(ins[0]);
       drop.add(outs[0]);
       dead.add(key);
+      const metres = (a.metres || 0) + (b.metres || 0);
+      // `fall`, not `drop`: `drop` is the set of edge indices being removed in
+      // this pass, and shadowing it here silently retimed every merge from a
+      // Set.
+      const fall = (nodes[a.from]?.alt ?? 0) - (nodes[b.to]?.alt ?? 0);
       added.push({
         ...a,
         to: b.to,
@@ -81,8 +88,19 @@ export function contractChains({ NODES, LIFTS, RUNS, PLACES = [], report = {} })
         // and "Salati to Point 31" is a worse answer than the piste's name.
         name: pickName(a, b),
         km: Math.round((a.km + b.km) * 10) / 10,
-        minutes: a.minutes + b.minutes,
-        metres: (a.metres || 0) + (b.metres || 0),
+        /*
+         * Re-timed over the whole run, not the two halves added together.
+         *
+         * `runMinutes` has a two minute floor so that a fifty metre link is
+         * not reported as instantaneous, and adding the halves added the
+         * floors: Latemar's Residenza came out at six minutes for a kilometre
+         * that takes three, because it was traced as three short ways and each
+         * one claimed the minimum. A merged run is one run and gets one floor.
+         */
+        minutes: a.link
+          ? a.minutes + b.minutes
+          : runMinutes(metres, fall, a.difficulty),
+        metres,
         osmId: a.osmId,
       });
       merged++;

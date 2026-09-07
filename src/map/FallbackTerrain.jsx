@@ -3916,6 +3916,30 @@ export default function FallbackTerrain({
         const hit = groundUnder(view.current, sx, sy);
         return hit ? field.proj.unproject(hit.x, hit.z) : null;
       };
+      /*
+       * How far the ground the finger grabbed has got from the finger, right
+       * now, mid-gesture.
+       *
+       * The one number that says whether a drag is holding the ground. Pan
+       * magnitude cannot: after release it includes the fling, and while held
+       * it is stable but says nothing about whether the map outran the thumb.
+       * Null when nothing is being dragged.
+       */
+      window.__skisGroundGap = () => {
+        // `gesture.x/y` is where the thumb was on its last move, which is where
+        // it still is mid-drag.
+        // Null when there is no drag, or when the grab landed on sky: a
+        // gesture with no anchor never takes the ground-holding path, so there
+        // is nothing there to measure.
+        if (!gesture?.anchor || !lastCam.current || !projectRef.current) return null;
+        const at = projectRef.current(
+          gesture.anchor.x, gesture.anchor.y, gesture.anchor.z,
+          view.current, lastCam.current);
+        if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return null;
+        return Math.hypot(
+          gesture.x - gesture.grabDX - at.x,
+          gesture.y - gesture.grabDY - at.y);
+      };
     }
 
     const startGesture = () => {

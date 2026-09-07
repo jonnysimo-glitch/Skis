@@ -263,8 +263,8 @@ export const RUNS = [
   ["reiterjoch2", "p141", "Skiweg Reiterjoch", "blue", 0.1, 2],
   ["p141", "p75", "Skiweg Reiterjoch", "blue", 0.1, 2],
   ["monteagnello", "p138", "Naturale Allenamento", "black", 0.2, 2],
-  ["p69", "p92", "20 Pala di Santa", "red", 0.7, 4],
-  ["passofeudo", "p80", "Residenza", "red", 1, 6],
+  ["p69", "p92", "20 Pala di Santa", "red", 0.7, 2],
+  ["passofeudo", "p80", "Residenza", "red", 1, 4],
   ["p123", "latemar", "Link to Latemar", "blue", 0.3, 3, 1],
 ];
 
