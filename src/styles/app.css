@@ -1196,8 +1196,25 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .nav--min .nav__badge { width: 36px; height: 36px; }
 .nav--min .nav__badge svg { width: 20px; height: 20px; }
-.nav--min .nav__do { font-size: var(--t-headline); }
-.nav--min .nav__then { font-size: var(--t-footnote); }
+/*
+ * One line each, whatever the name is.
+ *
+ * "Ride Stafal - Sant'Anna" wrapped to two lines and the line under it to two
+ * more, so the compact bar was four lines tall — which is not compact, and
+ * the point of it is the mountain underneath. Long lift names are the norm at
+ * these resorts, not the exception.
+ */
+.nav--min .nav__do {
+  font-size: var(--t-headline);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nav--min .nav__then {
+  font-size: var(--t-footnote);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* And the row cannot grow to fit them, so the text has to be allowed to
+   shrink inside it rather than pushing the buttons off the end. */
+.nav--min .nav__what { min-width: 0; }
 .nav--min .nav__grade { display: none; }
 
 /* How far, in the compact bar. Same weight as the rest of the line: it is
@@ -1269,6 +1286,10 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   overflow: hidden;
 }
 .nav__grade {
+  /* Inline under the instruction: it is one of the leg's facts, and it used to
+     take a fifth of the header row from the words. */
+  display: inline-block;
+  margin-top: var(--s-1);
   flex: none; align-self: flex-start;
   font-size: var(--t-caption-2); font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase;

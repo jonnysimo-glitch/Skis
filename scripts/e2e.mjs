@@ -666,7 +666,9 @@ try {
     check("but holding it does", /Reached|Finish/.test(await page.$eval(".nav__foot .btn", (n) => n.textContent)));
     await page.waitForTimeout(350);
     check("advancing changes the instruction", (await page.$eval(".nav__do", (n) => n.textContent)) !== firstInstruction);
-    check("and the counter moves with it", /leg 2 of/i.test(await legCount()), await legCount());
+    // "1 of 74" minimised, "Leg 1 of 74" in the expanded panel where the word
+    // stands on its own; either says which leg you are on.
+    check("and the counter moves with it", /\b2 of \d+/i.test(await legCount()), await legCount());
 
     // Walk to the end.
     // Held, not clicked. See reachNext in harness.mjs.
@@ -989,7 +991,9 @@ try {
     const more = await page.$('button:has-text("more option")');
     if (more) {
       check("extra routes are behind an affordance, not dumped in the list", (await routeCount(page)) <= 3);
-      check("and the count says so", /of \d+ routes/.test(eyebrow), eyebrow.trim());
+      // "3 of 5 shown", not "3 of 5 routes": the latter reads as which one you
+      // are looking at rather than how many are on the screen.
+      check("and the count says so", /\d+ of \d+ shown/.test(eyebrow), eyebrow.trim());
       await more.click();
       await page.waitForTimeout(300);
       check("tapping it reveals them", (await routeCount(page)) > 3, `${await routeCount(page)} routes`);

@@ -328,17 +328,33 @@ export default function NavigateScreen({
                 {/* Where you are in the day, under the same class it has in
                     the expanded panel: the information moved, so the name for
                     it moves with it. */}
-                <span className="nav__legcount">leg {step + 1} of {legs.length}</span>
+                {/* "leg 1 of 75" is most of the line on its own. The word
+                    is only needed where it stands alone, in the expanded
+                    panel. */}
+                <span className="nav__legcount">{step + 1} of {legs.length}</span>
               </>
             ) : next
               ? `then ${next.kind === "lift" ? "ride" : next.link ? "cross to" : "ski"} ${say(next)}`
               : `last one, finishes at ${junction.name}`}
           </div>
-        </div>
-        {/* A link has no grade. Showing "blue" would be a grade claim about
-            ground that is not a piste at all. */}
-        <div className={`nav__grade nav__grade--${isLift ? "lift" : isLink ? "link" : leg.difficulty}`}>
-          {isLift ? leg.liftType : isLink ? "link" : leg.difficulty}
+          {/*
+            * Under the instruction, not beside it.
+            *
+            * Beside it the chip took ninety pixels of a three hundred and
+            * ninety pixel row — with the badge, the chevron and the close
+            * button that left seventy for the words, and "Ride Stafal -
+            * Sant'Anna" came out one word per line. The grade is a fact about
+            * the leg, like the metrics, so it sits with the words it belongs
+            * to rather than competing with them for the row.
+            *
+            * A link has no grade. Showing "blue" would be a grade claim about
+            * ground that is not a piste at all.
+            */}
+          {!minimised && (
+            <div className={`nav__grade nav__grade--${isLift ? "lift" : isLink ? "link" : leg.difficulty}`}>
+              {isLift ? leg.liftType : isLink ? "link" : leg.difficulty}
+            </div>
+          )}
         </div>
         {minimised && !following && (
           /* Only when there is something wrong with it. A skier needs to know

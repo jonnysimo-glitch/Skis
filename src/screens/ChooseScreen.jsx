@@ -105,7 +105,9 @@ export default function ChooseScreen({
             : routes.length === 1
               ? "One route"
               : hidden > 0
-                ? `${visible.length} of ${routes.length} routes`
+                // "3 of 4 routes" reads as which one you are looking at. It
+                // means how many of them are on the screen, so it says that.
+                ? `${visible.length} of ${routes.length} shown`
                 : `${routes.length} routes`}
           {opts.lunch && !ruledOut ? " · lunch included" : ""}
         </div>

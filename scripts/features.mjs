@@ -446,7 +446,10 @@ if (feature("5. Navigation follows the GPS")) {
   check("navigation starts", (await where(page)) === "navigate");
 
   const first = await text(page);
-  check("it opens on leg one", /leg 1 of \d+/i.test(first), first.match(/leg \d+ of \d+/i)?.[0] || "no leg counter");
+  // "1 of 75" minimised, "Leg 1 of 75" in the expanded panel where the word
+  // stands on its own. Either says which leg you are on, which is the point.
+  check("it opens on leg one", /(leg )?1 of \d+/i.test(first),
+    first.match(/(leg )?\d+ of \d+/i)?.[0] || "no leg counter");
   /*
    * Naming the junction beats using the word: "to Gabiet" is a place you can
    * see from the chairlift, "to junction" is a category.
@@ -522,7 +525,7 @@ if (feature("5. Navigation follows the GPS")) {
 
     // Two fixes advance immediately; one fix and silence takes the dwell.
     await page.waitForFunction(
-      () => /leg 2 of/i.test(document.querySelector(".nav__legcount")?.textContent || ""),
+      () => /\b2 of/i.test(document.querySelector(".nav__legcount")?.textContent || ""),
       { timeout: 15000 }
     ).catch(() => {});
     check("arriving at the junction advances the leg without a tap", (await legNumber()) === 2, `on leg ${await legNumber()}`);
