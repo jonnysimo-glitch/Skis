@@ -83,6 +83,10 @@ jobs:
           # Without this Pages runs the output through Jekyll, which drops
           # anything beginning with an underscore.
           touch dist/.nojekyll
+          # Which commit this build is, in a file small enough to fetch from
+          # the live site afterwards. See "Check the site is actually this
+          # build" below for why that turned out to be necessary.
+          echo "${GITHUB_SHA}" > dist/version.txt
 
       - name: Say whether satellite will work
         env:
@@ -127,3 +131,47 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      # Did any of that reach the internet?
+      #
+      # This workflow was green for days while the live site served a build
+      # from a fortnight earlier, because the repository's Pages source was
+      # still "deploy from a branch" and the stale gh-pages branch was what
+      # visitors got. Every run built the app, ran the tests, uploaded the
+      # artifact and deployed it, and every run was ignored. Nothing anywhere
+      # said so. It was found by a person reading the wordmark on their phone
+      # and saying, three times, that it was the old one.
+      #
+      # A deployment that does not change what a visitor sees is a failed
+      # deployment, whatever the API returned, so this asks the site. The file
+      # is thirty bytes and the answer is unambiguous: either the sha at the
+      # published URL is this commit or the deploy went somewhere nobody is
+      # looking.
+      #
+      # Retried, because the edge takes a few seconds to pick up a new
+      # deployment and a false red here would be its own kind of noise.
+      - name: Check the site is actually this build
+        env:
+          PAGE: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -u
+          for attempt in 1 2 3 4 5; do
+            live=$(curl -fsS --max-time 20 "${PAGE}version.txt?cachebust=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null | tr -d '[:space:]' || true)
+            if [ "$live" = "$GITHUB_SHA" ]; then
+              echo "Live at ${PAGE} is ${GITHUB_SHA}."
+              exit 0
+            fi
+            echo "Attempt ${attempt}: ${PAGE} reports '${live:-nothing}', expected ${GITHUB_SHA}."
+            sleep $((attempt * 10))
+          done
+          {
+            echo '### The deploy did not reach the site'
+            echo
+            echo "The workflow built and deployed \`${GITHUB_SHA}\`, and ${PAGE} is still serving"
+            echo "\`${live:-something else}\`."
+            echo
+            echo 'The usual cause is the Pages source: Settings -> Pages -> Build and deployment'
+            echo 'must be **GitHub Actions**, not "Deploy from a branch". While it is set to a'
+            echo 'branch, every run here succeeds and every result is discarded.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
