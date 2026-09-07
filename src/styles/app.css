@@ -1182,6 +1182,64 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   padding: calc(var(--safe-top) + var(--s-4)) var(--gutter) var(--s-4);
   display: flex; align-items: center; gap: var(--s-3);
 }
+/*
+ * Minimised, which is how navigating starts.
+ *
+ * The head shrinks to one row — icon, instruction, how far — and the metrics,
+ * the status strip and the leg-list handle are not rendered at all. Three
+ * hundred pixels of panel becomes about ninety, and the rest is the mountain
+ * you are standing on.
+ */
+.nav--min .nav__head {
+  padding: calc(var(--safe-top) + var(--s-2)) var(--gutter) var(--s-2);
+  gap: var(--s-2);
+}
+.nav--min .nav__badge { width: 36px; height: 36px; }
+.nav--min .nav__badge svg { width: 20px; height: 20px; }
+.nav--min .nav__do { font-size: var(--t-headline); }
+.nav--min .nav__then { font-size: var(--t-footnote); }
+.nav--min .nav__grade { display: none; }
+
+/* How far, in the compact bar. Same weight as the rest of the line: it is
+   information, not a headline — the headline is what to do. */
+.nav__far { font-variant-numeric: tabular-nums; }
+.nav__farunit { margin-left: 2px; opacity: 0.75; }
+
+/* GPS trouble, minimised: a glyph, not a sentence. */
+.nav__gps {
+  flex: none;
+  display: grid; place-items: center;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--note-bg);
+  color: var(--ink-2);
+}
+
+/* The handle that brings the rest back. Quiet: it is the least important
+   thing in the row and the only one that is not information. */
+.nav__grow {
+  flex: none;
+  /* A full target around a small disc. The visible circle is 32px because it
+     is the quietest thing in the row; the thing your thumb has to find is 44,
+     which is what a glove needs and what the audit holds everything to. */
+  width: var(--tap); height: var(--tap);
+  display: grid; place-items: center;
+  position: relative;
+  border: 0; background: none; padding: 0;
+  color: var(--ink-2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav__grow::before {
+  content: "";
+  position: absolute;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+.nav__grow > * { position: relative; }
+.nav__grow:active::before { background: rgba(255, 255, 255, 0.16); }
+
 .nav__badge {
   width: 52px; height: 52px; flex: none;
   border-radius: 50%;

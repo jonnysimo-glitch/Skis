@@ -163,6 +163,17 @@ export default function NavigateScreen({
   // leg you are on and the one after it, and on a chairlift the question is
   // usually about the whole run home rather than the next hundred metres.
   const [expanded, setExpanded] = useState(false);
+  /*
+   * Navigating starts with almost nothing over the mountain.
+   *
+   * The full panel is three hundred pixels of an eight hundred pixel phone —
+   * an instruction, three metrics, a status strip and a footer — and the one
+   * screen where the terrain matters most is the one you are standing on. So
+   * it opens minimised: the instruction, how far, and the button you press
+   * when you get there. Everything else is one tap away and stays open once
+   * you ask for it.
+   */
+  const [minimised, setMinimised] = useState(true);
   // The overrun line, once you have read it. Not the whole banner's job: the
   // re-plan button sits in the action row and stays there, so putting the
   // message away keeps the escape hatch.
@@ -284,7 +295,7 @@ export default function NavigateScreen({
         : { v: String(Math.round(toJunction)), unit: "m" };
 
   return (
-    <div className="nav">
+    <div className={`nav${minimised ? " nav--min" : ""}`}>
       {/* The instruction. Pinned, high contrast, legible at arm's length in
           flat light with the screen dimmed by cold. */}
       <header className="nav__head">
@@ -297,8 +308,29 @@ export default function NavigateScreen({
           <h1 className="nav__do">
             {isLift ? "Ride" : isLink ? "Cross to" : "Ski"} {say(leg)}
           </h1>
+          {/* Minimised, the second line is how far rather than what comes
+              next: one of those you need standing on the piste and the other
+              you do not. */}
           <div className="nav__then">
-            {next
+            {minimised ? (
+              <>
+                {/* Classed so a check can read the number without parsing
+                    the sentence around it, the way it reads the metric in the
+                    expanded panel. */}
+                <span className="nav__far">
+                  {distance ? distance.v : isLift ? leg.ride : leg.min}
+                  {/* A real space, not a margin: this one sits in a sentence
+                      rather than under a number, and "9min to Gabiet" is not
+                      how anybody writes it. */}
+                  <span className="nav__farunit">{` ${distance ? distance.unit : "min"}`}</span>
+                </span>
+                {` to ${junction.name} · `}
+                {/* Where you are in the day, under the same class it has in
+                    the expanded panel: the information moved, so the name for
+                    it moves with it. */}
+                <span className="nav__legcount">leg {step + 1} of {legs.length}</span>
+              </>
+            ) : next
               ? `then ${next.kind === "lift" ? "ride" : next.link ? "cross to" : "ski"} ${say(next)}`
               : `last one, finishes at ${junction.name}`}
           </div>
@@ -308,11 +340,27 @@ export default function NavigateScreen({
         <div className={`nav__grade nav__grade--${isLift ? "lift" : isLink ? "link" : leg.difficulty}`}>
           {isLift ? leg.liftType : isLink ? "link" : leg.difficulty}
         </div>
+        {minimised && !following && (
+          /* Only when there is something wrong with it. A skier needs to know
+             the map has lost them; being told it has not is a caption. */
+          <span className="nav__gps" title={gpsExplanation(gps.state)}>
+            <Locate width="15" height="15" />
+          </span>
+        )}
+        <button
+          className="nav__grow"
+          onClick={() => setMinimised((v) => !v)}
+          aria-expanded={!minimised}
+          aria-label={minimised ? "Show the detail" : "Just the instruction"}
+        >
+          {minimised ? <ChevronUp width="18" height="18" /> : <ChevronDown width="18" height="18" />}
+        </button>
         <button className="nav__stop" onClick={onAbandon} aria-label="Stop navigating">
           <Close width="20" height="20" />
         </button>
       </header>
 
+      {!minimised && (
       <div className="nav__metrics">
         <div className="navmetric">
           <div className="navmetric__v">
@@ -342,6 +390,7 @@ export default function NavigateScreen({
           </div>
         </div>
       </div>
+      )}
 
       {/* Dismissible, and it collapses to the leg count.
           
@@ -349,7 +398,7 @@ export default function NavigateScreen({
           explanation only needs reading once: after that it is a caption
           sitting on the terrain you are trying to look at. Where you are in the
           route is worth keeping, so that is what stays. */}
-      {!expanded && (
+      {!expanded && !minimised && (
       <div className={`nav__status${statusOpen ? "" : " nav__status--small"}`}>
         {statusOpen && (
           <>
@@ -401,6 +450,7 @@ export default function NavigateScreen({
       )}
 
       <footer className={`nav__foot${expanded ? " nav__foot--solid" : ""}`} ref={foot}>
+        {!minimised && (
         <button
           className={`nav__more${expanded ? " nav__more--open" : ""}`}
           onClick={() => setExpanded((v) => !v)}
@@ -413,6 +463,7 @@ export default function NavigateScreen({
               ? "The whole route"
               : `The rest of the day · ${legs.length - step - 1} to go`}
         </button>
+        )}
         {overrun > 0 && (overSeen === null || overrun >= overSeen + OVERRUN_RENAG) && (
           <div className="nav__over">
             <Warning width="17" height="17" style={{ flex: "none" }} />

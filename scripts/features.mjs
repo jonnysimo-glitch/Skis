@@ -27,6 +27,7 @@ import {
   toMinutes,
   reachNext,
   openLegs,
+  openTools,
 } from "./harness.mjs";
 
 /*
@@ -446,12 +447,36 @@ if (feature("5. Navigation follows the GPS")) {
 
   const first = await text(page);
   check("it opens on leg one", /leg 1 of \d+/i.test(first), first.match(/leg \d+ of \d+/i)?.[0] || "no leg counter");
-  // Naming the junction beats using the word: "to Gabiet" is a place you can
-  // see from the chairlift, "to junction" is a category.
-  const keys = await page.$$eval(".navmetric__k", (n) => n.map((k) => k.textContent.trim()));
-  check("it points at the next junction by name", keys.some((k) => /^to \w/i.test(k)), keys.join(" / "));
+  /*
+   * Naming the junction beats using the word: "to Gabiet" is a place you can
+   * see from the chairlift, "to junction" is a category.
+   *
+   * Read off the screen rather than out of `.navmetric__k`, because navigation
+   * now opens minimised and the three metrics are behind the expander. What
+   * matters is that a skier can read where they are going without asking, and
+   * the compact bar says "300 m to Gabiet · leg 1 of 59".
+   */
+  check("it points at the next junction by name", /\bto [A-Z]/.test(first),
+    first.replace(/\n/g, " ").slice(0, 80));
   check("it never says 'turn'", !/turn/i.test(first));
-  check("it says it is following you", /Following you/.test(first), first.match(/Following you[^.]*\./)?.[0] || "not following");
+  /*
+   * And it says whose position it is using — once you ask.
+   *
+   * Minimised it says nothing while the GPS is working and shows a glyph when
+   * it is not, which is the right way round: a skier needs to know the map has
+   * lost them, not to be told every leg that it has not.
+   */
+  await page.click('.nav__grow');
+  await page.waitForTimeout(250);
+  const opened = await text(page);
+  check("it says it is following you, once you open it",
+    /Following you/.test(opened), opened.match(/Following you[^.]*/)?.[0] || "not following");
+  check("and the three metrics are in there too",
+    (await page.$$(".navmetric")).length === 3, `${(await page.$$(".navmetric")).length}`);
+  await page.click('.nav__grow');
+  await page.waitForTimeout(250);
+  check("and it goes back to just the instruction",
+    (await page.$$(".navmetric")).length === 0, `${(await page.$$(".navmetric")).length} metrics`);
   check("the tab bar is out of the way while navigating", await page.$eval(".tabbar", (n) => n.className.includes("hidden")));
 
   // Walk the phone to the end of leg one. The screen should advance itself.
@@ -475,11 +500,14 @@ if (feature("5. Navigation follows the GPS")) {
     // minutes, because metres are checkable against what you can see. This
     // page has had a fix since it loaded, so the thing to assert is that the
     // distance is real: it shrinks as the phone moves to the junction.
+    // Read off the compact bar, which is what navigation opens as. The same
+    // number drives the metric in the expanded panel; this is where a skier
+    // actually sees it.
     const distance = () =>
       page.evaluate(() => {
-        const cell = document.querySelector(".navmetric");
-        const unit = cell.querySelector(".navmetric__u").textContent.trim();
-        const value = parseFloat(cell.querySelector(".navmetric__v").textContent);
+        const cell = document.querySelector(".nav__far") ?? document.querySelector(".navmetric");
+        const unit = cell.querySelector(".nav__farunit, .navmetric__u").textContent.trim();
+        const value = parseFloat(cell.textContent);
         return { unit, metres: unit === "km" ? value * 1000 : value };
       });
     const far = await distance();
@@ -704,9 +732,26 @@ if (feature("8. The skiing tab is the mountain and one button")) {
   check("the map is there", (await page.$("canvas")) !== null);
   check("there is no panel over it", (await page.$(".sheet, .resortpanel")) === null);
   check("and nothing to drag", (await page.$(".sheet__grab")) === null);
-  check("the map has its controls here, where there is a map",
-    (await page.$$(".maptools .iconbtn")).length >= 4,
+  /*
+   * One control, and the rest behind it.
+   *
+   * Five discs stacked down the right of a phone is a column of chrome over
+   * the thing they control, and four of them are pressed once a session. What
+   * this asks now is that the map is clear at rest and that the controls are
+   * one tap away, not that they are all sitting there.
+   */
+  check("the map is clear except for the one control that opens the rest",
+    (await page.$$(".maptools .iconbtn")).length === 1,
+    `${(await page.$$(".maptools .iconbtn")).length} controls showing`);
+  await page.click('.maptools .iconbtn[aria-label="Map controls"]');
+  await page.waitForTimeout(200);
+  check("and opening it gives the full stack",
+    (await page.$$(".maptools .iconbtn")).length >= 5,
     `${(await page.$$(".maptools .iconbtn")).length} controls`);
+  await page.click('.maptools .iconbtn[aria-label="Hide the map controls"]');
+  await page.waitForTimeout(200);
+  check("and it shuts again", (await page.$$(".maptools .iconbtn")).length === 1,
+    `${(await page.$$(".maptools .iconbtn")).length} controls showing`);
 
   const body = await text(page);
   check("it names the resort", /Monterosa Ski/.test(body), body.replace(/\n/g, " ").slice(0, 60));
@@ -786,6 +831,36 @@ if (feature("9. Navigating is pinned, not dragged")) {
   const head = await page.$eval(".nav__head", (n) => n.getBoundingClientRect().top);
   check("the instruction is pinned to the top", head <= 1, `${Math.round(head)}px`);
 
+  /*
+   * What it opens as: the instruction, how far, and the button. Nothing else.
+   *
+   * Navigating is the one screen where the terrain matters most, so the full
+   * panel — three metrics, a status strip and a leg-list handle — is behind a
+   * chevron rather than in front of it.
+   */
+  const shut = await page.evaluate(() => ({
+    doing: document.querySelector(".nav__do")?.textContent.trim(),
+    then: document.querySelector(".nav__then")?.textContent.trim(),
+    metrics: document.querySelectorAll(".navmetric").length,
+    action: document.querySelector(".nav__foot .btn")?.textContent.trim(),
+  }));
+  check("it opens with the instruction and nothing else",
+    /^(Ride|Ski|Cross to) /.test(shut.doing || "") && shut.metrics === 0,
+    `${shut.doing} · ${shut.metrics} metrics`);
+  check("and how far, and where to", /\bto [A-Z]/.test(shut.then || ""), shut.then);
+  check("and the button you press when you get there",
+    /^Reached /.test(shut.action || ""), shut.action);
+  const shutPanels = await page.evaluate(() => {
+    const head = document.querySelector(".nav__head").getBoundingClientRect().bottom;
+    const foot = document.querySelector(".nav__foot").getBoundingClientRect().top;
+    return { map: Math.round(foot - head), screen: window.innerHeight };
+  });
+  check("which leaves most of the screen as mountain",
+    shutPanels.map > shutPanels.screen * 0.6,
+    `${shutPanels.map}px of ${shutPanels.screen}px`);
+
+  await page.click(".nav__grow");
+  await page.waitForTimeout(300);
   const nav = await page.evaluate(() => ({
     doing: document.querySelector(".nav__do")?.textContent.trim(),
     then: document.querySelector(".nav__then")?.textContent.trim(),
@@ -875,7 +950,8 @@ if (feature("10. Map chrome only where there is a map")) {
   await page.waitForTimeout(300);
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  check("the mountain does, and they are all there", (await chrome()) >= 4, `${await chrome()}`);
+  check("the mountain does, and the control that opens them is there",
+    (await chrome()) >= 1, `${await chrome()}`);
 
   await page.click(".planbtn");
   await page.waitForSelector("#p-t1", { timeout: 15000 });
@@ -904,7 +980,7 @@ if (feature("10. Map chrome only where there is a map")) {
   if (await ended.$(".routecard")) {
     await openRoute(ended, 0);
     await ended.waitForTimeout(900);
-    check("the route detail keeps them, it is mostly map", (await tools()) >= 4, `${await tools()}`);
+    check("the route detail keeps them, it is mostly map", (await tools()) >= 1, `${await tools()}`);
     const go = await ended.$('button:has-text("Save and start")');
     if (go) {
       await go.click();
@@ -1140,7 +1216,8 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
       const v = window.__skisView;
       return { x: v.panX, lim: v.panLimit?.x ?? 0 };
     });
-    await page.click("[aria-label='Recentre the view']");
+    await openTools(page);
+  await page.click("[aria-label='Recentre the view']");
     await page.waitForTimeout(700);
     const cxx = box.x + box.w / 2;
     const cyy = box.y + box.h / 2;
@@ -1969,6 +2046,7 @@ if (feature("32. The places arrive as you get closer")) {
     `biggest ${pops.biggest}${pops.worst ? ` (${pops.worst})` : ""}`);
   // That drag left the camera somewhere else, and everything below compares
   // against the opening view.
+  await openTools(page);
   await page.click("[aria-label='Recentre the view']");
   await page.waitForTimeout(900);
 
@@ -2643,6 +2721,7 @@ if (feature("16. One gesture at a time")) {
       return { zoom: v.targetZoom, bearing: v.bearing, pitch: v.pitch };
     };
     const reset = async () => {
+      await openTools(page);
       await page.tap("[aria-label='Recentre the view']");
       await page.waitForTimeout(500);
     };
@@ -2876,6 +2955,7 @@ if (feature("16. One gesture at a time")) {
   const turnAt = async (zoomIns) => {
     await reset();
     for (let i = 0; i < zoomIns; i++) {
+      await openTools(page);
       await page.tap("[aria-label='Zoom in']");
       await page.waitForTimeout(150);
     }
@@ -2916,6 +2996,7 @@ if (feature("16. One gesture at a time")) {
 
   check("the needle turns with the map", Math.min(turned, 360 - turned) > 20,
       `${turned} degrees round from up`);
+    await openTools(page);
     await page.tap("[aria-label='Face north']");
     await page.waitForTimeout(700);
     const home = await needle();
@@ -3074,8 +3155,15 @@ if (feature("19. Navigate keeps its map controls")) {
   await page.waitForSelector(".nav", { timeout: 10000 });
   await page.waitForTimeout(1500);
 
+  const shut = await read();
+  check("but starting from there still gives you them", shut.shown === true, JSON.stringify(shut));
+  // Collapsed here as everywhere: one control over the mountain, the rest a
+  // tap away. Navigating is the screen with the least room to spare for them.
+  check("collapsed to the one control", (shut.buttons || []).join() === "Map controls",
+    (shut.buttons || []).join(", "));
+
+  await openTools(page);
   const nav = await read();
-  check("but starting from there still gives you them", nav.shown === true, JSON.stringify(nav));
   // Five since the map chooser joined them. Named rather than counted, so the
   // next one to arrive does not read as a regression.
   check("all of them, by name",
@@ -3085,11 +3173,13 @@ if (feature("19. Navigate keeps its map controls")) {
   check("the compass among them", (nav.buttons || []).includes("Face north"));
   check("and they are on screen, not under the footer", nav.onScreen === true);
 
-  // They must clear the panel they stack above, whatever it is carrying.
+  // They must clear the panels they stack between, whatever those carry. The
+  // head, not the metrics: navigation opens minimised and the metrics are
+  // behind the chevron, but the instruction is always there.
   const clear = await page.evaluate(() => {
     const t = document.querySelector(".maptools").getBoundingClientRect();
     const f = document.querySelector(".nav__foot").getBoundingClientRect();
-    const h = document.querySelector(".nav__metrics").getBoundingClientRect();
+    const h = document.querySelector(".nav__metrics, .nav__head").getBoundingClientRect();
     return { overFoot: Math.round(f.y - t.bottom), underHead: Math.round(t.y - h.bottom) };
   });
   check("clear of the footer", clear.overFoot >= 0, `${clear.overFoot}px above it`);
@@ -3124,6 +3214,14 @@ if (feature("18. The rest of the day, without leaving navigation")) {
   check("the map is what you see until you ask for the list",
     (await page.$(".nav__all")) === null, "no panel at rest");
 
+  /*
+   * Navigating opens minimised, so the leg-list handle is one level in: the
+   * chevron brings the full panel back, and "the rest of the day" is in it.
+   * Two taps to see the whole route, none to see the mountain, which is the
+   * right way round on the screen you are standing on.
+   */
+  await page.click(".nav__grow");
+  await page.waitForTimeout(300);
   const handle = await page.$(".nav__more");
   check("and there is a button to ask with", handle !== null);
 
@@ -3276,6 +3374,7 @@ if (feature("20. The mountain is labelled")) {
   // Zoom in and the names that lost the room come back.
   await page.evaluate(() => window.__skisView && null);
   for (let i = 0; i < 3; i++) {
+    await openTools(page);
     await page.click("[aria-label='Zoom in']");
     await page.waitForTimeout(320);
   }
@@ -3394,6 +3493,7 @@ if (feature("29. Which map you are looking at")) {
   await page.waitForSelector(".planbtn", { timeout: 15000 });
   await page.waitForTimeout(1500);
 
+  await openTools(page);
   const opener = await page.$('[aria-label="Choose the map"]');
   check("there is a way to change the map", opener !== null);
   if (!opener) { await page.context_.close(); }
@@ -3457,6 +3557,7 @@ if (feature("28. The runs have their names on them")) {
   check("the mountain is not buried in piste names at rest", far.length === 0,
     `${far.length} names`);
 
+  await openTools(page);
   const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(430); }
   await page.waitForTimeout(800);
@@ -3530,6 +3631,7 @@ if (feature("27. How far is that")) {
     check("the bar is a usable length", rest.px >= 50 && rest.px <= 170, `${rest.px}px`);
     check("and it is out of the way, bottom left", rest.left < 60, `${rest.left}px from the left`);
 
+    await openTools(page);
     const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
     for (let i = 0; i < 4; i++) { await zoomIn.click(); await page.waitForTimeout(420); }
     const close = await read();
@@ -4102,6 +4204,7 @@ if (feature("36. Every name arrives the same way")) {
    * the bug was invisible at rest, because both states are correct and only
    * the transition between them was a pop.
    */
+  await openTools(page);
   const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   const trace = await page.evaluate(() => {
     window.__skisTrace = [];
@@ -4256,6 +4359,7 @@ if (feature("38. Every tier of label, the same way")) {
     tick();
   }, TIERS);
 
+  await openTools(page);
   const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(400); }
   await page.waitForTimeout(700);
@@ -4265,6 +4369,7 @@ if (feature("38. Every tier of label, the same way")) {
   });
   // And back out through the threshold, which is the direction that used to
   // freeze a tier's fades at full and make the NEXT crossing pop.
+  await openTools(page);
   const zoomOut = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
   for (let i = 0; i < 5; i++) { await zoomOut.click(); await page.waitForTimeout(400); }
   await page.waitForTimeout(700);
@@ -4374,6 +4479,7 @@ if (feature("39. The map settles, and is not crowded")) {
     place: "__skisLabelLit", run: "__skisRunLit",
     hut: "__skisPlaceLit", hutName: "__skisPlaceNameLit",
   };
+  await openTools(page);
   const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   const survey = async () => page.evaluate(async (hooks) => {
     const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -4455,7 +4561,9 @@ if (feature("39. The map settles, and is not crowded")) {
    * left for good, so that is the churn, and it is what the complaint was.
    */
   const sweep = await (async () => {
+    await openTools(page);
     const zin = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+    await openTools(page);
     const zout = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
     const up = async (b, n) => { for (let i = 0; i < n; i++) { await b.click(); await page.waitForTimeout(850); } };
     const shown = () => page.evaluate((hooks) => {
@@ -4539,6 +4647,7 @@ if (feature("37. A connector is not a piste")) {
   await page.waitForSelector(".planbtn", { timeout: 15000 });
   await page.waitForTimeout(1500);
   // Ried is a named piste on the map now, at the zoom that writes names.
+  await openTools(page);
   const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(400); }
   await page.waitForTimeout(700);

@@ -61,7 +61,7 @@ import {
   routeBounds,
   nearestNode,
 } from "./lib/geo.js";
-import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain, Layers } from "./ui/Icons.jsx";
+import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain, Layers, ChevronUp, ChevronDown } from "./ui/Icons.jsx";
 
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
@@ -109,6 +109,15 @@ const MAP_CHOICES = [
 
 /** What the layer control calls a map, for anything else that has to say it. */
 const mapChoiceName = (id) => MAP_CHOICES.find((c) => c.id === id)?.name ?? "The map";
+
+/**
+ * How long the map controls stay open after the last press, in milliseconds.
+ *
+ * Long enough to zoom, look, and zoom again without the stack shutting under
+ * your thumb; short enough that it is gone by the time you have finished
+ * reading the mountain.
+ */
+const TOOLS_IDLE_MS = 6000;
 
 /** Tab bar height in CSS pixels; keep in step with --tabbar. */
 const TABBAR_H = 56;
@@ -334,6 +343,22 @@ export default function App() {
   const [addingFriend, setAddingFriend] = useState(false);
   const [friendError, setFriendError] = useState(null);
   const [navExpanded, setNavExpanded] = useState(false);
+  /*
+   * The map controls, and whether they are showing.
+   *
+   * Closed to start with. Every press inside the stack pushes the idle timer
+   * out, so zooming three times keeps it open and then it goes on its own — no
+   * dismiss to remember, and no column of discs sitting over the mountain for
+   * the rest of the session.
+   */
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsTimer = useRef(null);
+  const keepToolsOpen = useCallback(() => {
+    clearTimeout(toolsTimer.current);
+    toolsTimer.current = setTimeout(() => setToolsOpen(false), TOOLS_IDLE_MS);
+  }, []);
+  // Nothing left running when the screen goes.
+  useEffect(() => () => clearTimeout(toolsTimer.current), []);
   /*
    * Satellite is a skin on our own terrain, not somewhere else.
    *
@@ -625,6 +650,10 @@ export default function App() {
   const mapStrip = viewportH - chromeBottom;
   const chromeHidden = navigating
     ? navExpanded
+    // Against the height of the OPEN stack even while it is shut, because it
+    // can be opened: a strip with room for the one button and not for the five
+    // it reveals would slide the top of the stack off the screen the moment
+    // anybody pressed it.
     : mapStrip < MAPTOOLS_H + MAPTOOLS_HEADROOM;
 
   // ---- actions ------------------------------------------------------------
@@ -978,12 +1007,35 @@ export default function App() {
       <div
         className={`maptools${chromeHidden ? " maptools--hidden" : ""}`}
         style={{ bottom: chromeBottom }}
+        // Any press in here is a use, so the stack stays open while you are
+        // working and closes itself when you stop. Capture, so it counts a
+        // press on any button without each of them having to say so.
+        onPointerDownCapture={keepToolsOpen}
         aria-hidden={chromeHidden}
         // `inert` keeps these out of the tab order while hidden. aria-hidden on
         // its own would leave focusable buttons inside a hidden subtree, which
         // is worse than not hiding them at all.
         {...(chromeHidden ? { inert: "" } : {})}
       >
+        {/*
+          * One button, until you ask for the rest.
+          *
+          * Five controls stacked down the right of a phone is a column of
+          * white discs over the thing they are controls for, and four of them
+          * are pressed once a session at most. Collapsed by default; the stack
+          * opens on a tap and closes itself again once you stop using it, so a
+          * burst of zooming works without a second thought and the map is
+          * clear the rest of the time.
+          */}
+        <button
+          className={`iconbtn iconbtn--tools${toolsOpen ? " iconbtn--on" : ""}`}
+          aria-label={toolsOpen ? "Hide the map controls" : "Map controls"}
+          aria-expanded={toolsOpen}
+          onClick={() => { setToolsOpen((open) => !open); setLayersOpen(false); keepToolsOpen(); }}
+        >
+          {toolsOpen ? <ChevronDown /> : <ChevronUp />}
+        </button>
+        {toolsOpen && (<>
         {/* What you are looking at, rather than where. Sits at the top of the
             stack because it is the one control you press once and then leave
             alone, and the ones below it are the ones you press repeatedly. */}
@@ -1017,6 +1069,7 @@ export default function App() {
         <button className="iconbtn" aria-label="Zoom out" onClick={() => mapControl.current?.zoom(-1)}>
           <Minus />
         </button>
+        </>)}
       </div>
       )}
 

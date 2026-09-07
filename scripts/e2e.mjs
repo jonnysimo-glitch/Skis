@@ -22,6 +22,7 @@ import {
   toMinutes,
   reachNext,
   toForm,
+  openTools,
 } from "./harness.mjs";
 
 import { RESORTS } from "../src/resorts/index.js";
@@ -615,11 +616,17 @@ try {
     check("committing stores the route for offline use", stored.legs > 0, `${stored.legs} legs`);
     check("and records which resort it belongs to", stored.resort === "monterosa", String(stored.resort));
 
-    // The metric points at the junction by name rather than using the word,
-    // which is the principle taken one step further: "to Gabiet" is a place
-    // you can see, "to junction" is a category.
-    const metricKeys = await page.$$eval(".navmetric__k", (n) => n.map((k) => k.textContent.trim()));
-    check("navigate points at a named junction", metricKeys.some((k) => /^to \w/i.test(k)), metricKeys.join(" / "));
+    /*
+     * It points at the junction by name rather than using the word, which is
+     * the principle taken one step further: "to Gabiet" is a place you can
+     * see, "to junction" is a category.
+     *
+     * Read off the compact bar navigation opens as, rather than out of the
+     * metric behind the chevron. The compact bar is what a skier sees, and it
+     * says "300 m to Gabiet · leg 1 of 59".
+     */
+    const compact = await page.$eval(".nav__then", (n) => n.textContent.trim());
+    check("navigate points at a named junction", /\bto [A-Z]/.test(compact), compact);
     check("and never says turn", !/turn/i.test(await page.$eval(".nav", (n) => n.textContent)));
     check(
       "the button says where you are going",
@@ -814,10 +821,21 @@ try {
     check("the map controls are reachable, not hidden behind it",
       await page.$eval(".maptools", (n) => getComputedStyle(n).visibility === "visible"));
 
+    // Collapsed to the one control that opens the rest, which is what the map
+    // carries everywhere now.
+    check("the map has the control that opens its tools",
+      (await page.$$(".maptools .iconbtn")).length === 1,
+      `${(await page.$$(".maptools .iconbtn")).length} controls`);
+    await openTools(page);
     const tools = await page.$$(".maptools .iconbtn");
-    check("the map has orbit and zoom controls", tools.length >= 4, `${tools.length} controls`);
-    for (const t of tools) {
-      await t.click();
+    check("and it opens orbit and zoom", tools.length >= 5, `${tools.length} controls`);
+    // Every one of them except the toggle, which would shut the stack and
+    // detach the handles behind it — the loop is here to press the controls,
+    // not to close them.
+    const labels = ["Choose the map", "Face north", "Recentre the view", "Zoom in", "Zoom out"];
+    for (const label of labels) {
+      await openTools(page);
+      await page.click(`.maptools .iconbtn[aria-label="${label}"]`);
       await page.waitForTimeout(120);
     }
     await page.waitForTimeout(700);
@@ -1117,6 +1135,10 @@ try {
     // --- not on the hill at all: previewing tomorrow from the sofa -----
     {
       const page = await startNavigatingAt([22, 15]);
+      // Open it: the caveat about where the times come from lives with the
+      // times, which are behind the chevron now.
+      await page.click(".nav__grow");
+      await page.waitForTimeout(300);
       const body = await page.$eval(".nav", (b) => b.textContent);
       check("previewing outside the window says the times come from the plan", /Times are from your plan/.test(body));
       check(

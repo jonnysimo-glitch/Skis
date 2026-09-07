@@ -152,6 +152,21 @@ export async function launch({ headed = false } = {}) {
   });
 }
 
+/**
+ * Open the map control stack, which the app now keeps collapsed.
+ *
+ * One button sits over the mountain and the other five are behind it, so any
+ * check that presses zoom, the compass or the recentre has to ask for them
+ * first — the same as a person does. Idempotent: if the stack is already open
+ * this does nothing, so it is safe to call before every use.
+ */
+export async function openTools(page) {
+  const opener = await page.$('.maptools .iconbtn[aria-label="Map controls"]');
+  if (!opener) return;
+  await opener.click();
+  await page.waitForSelector('.maptools .iconbtn[aria-label="Zoom in"]', { timeout: 5000 });
+}
+
 /** Home → pick the resort → the skiing tab's plan screen. */
 export async function toPlan(page, url) {
   // Not networkidle: the map streams elevation tiles for as long as it is on
