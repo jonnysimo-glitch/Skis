@@ -4529,6 +4529,284 @@ if (feature("40. The day you picked is in frame")) {
   await page.context_.close();
 }
 
+// ============ 41. A TWIST TURNS THE MAP UNDER YOUR FINGERS ==
+/*
+ * Reported as "when I zoom in and try to rotate it over-rotates a little".
+ *
+ * It was not the turn. `rotateAbout` pivots the map on the point under the
+ * fingers, and it computed that correction with the camera from the last
+ * frame the page drew — so it never accounted for the reframe the turn itself
+ * causes, and the ground slid. A forty degree twist at zoom 16 moved the
+ * anchor 301 pixels across a 430 pixel screen while the bearing moved twelve
+ * degrees. Small turn, whole mountain somewhere else.
+ *
+ * So: the anchor holds, at every zoom, and the map goes closer in than a
+ * kilometre across the screen.
+ */
+if (feature("41. A twist turns the map under your fingers")) {
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  // Kronplatz, which is where it was reported and the busiest of the four.
+  await (await page.$$(".hero"))[1].click();
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  const zoomIn = async (n) => {
+    for (let i = 0; i < n; i++) {
+      await openTools(page);
+      await page.tap('.maptools .iconbtn[aria-label="Zoom in"]');
+      await page.waitForTimeout(400);
+    }
+    await page.waitForTimeout(900);
+  };
+
+  /** A pure twist about a point, and how far the ground under it moved. */
+  const twistAt = async () => {
+    const start = await page.evaluate(() => {
+      const cx = Math.round(window.innerWidth / 2);
+      const cy = Math.round(window.innerHeight * 0.45);
+      const g = window.__skisGroundAt(cx, cy);
+      return {
+        cx, cy, g,
+        zoom: window.__skisView.zoom,
+        bearing: window.__skisView.bearing,
+        at: g ? window.__skisProject(g.lon, g.lat) : null,
+      };
+    });
+    if (!start.g) return null;
+    const R = 90;
+    const frames = [];
+    for (let i = 0; i <= 18; i++) {
+      const a = ((i / 18) * 40 * Math.PI) / 180;
+      frames.push([
+        [start.cx + R * Math.cos(a), start.cy + R * Math.sin(a)],
+        [start.cx - R * Math.cos(a), start.cy - R * Math.sin(a)],
+      ]);
+    }
+    await multiTouch(page, frames, { settle: 18 });
+    await page.waitForTimeout(800);
+    const end = await page.evaluate(
+      (g) => ({
+        bearing: window.__skisView.bearing,
+        at: window.__skisProject(g.lon, g.lat),
+      }),
+      start.g
+    );
+    let turned = end.bearing - start.bearing;
+    while (turned > 180) turned -= 360;
+    while (turned < -180) turned += 360;
+    return {
+      zoom: start.zoom,
+      turned,
+      drift: Math.hypot(end.at.x - start.at.x, end.at.y - start.at.y),
+    };
+  };
+
+  /*
+   * Two pixels, not zero.
+   *
+   * The anchor is a point the height field was sampled at, and the correction
+   * is applied in whole screen pixels, so an exact zero is luck rather than
+   * correctness. Two is under the width of the route line. With the stale
+   * camera put back this reads 28 at zoom 1 and 301 at the ceiling, so there
+   * is no version of the bug that fits inside it.
+   */
+  const HELD = 2;
+  // Cumulative: each stop zooms in by the difference rather than starting
+  // over, because recentring between them would also reset the bearing this
+  // is accumulating.
+  let at = 0;
+  for (const clicks of [0, 6, 10, 14]) {
+    await zoomIn(clicks - at);
+    at = clicks;
+    const r = await twistAt();
+    if (!r) { check(`the twist has ground under it at ${clicks} clicks`, false, "grabbed sky"); continue; }
+    check(`the ground under your fingers stays there, zoom ${r.zoom.toFixed(1)}`,
+      r.drift <= HELD, `drifted ${r.drift.toFixed(1)}px`);
+    // Turning is worth doing: the damping that used to scale with zoom took a
+    // forty degree twist down to twelve degrees at the ceiling, so a check on
+    // the drift alone would pass a map that barely turns.
+    check(`and a twist that far turns it, zoom ${r.zoom.toFixed(1)}`,
+      Math.abs(r.turned) > 15, `${r.turned.toFixed(1)} degrees`);
+  }
+
+  /*
+   * And the map goes properly close.
+   *
+   * The old ceiling stopped with a kilometre of mountain across the screen,
+   * which is where the "it will not zoom in far enough" came from. Measured
+   * as real ground rather than as a zoom number, because the zoom is a
+   * multiplier on a per-resort framing and means nothing on its own.
+   */
+  await zoomIn(6);
+  const across = await page.evaluate(() => {
+    const w = window.innerWidth;
+    const y = Math.round(window.innerHeight * 0.45);
+    const a = window.__skisGroundAt(Math.round(w * 0.3), y);
+    const b = window.__skisGroundAt(Math.round(w * 0.7), y);
+    if (!a || !b) return null;
+    const R = 6371000, rad = Math.PI / 180;
+    return Math.hypot(
+      (b.lon - a.lon) * rad * R * Math.cos(a.lat * rad),
+      (b.lat - a.lat) * rad * R) / 0.4;
+  });
+  check("and it goes in close enough to see one summit", across !== null && across < 600,
+    across === null ? "on sky" : `${Math.round(across)} m across the screen`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ======== 42. NAVIGATING IS A FOLLOW VIEW, NOT A MAP OF THE DAY ==
+/*
+ * Reported as: navigation should be close up on you, the way Google Maps is,
+ * rather than looking down at the whole mountain.
+ *
+ * It was looking down at the whole mountain. The camera framed a box
+ * `field.span * 0.13` on a side around the LEG'S MIDPOINT — 7.8 km at
+ * Kronplatz — so a six kilometre lift arrived as a thread across the massif.
+ * Three things had to change and all three are checked here: the scale, where
+ * you sit on the glass, and which way the camera faces.
+ *
+ * The fourth is the one that was invisible. `legsOf` merges consecutive edges
+ * of the same piste, so a Monterosa day is 59 legs and 86 segments, and every
+ * leg index used to be looked up among the segments — which is a different
+ * part of the mountain the moment the first merge happens. The arrow pointed
+ * along the wrong segment and the camera faced the wrong way with it.
+ */
+if (feature("42. Navigating is a follow view, not a map of the day")) {
+  const page = await newPage(browser, { at: [9, 30] });
+  await toPlan(page, `${url}?maptest=1`);
+  await solve(page);
+  await openRoute(page);
+  await page.waitForSelector(".sheet__foot .btn");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 10000 });
+  await page.waitForTimeout(2400);
+
+  /** Everything about the framing that a skier would notice. */
+  const shot = () =>
+    page.evaluate(() => {
+      const nav = window.__skisNavLeg;
+      const v = window.__skisView;
+      if (!nav?.at || !v) return null;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const me = window.__skisProject(nav.at[0], nav.at[1]);
+      const far = window.__skisProject(
+        nav.coords[nav.coords.length - 1][0],
+        nav.coords[nav.coords.length - 1][1]
+      );
+      // Ground across the screen at your own height, which is where the scale
+      // is specified: the zoom number is a multiplier on a per-resort framing
+      // and means nothing on its own.
+      const y = Math.round(me.y);
+      const a = window.__skisGroundAt(Math.round(w * 0.3), y);
+      const b = window.__skisGroundAt(Math.round(w * 0.7), y);
+      let across = null;
+      if (a && b) {
+        const R = 6371000;
+        const rad = Math.PI / 180;
+        across =
+          Math.hypot(
+            (b.lon - a.lon) * rad * R * Math.cos(a.lat * rad),
+            (b.lat - a.lat) * rad * R
+          ) / 0.4;
+      }
+      const drawn = (window.__skisRouteDrawn ?? []).filter((d) => d.leg === nav.i);
+      return {
+        w, h, across,
+        bearing: v.bearing,
+        pitch: v.pitch,
+        down: me.y / h,
+        offCentre: Math.abs(me.x - w / 2),
+        aheadUp: far.y < me.y,
+        drawnPts: drawn.reduce((n, d) => n + d.pts, 0),
+      };
+    });
+
+  const seen = [];
+  for (let leg = 0; leg < 4; leg++) {
+    const r = await shot();
+    if (!r) { check(`the framing can be read on leg ${leg + 1}`, false, "no nav leg"); break; }
+    seen.push(r);
+    /*
+     * The same place on the glass every time, and that is the whole point of
+     * placing the camera rather than fitting a box of ground to the frame.
+     * Fitting looks like the same thing: measured over three consecutive legs
+     * it put the position at 77%, 52% and MINUS 27% down the screen, because
+     * toUnit multiplies altitude by the vertical exaggeration and at this
+     * pitch most of it lands in the vertical span — so a lift up, a traverse
+     * and a descent each framed differently.
+     */
+    check(`you are low in the frame, leg ${leg + 1}`,
+      r.down > 0.6 && r.down < 0.8, `${(r.down * 100).toFixed(0)}% down`);
+    check(`and centred across it, leg ${leg + 1}`,
+      r.offCentre < 8, `${r.offCentre.toFixed(0)}px off centre`);
+    // Close enough to be about the next thing you do. The old framing put
+    // seven thousand eight hundred metres across here.
+    check(`the ground in shot is the next few hundred metres, leg ${leg + 1}`,
+      r.across !== null && r.across < 900, r.across === null ? "on sky" : `${Math.round(r.across)} m across`);
+    // Course up: the leg runs away up the screen, not sideways or behind you.
+    check(`the way you are going runs up the screen, leg ${leg + 1}`,
+      r.aheadUp, `far end ${r.aheadUp ? "above" : "below"} you`);
+    /*
+     * And the line is actually painted.
+     *
+     * Projecting the leg's coordinates and finding them on screen is not this
+     * check: at NAV_ACROSS a mesh facet is 167 m of ground seen at a grazing
+     * angle, so the depth test was hiding the piste under the skier's own
+     * skis. On one leg all fifteen of its points were in frame and none of
+     * them were drawn.
+     */
+    check(`and the leg you are on is drawn, leg ${leg + 1}`,
+      r.drawnPts > 1, `${r.drawnPts} points painted`);
+    if (leg < 3) {
+      await reachNext(page);
+      await page.waitForTimeout(2200);
+    }
+  }
+
+  // Course up means the bearing has to move when the leg does. A camera stuck
+  // on one bearing would pass every check above on a resort whose legs happen
+  // to run the same way.
+  const bearings = seen.map((r) => Math.round(r.bearing));
+  check("the camera turns with the day", new Set(bearings).size > 1,
+    `bearings ${bearings.join(", ")}`);
+  check("and stays leant over the ground", seen.every((r) => r.pitch > 60),
+    `pitch ${seen.map((r) => r.pitch).join(", ")}`);
+
+  /*
+   * Recentre comes back HERE, not to the opening composition.
+   *
+   * The one button on this screen that used to undo it: `resetView` went to
+   * HOME — bearing 152, pitch 46, the whole cut-out — so pressing recentre
+   * while navigating threw away the follow view and there was no way back to
+   * it short of advancing a leg.
+   */
+  for (let i = 0; i < 5; i++) {
+    await openTools(page);
+    await page.click('.maptools .iconbtn[aria-label="Zoom out"]');
+    await page.waitForTimeout(260);
+  }
+  await page.waitForTimeout(700);
+  const pulled = await shot();
+  check("you can pull back off yourself", pulled && pulled.across > 900,
+    pulled?.across ? `${Math.round(pulled.across)} m across` : "?");
+  await openTools(page);
+  await page.click('.maptools .iconbtn[aria-label="Recentre the view"]');
+  await page.waitForTimeout(1200);
+  const back = await shot();
+  check("and recentre brings you back to the follow view, not the mountain",
+    back && back.across < 900 && back.down > 0.6 && back.down < 0.8,
+    back ? `${Math.round(back.across)} m across, ${(back.down * 100).toFixed(0)}% down` : "?");
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ===================== 39. THE MAP SETTLES, AND IS NOT CROWDED ==
 /*
  * Two complaints from a phone, on Kronplatz, which has more on it than any of

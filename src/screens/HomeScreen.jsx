@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import { RESORTS } from "../resorts/index.js";
 import { listDays, totals, dayLabel } from "../lib/history.js";
-import { Arrow, Check, Gear, Mountain, Search, Close } from "../ui/Icons.jsx";
+import { Arrow, Brand, Check, Gear, Mountain, Search, Close } from "../ui/Icons.jsx";
 import Ridge from "../ui/Ridge.jsx";
 import { hours } from "../ui/RouteBits.jsx";
 import FriendsSection from "./FriendsSection.jsx";
@@ -58,7 +58,7 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
     <div className="page">
       <header className="page__bar">
         <span className="wordmark wordmark--dark">
-          <i className="wordmark__dot" /> Skis
+          <Brand className="wordmark__mark" /> Skis
         </span>
         <button className="iconbtn iconbtn--flat" onClick={onSettings} aria-label="Settings">
           <Gear />

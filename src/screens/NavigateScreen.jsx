@@ -151,6 +151,7 @@ export default function NavigateScreen({
   onReplan,
   onAbandon,
   onFootHeight,
+  onHeadHeight,
   onExpand,
 }) {
   // Are we actually on the hill? If the wall clock is nowhere near the window
@@ -203,6 +204,26 @@ export default function NavigateScreen({
     ro.observe(node);
     return () => ro.disconnect();
   }, [onFootHeight]);
+  /*
+   * And nor is the header, since it opens minimised.
+   *
+   * The map was told to reserve a flat 210 pixels for this, which was the
+   * expanded height back when expanded was all there was. Collapsed it is
+   * about seventy, so the camera was framing the mountain into a band 140
+   * pixels shorter than the one it had, and aiming it 70 pixels too low —
+   * which on a follow view is the difference between the ground ahead of you
+   * and the sky above it.
+   */
+  const head = useRef(null);
+  useEffect(() => {
+    const node = head.current;
+    if (!node || !onHeadHeight) return undefined;
+    const report = () => onHeadHeight(Math.round(node.getBoundingClientRect().height));
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [onHeadHeight]);
 
   const startedAt = useRef(nowMinutes());
   const live = startedAt.current >= plan.t0 - 60 && startedAt.current <= plan.t1 + 60;
@@ -298,7 +319,7 @@ export default function NavigateScreen({
     <div className={`nav${minimised ? " nav--min" : ""}`}>
       {/* The instruction. Pinned, high contrast, legible at arm's length in
           flat light with the screen dimmed by cold. */}
-      <header className="nav__head">
+      <header className="nav__head" ref={head}>
         <div className="nav__badge">
           {isLift ? <Lift width="30" height="30" />
             : isLink ? <Cross width="30" height="30" />

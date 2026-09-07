@@ -451,19 +451,23 @@ const DEPTH_GREYS = Array.from({ length: 256 }, (_, i) => `rgb(${i},0,0)`);
  * the screen, and the mountain looks like frosted glass rather than snow. It
  * eases off with the zoom instead, so far is smooth and near is crisp.
  */
-/**
- * How much of a finger twist becomes bearing, by zoom.
+/*
+ * A finger twist turns the map one to one, at every zoom.
  *
- * One to one is right when the whole mountain is in frame, and too much when
- * you are close: the camera re-fits the subject to the viewport on every
- * frame, so as the bearing turns, the focal length and the centring shift too,
- * and at high zoom that refit is multiplied into a big apparent swing. Turning
- * about the point under the fingers takes out more than half of it (measured:
- * 1080px of drift down to 503px at zoom 9), and this absorbs the rest.
+ * There was a `rotateRate(zoom)` here that damped the turn to half by zoom
+ * seven, and its own comment said what it was for: absorbing the swing left
+ * over when the camera re-fits the subject mid-turn. That swing is gone —
+ * `rotateAbout` now solves the camera from the view as it stands rather than
+ * from the last drawn frame, and the ground under the fingers holds to within
+ * a pixel at zoom 16 — so the damping was correcting for nothing and cost
+ * something real: a forty degree twist came out as twelve, and turning right
+ * round took four separate gestures.
  *
- * Never below half, or turning right round becomes four separate gestures.
+ * Diagnosis worth keeping: damping a gesture is what you reach for when the
+ * map moves more than the hand asked for, and it never fixes that, because
+ * the extra movement is not proportional to the gesture. It only makes the
+ * part that was working worse.
  */
-const rotateRate = (zoom) => Math.max(0.5, Math.min(1, 1 / (1 + 0.08 * (zoom - 1))));
 
 /**
  * And how much of a two finger drag becomes pitch, by zoom.
@@ -601,10 +605,121 @@ const CHROME = [".maptools", ".resortbar", ".planbtn", ".mapnote", ".nav__status
  * air around it.
  */
 const ZOOM_MIN = 0.34;
-// Room to get right in over a single summit. At 5.2 you ran out of zoom while
-// the peak was still small, and the pan limit grows with the excess, so this
-// also buys the reach to bring that peak to the middle of the screen.
-const ZOOM_MAX = 16;
+/*
+ * Room to get right in over a single summit.
+ *
+ * Set from what it buys rather than as a round number. Kronplatz, ground
+ * across a 430 pixel screen, one figure per zoom-in press:
+ *
+ *   zoom  1    11,119 m      the whole massif, which is the opening view
+ *   zoom 16     1,011 m      the old ceiling: a kilometre still in shot
+ *   zoom 48       410 m      one bowl, one summit, one lift line
+ *   zoom 400       58 m      past any detail either the mesh or the drape has
+ *
+ * A kilometre across the screen is not close, and it was the closest the map
+ * would go: pressing zoom-in a fourth time past the tenth did nothing. 410 m
+ * is a summit filling the frame, and it is about as far as the data goes —
+ * the elevation grid is 160 samples across the field, so the terrain has no
+ * shape finer than about 200 m, and the satellite drape is between 1.6 and
+ * 3.3 metres a pixel depending on the resort. Past here the mountain is being
+ * magnified rather than resolved, and it looks it.
+ *
+ * The pan limit grows with the excess zoom, so this also buys the reach to
+ * bring that summit to the middle of the screen once you are in on it.
+ */
+const ZOOM_MAX = 48;
+/*
+ * Navigating: you, put on the screen, at a fixed scale, facing your way.
+ *
+ * The Google Maps model rather than a map of your day. What this replaces
+ * framed the whole leg from its midpoint, a box `field.span * 0.13` on a
+ * side — 7.8 KILOMETRES at Kronplatz — so a six kilometre lift arrived as a
+ * thread across a view of the massif and the one thing the screen exists to
+ * say, go that way, was the thing you could not read off it.
+ *
+ * Placed rather than fitted, and that part matters. Fitting a small box of
+ * ground looks like the same thing and is not: `toUnit` multiplies altitude
+ * by VERT_EXAGGERATION and, at this pitch, sin(72) of it lands in the
+ * vertical span, so the framing of a five hundred metre box is decided by how
+ * steep it is rather than by how long. Measured over three consecutive legs
+ * at Kronplatz, the position came out at 77%, 52% and MINUS 27% down the
+ * screen — off the top — because one leg was a lift up, one a traverse and
+ * one a descent. A navigation camera cannot have that: you are always in the
+ * same place on the glass.
+ *
+ * So: NAV_ACROSS metres of ground across the width of the frame, you at
+ * NAV_ANCHOR down the part of it that is not covered by the instruction or
+ * the button, and the way you are about to go running straight up.
+ */
+const NAV_ACROSS = 340;
+const NAV_ANCHOR = 0.74;
+/**
+ * How much of the day ahead is drawn as the route while navigating.
+ *
+ * The leg you are on and the one after it. The rest of the day is still
+ * drawn, in the treatment already-skied legs get, because at NAV_ACROSS the
+ * day comes back through the same junctions several times and four hundred
+ * metres of screen was carrying eight legs at full weight — a tangle in which
+ * the one you are actually on is not findable. Which is the opposite of what
+ * this screen is for: the immediate next step, and enough of what follows to
+ * know which way you leave the junction ahead.
+ */
+const NAV_LOOKAHEAD = 1;
+
+/**
+ * Is this the navigate screen?
+ *
+ * A point camera with an aim and a route on the map is only ever navigation:
+ * every other screen is a bounds camera, or a point camera with no aim. Asked
+ * by the camera, by the route drawing and by the recentre button, and hoisted
+ * here so those three cannot drift apart — the recentre button going somewhere
+ * the camera would not is exactly the bug it used to have.
+ */
+const isFollowing = (props) =>
+  Boolean(
+    props?.camera?.kind === "point" &&
+    props.camera.center &&
+    props.camera.aim &&
+    props.route?.features?.length
+  );
+
+/**
+ * What zoom the label tiers are told they are at while navigating.
+ *
+ * The navigation camera puts its magnification in the focal length rather than
+ * in `v.zoom` — that is what lets it place you at a fixed ground scale — so
+ * `v.zoom` there is 1 while about four hundred metres of mountain is on
+ * screen. Every label budget reads `v.zoom`, so they all thought they were
+ * looking at the whole massif: below NAME_ZOOM, which means the runs went
+ * unnamed on the one screen whose job is to tell you which run you are on.
+ *
+ * A number rather than a conversion, because navigating wants its own answer
+ * anyway. The tiers were tuned against how much of the mountain is in frame,
+ * and here the frame runs from your ski tips to the horizon: generous budgets
+ * would name everything in the compressed strip at the top. Just over
+ * NAME_ZOOM turns the run names on and keeps the rest to the few things
+ * actually near you.
+ */
+const NAV_LABEL_ZOOM = 2.2;
+
+/**
+ * And how far you may push it before the recentre button has work to do.
+ *
+ * Half a frame each way. Enough to see what is off the edge, not enough to
+ * lose yourself: this is the one screen where the map has a job other than
+ * being looked at.
+ */
+const NAV_PAN = 0.5;
+/**
+ * How far over the camera leans while navigating.
+ *
+ * Pitch is measured from straight down, so this is well over towards the
+ * ground: the opening composition's 46 looks down ON the mountain, which is
+ * right for choosing a day and wrong for skiing one. 72 puts the piste
+ * running away up the screen the way it does out of your own goggles.
+ */
+const NAV_PITCH = 72;
+
 /** How far past the frame the subject may be pushed, as a share of the frame. */
 /**
  * How far past the wall a push is allowed, as a share of the frame.
@@ -919,21 +1034,82 @@ export default function FallbackTerrain({
     return () => clearInterval(tick);
   }, []);
 
+  /*
+   * The framing the screen you are on actually means.
+   *
+   * Two answers, because the screens want different things. Exploring, it is
+   * the opening composition: the whole cut-out, looked down on from 46
+   * degrees. Navigating, it is you, low in the frame, looking along the way
+   * you are about to go — and going back to the mountain-top view there would
+   * undo the whole point of the follow camera, which is what the recentre
+   * button used to do.
+   *
+   * Assigned during render rather than held in a `useCallback`, so the two
+   * effects below both see the current props without either of them having to
+   * list them. Same idiom as `propsRef` above, for the same reason.
+   */
+  const homeView = useRef(null);
+  homeView.current = () => {
+    const f = fieldRef.current;
+    const cam = propsRef.current.camera;
+    if (f && isFollowing(propsRef.current)) {
+      const here = f.proj.project(cam.center[1], cam.center[0]);
+      const there = f.proj.project(cam.aim[1], cam.aim[0]);
+      const fx = there.x - here.x;
+      const fz = there.z - here.z;
+      if (fx || fz) {
+        /*
+         * The bearing that puts the way you are going straight up the screen.
+         *
+         * toUnit rotates the ground by the bearing and reads `rx` as screen
+         * right and `rz` as into the distance, so a direction runs up the
+         * screen when rx = 0, which is bearing = atan2(dx, dz). Sanity check:
+         * north is -z here, so travelling north gives atan2(0, -1) = 180,
+         * which is NORTH_UP.
+         */
+        Object.assign(view.current, {
+          bearing: (Math.atan2(fx, fz) * 180) / Math.PI,
+          pitch: NAV_PITCH,
+          zoom: 1,
+          targetZoom: 1,
+          panX: 0,
+          panY: 0,
+        });
+        dirty.current = true;
+        return;
+      }
+    }
+    Object.assign(view.current, HOME, { targetZoom: HOME.zoom, panX: 0, panY: 0 });
+    dirty.current = true;
+  };
+
+  /*
+   * Re-aim on every leg.
+   *
+   * `doneThrough` is the leg index while navigating and -1 everywhere else,
+   * so this fires on the way in and once per "Reached", and never while the
+   * map is merely being looked at. Between legs the camera is left exactly
+   * where the skier put it: turning to look at something and having the map
+   * snap back under you is worse than a stale bearing.
+   */
+  const navLeg = isFollowing({ camera, route }) ? camera.doneThrough : null;
+  useEffect(() => {
+    if (navLeg === null) return;
+    homeView.current?.();
+  }, [navLeg]);
+
   useEffect(() => {
     if (!controlRef) return;
     controlRef.current = {
       orbit: (deg) => { view.current.bearing += deg; dirty.current = true; },
       // Two controls, two meanings, the way a map app has them. The compass
       // faces north and does nothing else to the framing you have chosen; the
-      // recentre goes back to the opening composition, bearing and all.
+      // recentre goes back to the framing the screen means, bearing and all.
       resetNorth: () => {
         view.current.bearing = NORTH_UP;
         dirty.current = true;
       },
-      resetView: () => {
-        Object.assign(view.current, HOME, { targetZoom: HOME.zoom, panX: 0, panY: 0 });
-        dirty.current = true;
-      },
+      resetView: () => homeView.current?.(),
       zoom: (delta) => {
         const v = view.current;
         v.targetZoom = clampZoom(v.targetZoom * (delta > 0 ? 1.32 : 0.76));
@@ -1123,59 +1299,133 @@ export default function FallbackTerrain({
 
     /** World points the camera should keep in shot. */
     const targets = () => {
-      const { route: r, camera: cam } = propsRef.current;
+      const { route: r } = propsRef.current;
       // What the camera is pointed at, which is a separate question from
-      // whether the slab is drawn. Order matters and all three cases are live.
+      // whether the slab is drawn.
       //
-      // Navigating asks for a point and has a route, so it frames the leg.
-      // Explore asks for a point too, at the resort centre, but has no route:
-      // framing tightly there would put the cut-out's own sides off screen,
-      // where they project across the view instead of bounding it, so it falls
-      // through to the whole mountain.
+      // A route is the subject wherever there is one. Letting the slab force
+      // the whole mountain into shot made choose a postage stamp, since the
+      // sheet takes most of the height. Explore has no route and gets the
+      // whole mountain: framing the resort tightly there would put the
+      // cut-out's own sides off screen, where they project across the view
+      // instead of bounding it.
       //
-      // A route is the subject wherever else there is one. Letting the slab
-      // force the whole mountain into shot made choose a postage stamp, since
-      // the sheet takes most of the height.
-      if (cam?.kind === "point" && cam.center && r?.features?.length) {
-        // Navigating a leg: frame tightly around that leg.
-        const [lon, lat] = cam.center;
-        const { x, z } = field.proj.project(lat, lon);
-        const reach = field.span * 0.13;
-        return [
-          [x - reach, field.sample(x - reach, z), z - reach],
-          [x + reach, field.sample(x + reach, z), z + reach],
-          [x - reach, field.sample(x - reach, z + reach), z + reach],
-          [x + reach, field.sample(x + reach, z - reach), z - reach],
-        ];
-      }
+      // Navigating does not come through here at all — `fit` hands off to
+      // navWindow before asking for a subject. If that ever bails, on a
+      // position that projects to a non-finite point, the route is the right
+      // thing to fall back to and it is what happens.
       if (r?.features?.length) return routeTargets(r);
       return whole();
     };
 
+    /**
+     * The zoom the label tiers work from, which is not always the view's.
+     *
+     * See NAV_LABEL_ZOOM. Every tier asks through here so that they cannot
+     * disagree about which screen they are on: a run name tier that thinks it
+     * is zoomed in and a hut tier that thinks it is zoomed out would fight
+     * over the same pixels.
+     */
+    const labelZoom = (v) =>
+      isFollowing(propsRef.current) ? NAV_LABEL_ZOOM : v.zoom;
+
+    /**
+     * Bring a pan back inside its wall, but only from rest.
+     *
+     * Anything already past the wall belongs to the spring in the frame loop:
+     * clamping it here instead snapped it back in one frame, which is the dead
+     * stop under your thumb that reads as the app having stopped listening.
+     */
+    const settle = (x, lim) =>
+      Math.abs(x) > lim + 0.5 ? x : Math.max(-lim, Math.min(lim, x));
+
+    /** The insets the chrome leaves, which both cameras below frame inside. */
+    const band = () => {
+      const padX = 26;
+      const padTop = 74;
+      const padBottom = 24;
+      const top = propsRef.current.viewportTop;
+      const visibleH = Math.max(180, height - propsRef.current.viewportBottom - top);
+      return {
+        padX,
+        top,
+        padTop,
+        availW: width - padX * 2,
+        availH: visibleH - padTop - padBottom,
+      };
+    };
+
+    /**
+     * The navigation camera: you, on the glass, at a fixed ground scale.
+     *
+     * Not a fit. `fit` below solves a focal length that makes some subject
+     * fill the frame, which is the right question on every other screen and
+     * the wrong one here — see NAV_ACROSS for what fitting a small box of
+     * ground actually does on a slope. This solves the two things a follow
+     * camera is actually specified by:
+     *
+     *   f   so that NAV_ACROSS metres of ground across your own position
+     *       covers the width of the frame
+     *   ox  so that your position lands on the anchor
+     *
+     * A lateral metre at depth d covers f/(span*1.45 + d) pixels, straight out
+     * of toUnit's perspective divide, so the first is one line. The second is
+     * the projection read backwards.
+     *
+     * Returns null when this is not the navigation screen, and the caller
+     * falls through to the framing camera.
+     */
+    const navWindow = (v) => {
+      if (!isFollowing(propsRef.current)) return null;
+      const cam = propsRef.current.camera;
+
+      const here = field.proj.project(cam.center[1], cam.center[0]);
+      const p = unit(here.x, field.sample(here.x, here.z), here.z, v);
+      if (!Number.isFinite(p.u) || !Number.isFinite(p.v)) return null;
+
+      const { padX, top, padTop, availW, availH } = band();
+      const metresPerUnit = field.span * 1.45 + p.depth;
+      const f = (availW * metresPerUnit * v.zoom) / NAV_ACROSS;
+
+      // Centred across, low down: the ground you are about to cross gets the
+      // rest of the screen.
+      const ax = padX + availW / 2;
+      const ay = top + padTop + availH * NAV_ANCHOR;
+
+      const limitX = availW * NAV_PAN;
+      const limitY = availH * NAV_PAN;
+      if (!v.dragging) {
+        v.panX = settle(v.panX, limitX);
+        v.panY = settle(v.panY, limitY);
+      }
+      v.panLimit = { x: limitX, y: limitY };
+      // The anchor is what zoomAbout has to hold a screen point against here,
+      // the way the frame centre is on the other camera.
+      v.frame = { ax, ay };
+
+      return {
+        f,
+        ox: ax - p.u * f + v.panX,
+        oy: ay - p.v * f + v.panY,
+        panX: v.panX,
+        panY: v.panY,
+      };
+    };
+
     /** Solve focal length and offset so the targets fill the visible area. */
     const fit = (v) => {
+      const nav = navWindow(v);
+      if (nav) return nav;
       const pts = targets().map(([x, y, z]) => unit(x, y, z, v));
       let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
       for (const p of pts) {
         u0 = Math.min(u0, p.u); u1 = Math.max(u1, p.u);
         v0 = Math.min(v0, p.v); v1 = Math.max(v1, p.v);
       }
-      // Chrome covers the bottom, and while navigating the top too. Frame the
+      // Chrome covers the bottom of every screen that has any. Frame the
       // subject in what is left, but keep the terrain drawing full-bleed
       // behind it: a letterboxed mountain looks broken.
-      // The chrome insets are taken out once, in visibleH. padTop used to add
-      // viewportTop on top of that, counting it twice: while navigating, where
-      // the instruction panel is 210px tall, the subject was squeezed into a
-      // 238px band instead of 448px and centred 80px too high. That is why the
-      // map was a small model floating in sky there and looked right on
-      // explore, which has no top inset at all.
-      const padX = 26;
-      const padTop = 74;
-      const padBottom = 24;
-      const top = propsRef.current.viewportTop;
-      const visibleH = Math.max(180, height - propsRef.current.viewportBottom - top);
-      const availW = width - padX * 2;
-      const availH = visibleH - padTop - padBottom;
+      const { padX, top, padTop, availW, availH } = band();
 
       const spanU = Math.max(u1 - u0, 1e-6);
       const spanV = Math.max(v1 - v0, 1e-6);
@@ -1232,11 +1482,6 @@ export default function FallbackTerrain({
       // release, because a dead stop under your thumb is what reads as broken.
       // Google Earth has no wall at all; this is the smallest wall that still
       // stops you throwing the mountain away.
-      // Anything still past the wall belongs to the spring in the frame loop.
-      // Clamping it here instead snapped it back in one frame, which is the
-      // dead stop this was meant to replace.
-      const settle = (x, lim) =>
-        Math.abs(x) > lim + 0.5 ? x : Math.max(-lim, Math.min(lim, x));
       if (!v.dragging) {
         v.panX = settle(v.panX, limitX);
         v.panY = settle(v.panY, limitY);
@@ -2081,7 +2326,7 @@ export default function FallbackTerrain({
        * anything is still on screen, so the same names fade back out instead
        * of blinking off.
        */
-      const zoomOk = v.zoom >= NAME_ZOOM;
+      const zoomOk = labelZoom(v) >= NAME_ZOOM;
       if (!zoomOk && !anyFading("r:")) return placed;
       const hasRoute = Boolean(propsRef.current.route?.features?.length);
       ctx.font = "600 10px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
@@ -2168,7 +2413,7 @@ export default function FallbackTerrain({
         return sum + m;
       }, 0);
       const runBudget = Math.round(
-        RUN_NAME_BASE_COUNT * Math.max(1, v.zoom - NAME_ZOOM + 1) ** RUN_NAME_ZOOM_POWER);
+        RUN_NAME_BASE_COUNT * Math.max(1, labelZoom(v) - NAME_ZOOM + 1) ** RUN_NAME_ZOOM_POWER);
       /*
        * Ranked, and the budget counted against what actually gets written.
        *
@@ -2517,14 +2762,58 @@ export default function FallbackTerrain({
       // Split once, drawn four times. The route is four concentric strokes and
       // every one of them has to break at the same place, or the casing draws
       // the stretch the ridge is hiding.
-      const lines = r.features.map((f) => ({
-        props: f.properties,
-        runs: visibleRuns(toScreen(f.geometry.coordinates, v, cam)),
-      }));
+      /*
+       * Not depth tested while navigating, and that is deliberate.
+       *
+       * A mesh cell is a fixed piece of ground — 167 metres at Monterosa —
+       * and at NAV_ACROSS the camera is looking along the surface at a
+       * grazing angle, so the facet you are standing on projects over most of
+       * the screen and everything beyond its far edge is judged to be behind
+       * the mountain. Measured: on one leg all fifteen of its points were in
+       * frame and NONE of them were drawn. The height field simply does not
+       * have the resolution to answer "can I see the piste under my own skis"
+       * and the honest thing is to stop asking it. The network around you
+       * keeps its occlusion, so the mountain still reads as solid; the line
+       * you are following is the one thing that must never be hidden.
+       */
+      const flat = isFollowing(propsRef.current);
+      const lines = r.features.map((f) => {
+        const pts = toScreen(f.geometry.coordinates, v, cam);
+        return {
+          props: f.properties,
+          runs: flat ? (pts.length > 1 ? [pts] : []) : visibleRuns(pts),
+        };
+      });
+      /*
+       * How much of the route actually got drawn.
+       *
+       * There is no other way to ask. The route is four concentric strokes on
+       * a canvas, so a check cannot query it, and "is the route on screen"
+       * answered by projecting its coordinates says nothing about whether the
+       * depth test kept them: on the navigate screen every point of the leg
+       * was in frame and none of it was being painted.
+       */
+      if (mapTest) {
+        window.__skisRouteDrawn = lines.map((l) => ({
+          i: l.props.i,
+          leg: l.props.leg,
+          kind: l.props.kind,
+          runs: l.runs.length,
+          pts: l.runs.reduce((n, seg) => n + seg.length, 0),
+        }));
+      }
       const pass = (colour, lw, dash) => {
         for (const l of lines) for (const seg of l.runs) stroke(seg, colour(l), lw, dash);
       };
-      const dimmed = (l) => l.props.i < done;
+      // `leg`, not `i`. `done` is a leg index and there are fewer legs than
+      // segments, so comparing it against the segment index left part of the
+      // stretch you had just skied undimmed and dimmed part of the one ahead.
+      //
+      // And navigating, the far end of the day steps back too: see
+      // NAV_LOOKAHEAD. Elsewhere the whole route is the subject and all of it
+      // is drawn at full weight.
+      const ahead = flat ? done + NAV_LOOKAHEAD : Infinity;
+      const dimmed = (l) => l.props.leg < done || l.props.leg > ahead;
       // Casing first, as one continuous object: the whole day reads at a glance.
       pass((l) => (dimmed(l) ? "rgba(11,26,36,0.12)" : "rgba(11,26,36,0.28)"), 12 * k);
       pass((l) => (dimmed(l) ? DIM_ACCENT : ACCENT_LINE), 9.5 * k);
@@ -2622,7 +2911,7 @@ export default function FallbackTerrain({
        * share of what is left. A steep curve buys nothing and costs legibility
        * at exactly the zoom people spend most of their time at.
        */
-      const placeBudget = Math.round(PLACE_BASE_COUNT * v.zoom ** PLACE_ZOOM_POWER);
+      const placeBudget = Math.round(PLACE_BASE_COUNT * labelZoom(v) ** PLACE_ZOOM_POWER);
 
       // The chrome is DOM drawn over this canvas, so anything the declutterer
       // does not know about wins the pixels: "Champoluc" rendered half under
@@ -3070,7 +3359,7 @@ export default function FallbackTerrain({
        * Below the threshold the pass keeps running while anything is still on
        * screen, and stops once the last one has gone.
        */
-      const namesOn = v.zoom >= NAME_ZOOM;
+      const namesOn = labelZoom(v) >= NAME_ZOOM;
       if (labelsOnly && !namesOn && !anyFading("n:")) return placed;
       const named = [];
       const nameLit = mapTest ? [] : null;
@@ -3098,7 +3387,7 @@ export default function FallbackTerrain({
        * one is what left the far view crowded, because at that distance the
        * markers are small and a great many of them fit.
        */
-      const wanted = Math.round(HUT_BASE_COUNT * v.zoom ** HUT_ZOOM_POWER);
+      const wanted = Math.round(HUT_BASE_COUNT * labelZoom(v) ** HUT_ZOOM_POWER);
       /*
        * With a dead band, so a hair of zoom does not add and remove one.
        *
@@ -4161,20 +4450,42 @@ export default function FallbackTerrain({
      *
      * Done by projecting the anchor before and after and putting the
      * difference into the pan, which is added in screen space at the very end.
-     * Both projections use the same camera, so the pan already in it cancels
-     * and only the turn is left.
+     *
+     * Each projection uses the camera solved from the view AS IT STANDS, and
+     * that is the whole of it. Both used to use `lastCam` — one camera, from
+     * the last frame the page drew — on the reasoning that a shared camera
+     * makes the pan already in it cancel. The pan does cancel. The FRAMING
+     * does not: the camera fits the resort to the viewport every frame, so
+     * turning the bearing changes the subject's own extent on screen and with
+     * it the focal length and the centring. A correction computed at the old
+     * focal length is the wrong size for the frame that then gets drawn, and
+     * the error scales with how much of the screen a metre covers — which is
+     * exactly the zoom.
+     *
+     * Measured on Kronplatz, a forty degree twist about a point 45% down the
+     * screen, drift of the ground under the fingers:
+     *
+     *   zoom 1     28px  ->   1px
+     *   zoom 5    120px  ->   3px
+     *   zoom 16   301px  ->   5px      (on a 430px screen)
+     *
+     * Three hundred pixels is seventy per cent of the screen width, which is
+     * the "it over-rotates" everyone means: the twist itself was small, and
+     * the mountain slid out from under it. `fit` is eighty node projections
+     * and no drawing, so solving it twice per move costs nothing next to a
+     * frame — the pan handler does the same thing for the same reason.
      */
     const rotateAbout = (v, dDeg) => {
       const anchor = gesture?.anchor;
-      const cam = lastCam.current;
       const proj = projectRef.current;
-      if (!anchor || !cam || !proj || !dDeg) {
+      if (!anchor || !proj || !dDeg || !v.frame) {
         v.bearing += dDeg;
         return;
       }
-      const before = proj(anchor.x, anchor.y, anchor.z, v, cam);
+      const before = proj(anchor.x, anchor.y, anchor.z, v, fit(v));
       v.bearing += dDeg;
-      const after = proj(anchor.x, anchor.y, anchor.z, v, cam);
+      const after = proj(anchor.x, anchor.y, anchor.z, v, fit(v));
+      if (!Number.isFinite(before.x) || !Number.isFinite(before.y)) return;
       if (!Number.isFinite(after.x) || !Number.isFinite(after.y)) return;
       v.panX += before.x - after.x;
       v.panY += before.y - after.y;
@@ -4472,7 +4783,7 @@ export default function FallbackTerrain({
             // other rotated the mountain against the fingers. Pinned by "a
             // clockwise twist turns the mountain clockwise" in features, and by
             // the bearing check in field.test.js that this depends on.
-            rotateAbout(v, (-(turn * 180) / Math.PI) * rotateRate(v.zoom));
+            rotateAbout(v, -(turn * 180) / Math.PI);
           }
           if (gesture.zooming) {
             zoomAbout(v, dist / (gesture.dist || dist), c.x, c.y);

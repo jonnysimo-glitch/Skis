@@ -191,6 +191,32 @@ const nowMinutes = () => {
   return d.getHours() * 60 + d.getMinutes();
 };
 
+/**
+ * The direction you leave a leg on, as a point a fifth of the way down it.
+ *
+ * Aiming at the far node points through the mountain when a piste snakes: you
+ * set off one way and the arrow says another. A fifth of the way along the
+ * leg's own geometry is the direction you actually leave in.
+ *
+ * Used twice — by the position arrow and by the navigation camera — which is
+ * why it lives here rather than inside either of them. The two disagreeing
+ * would be the arrow pointing one way and the camera facing another.
+ */
+function aimAlong(routeGeo, step, fallback = null) {
+  const line = routeGeo?.features?.find((f) => f.properties.leg === step);
+  const pts = line?.geometry?.coordinates ?? [];
+  if (pts.length < 2) return fallback;
+  const seg = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += seg(pts[i - 1], pts[i]);
+  let run = 0;
+  for (let i = 1; i < pts.length; i++) {
+    run += seg(pts[i - 1], pts[i]);
+    if (run >= total * 0.2) return pts[i];
+  }
+  return pts[pts.length - 1];
+}
+
 export default function App() {
   // ---- resort -------------------------------------------------------------
   const [resortId, setResortId] = useState(() => load("resortId"));
@@ -333,6 +359,9 @@ export default function App() {
   // Measured, not assumed: the navigate footer grows when the overrun banner
   // appears. NAV_FOOT_H is only the starting guess for the first frame.
   const [navFoot, setNavFoot] = useState(NAV_FOOT_H);
+  // Same for the instruction header, which opens minimised: see onHeadHeight
+  // in NavigateScreen. NAV_HEAD_H is the first frame's guess.
+  const [navHead, setNavHead] = useState(NAV_HEAD_H);
   // Friends live in storage; this counter only asks React to render again, so
   // the list is re-read. Mirroring it into state would give two truths, and
   // the one the switch wrote to would not be the one the list rendered from.
@@ -537,29 +566,9 @@ export default function App() {
         // finishes at. Passed as a position rather than a heading because the
         // direction on screen depends on where the camera is.
         if (screen === "navigate" && key === legsOf(shownRoute)[step]?.from) {
-          // Along the leg, not at the end of it.
-          //
-          // Aiming at the far node points through the mountain when a piste
-          // snakes: you set off one way and the arrow says another. This walks
-          // a fifth of the way down the leg's own geometry, which is the
-          // direction you actually leave in.
-          const line = routeGeo.features.find((f) => f.properties.i === step);
-          const pts = line?.geometry?.coordinates ?? [];
-          let aim = null;
-          if (pts.length >= 2) {
-            const seg = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
-            let total = 0;
-            for (let i = 1; i < pts.length; i++) total += seg(pts[i - 1], pts[i]);
-            let run = 0;
-            for (let i = 1; i < pts.length; i++) {
-              run += seg(pts[i - 1], pts[i]);
-              if (run >= total * 0.2) { aim = pts[i]; break; }
-            }
-            aim = aim || pts[pts.length - 1];
-          } else {
-            const to = NODES[legsOf(shownRoute)[step].to];
-            if (to) aim = [to.lon, to.lat];
-          }
+          // Along the leg, not at the end of it. See aimAlong.
+          const to = NODES[legsOf(shownRoute)[step].to];
+          const aim = aimAlong(routeGeo, step, to ? [to.lon, to.lat] : null);
           return { role: "now", ...(aim ? { aim } : {}) };
         }
         return key === startKey ? { role: "start" } : { role: "finish" };
@@ -576,9 +585,20 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!window.location.search.includes("maptest=1")) return;
-    const line = routeGeo.features.find((f) => f.properties.i === step);
+    const line = routeGeo.features.find((f) => f.properties.leg === step);
+    // `at` is where the camera is placed, which is NOT coords[0]: a lift is
+    // drawn as a bowed arc so the cable does not sit under the piste beside
+    // it, so its geometry starts a little off its own station.
+    const leg = screen === "navigate" ? legsOf(shownRoute ?? {})[step] : null;
+    const from = leg ? NODES[leg.from] : null;
     window.__skisNavLeg =
-      screen === "navigate" && line ? { coords: line.geometry.coordinates } : null;
+      screen === "navigate" && line
+        ? {
+            i: step,
+            coords: line.geometry.coordinates,
+            ...(from ? { at: [from.lon, from.lat] } : {}),
+          }
+        : null;
   }, [screen, step, routeGeo]);
 
   const focus = useMemo(() => {
@@ -601,22 +621,30 @@ export default function App() {
       const leg = legsOf(shownRoute)[step];
       const from = NODES[leg.from];
       const to = NODES[leg.to];
+      /*
+       * Where you are and which way you are going, not the middle of the leg.
+       *
+       * The map places itself at `center` and faces along `aim` — see
+       * NAV_ACROSS in FallbackTerrain. Centring the LEG instead, which is what
+       * this did, is a different screen: a six kilometre lift came out as a
+       * thread across a view of the whole massif, because the framing had to
+       * hold both ends of it at once. What a skier standing at the bottom of
+       * that lift needs is the bottom of that lift.
+       */
       return {
         kind: "point",
-        center: [(from.lon + to.lon) / 2, (from.lat + to.lat) / 2],
-        zoom: 13.4,
-        pitch: 66,
+        center: [from.lon, from.lat],
+        aim: aimAlong(routeGeo, step, to ? [to.lon, to.lat] : null),
         doneThrough: step,
-        // The instruction covers the top and the buttons the bottom, so the
-        // leg has to be framed in the strip that is left.
-        padding: { top: NAV_HEAD_H, bottom: NAV_FOOT_H, left: 24, right: 24 },
       };
     }
     if (shownRoute) {
       return { kind: "bounds", bbox: routeBounds(shownRoute), pitch: 58, doneThrough: -1 };
     }
     return null;
-  }, [screen, shownRoute, step, resort]);
+    // routeGeo, because the navigation camera now aims along the leg's own
+    // geometry rather than at its far node.
+  }, [screen, shownRoute, step, resort, routeGeo]);
 
   // Floating map chrome sits just above the sheet. When the sheet is dragged up
   // over most of the map there is nothing left to control, so it gets out of
@@ -965,7 +993,7 @@ export default function App() {
             navigating ? navFoot : exploring ? PLAN_BUTTON_H + 28 : sheetHeight
           }
           block
-          viewportTop={navigating ? NAV_HEAD_H : 0}
+          viewportTop={navigating ? navHead : 0}
           imagery={skin}
           onScale={setMapScale}
         />
@@ -1299,6 +1327,7 @@ export default function App() {
           onReplan={onReplan}
           onAbandon={() => setScreen("detail")}
           onFootHeight={setNavFoot}
+          onHeadHeight={setNavHead}
           onExpand={setNavExpanded}
         />
       )}

@@ -123,6 +123,26 @@ export const Runs = (p) => (
 export const Lift = (p) => (
   <svg {...base} {...p}><path d="M2.5 5.5 17.5 9" /><path d="M8 7.3v3.2" /><rect x="5" y="10.5" width="6" height="5" rx="1.4" /></svg>
 );
+/**
+ * The brand mark, at icon size.
+ *
+ * The same three strokes as public/favicon.svg, scaled onto this grid so the
+ * wordmark carries the app's own icon rather than a dot that could belong to
+ * anything. Two colours, which is why it does not simply take `currentColor`:
+ * the snow flanks inherit whatever text colour they sit in, and the accent
+ * flank is pinned to the brand, because that one stroke is the whole idea.
+ *
+ * Heavier than the 1.7 the rest of this file uses — 5.8 units of the 64 grid
+ * scale to 2.2 here — and it has to be: at wordmark size a 1.7 accent flank
+ * between two snow ones reads as a gap rather than as a line.
+ */
+export const Brand = (p) => (
+  <svg {...base} strokeWidth="2.2" {...p}>
+    <path d="M2 15.5 L6.7 8.9 L9 12.4" />
+    <path d="M12.9 7.7 L18 15.5" />
+    <path d="M7.9 15.5 L12.9 7.7" stroke="var(--accent-line)" />
+  </svg>
+);
 export const Peak = (p) => (
   <svg {...base} {...p}><path d="m2.5 16 5-8 2.5 4L14 5l4 11z" /><path d="M12 8.6 14 5l2 3.6z" fill="currentColor" stroke="none" /></svg>
 );

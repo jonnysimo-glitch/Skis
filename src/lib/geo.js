@@ -6,6 +6,7 @@
  */
 
 import { NODES } from "../active-resort.js";
+import { joinsLeg } from "../solver.js";
 
 export const PISTE_COLOUR = {
   blue: "#1d6fcc",
@@ -99,26 +100,43 @@ export function edgeCoords(edge) {
 }
 
 /**
- * One Feature per segment, in route order. Segment index rides along so the
- * navigate screen can dim what is already skied.
+ * One Feature per segment, in route order.
+ *
+ * Two indices ride along, and the difference between them matters. `i` is the
+ * segment: which graph edge this is, which is what the map draws. `leg` is
+ * which thing-to-do it belongs to, which is what the navigate screen counts
+ * and what "leg 3 of 59" means — consecutive edges of the same named piste
+ * are one leg, so a Monterosa day is 86 segments and 59 legs.
+ *
+ * Anything holding a leg index has to use `leg`. Looking a leg index up among
+ * the segments lands on a different part of the mountain the moment the first
+ * merge happens: measured on that day, leg 3 found segment 3, which is the
+ * last piece of the leg BEFORE it.
  */
 export function routeToGeoJSON(route) {
   if (!route) return { type: "FeatureCollection", features: [] };
+  let leg = -1;
+  let prev = null;
   return {
     type: "FeatureCollection",
-    features: route.segments.map((edge, i) => ({
-      type: "Feature",
-      id: i,
-      properties: {
-        i,
-        kind: edge.kind,
-        name: edge.name,
-        difficulty: edge.difficulty || null,
-        link: Boolean(edge.link),
-        colour: colourFor(edge),
-      },
-      geometry: { type: "LineString", coordinates: edgeCoords(edge) },
-    })),
+    features: route.segments.map((edge, i) => {
+      if (!joinsLeg(prev, edge)) leg++;
+      prev = edge;
+      return {
+        type: "Feature",
+        id: i,
+        properties: {
+          i,
+          leg,
+          kind: edge.kind,
+          name: edge.name,
+          difficulty: edge.difficulty || null,
+          link: Boolean(edge.link),
+          colour: colourFor(edge),
+        },
+        geometry: { type: "LineString", coordinates: edgeCoords(edge) },
+      };
+    }),
   };
 }
 

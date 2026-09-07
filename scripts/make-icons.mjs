@@ -69,9 +69,19 @@ function png(width, height, rgba, alpha = true) {
   ]);
 }
 
+/** The app's own background, which the launch screen has to match exactly. */
 const INK = [10, 25, 34];
+/*
+ * The icon's plate is a gradient rather than flat ink.
+ *
+ * Two reasons, one of them not aesthetic: a flat #0a1922 square on a dark home
+ * screen has no edge, so the icon reads as a floating mountain with no
+ * container. A few stops of lift at the top give it a body. The range is
+ * narrow on purpose — this is a plate, not a sunset.
+ */
+const PLATE_TOP = [21, 49, 64];
+const PLATE_BOTTOM = [8, 19, 27];
 const SNOW = [233, 242, 247];
-const WHITE = [255, 255, 255];
 const ACCENT = [42, 196, 238];
 
 /** Signed distance to a rounded rectangle, for antialiased corners. */
@@ -99,16 +109,6 @@ function distToPolyline(px, py, pts) {
   return best;
 }
 
-function inPolygon(px, py, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
 /**
  * @param {number} size
  * @param {'rounded'|'maskable'|'square'} shape
@@ -121,14 +121,31 @@ function renderRGBA(size, shape = "rounded") {
   const maskable = shape === "maskable";
   const square = shape === "square";
   const rgba = Buffer.alloc(size * size * 4);
-  const S = size / 64;
   // Maskable icons must survive a circular crop, so shrink the artwork.
   const inset = maskable ? size * 0.14 : 0;
   const art = (v) => inset + (v * (size - inset * 2)) / 64;
+  /*
+   * The artwork's own scale, which is not size/64 once there is an inset.
+   *
+   * The stroke used to be scaled by size/64 while its endpoints were scaled by
+   * the inset grid, so the maskable icon drew a 5.8 unit stroke at 6.7 units
+   * and came out heavier than the icon next to it. Same number for both.
+   */
+  const A = (size - inset * 2) / 64;
 
-  const ridge = [[8, 48], [22, 24], [30, 36], [42, 14], [56, 48]].map(([x, y]) => [art(x), art(y)]);
-  const cap = [[42, 14], [49, 32], [35, 32]].map(([x, y]) => [art(x), art(y)]);
-  const route = [[8, 46], [17, 41], [26, 46], [34, 42], [45, 38], [58, 44]].map(([x, y]) => [art(x), art(y)]);
+  /*
+   * Two peaks, and the line down one of them. See public/favicon.svg for what
+   * the shape is and why; this is the same three strokes, rasterised.
+   *
+   * Round caps and joins come free from a distance field — a stroke is
+   * everywhere within half its width of the polyline — which is the reason
+   * this is drawn as distances rather than as filled polygons.
+   */
+  const HALF = 2.9; // half of the 5.8 stroke, in the 64 unit grid
+  const shape64 = (pts) => pts.map(([x, y]) => [art(x), art(y)]);
+  const smallPeak = shape64([[11, 44], [23, 27], [29, 36]]);
+  const bigFlank = shape64([[39, 24], [52, 44]]);
+  const routeFlank = shape64([[26, 44], [39, 24]]);
 
   const SS = 3; // supersample for smooth edges
   for (let y = 0; y < size; y++) {
@@ -144,13 +161,21 @@ function renderRGBA(size, shape = "rounded") {
           const radius = maskable || square ? 0 : size * 0.22;
           const bg = roundRect(px, py, size, size, radius);
           if (bg <= 0) {
-            colour = INK;
+            const t = Math.min(1, Math.max(0, py / size));
+            colour = [
+              PLATE_TOP[0] + (PLATE_BOTTOM[0] - PLATE_TOP[0]) * t,
+              PLATE_TOP[1] + (PLATE_BOTTOM[1] - PLATE_TOP[1]) * t,
+              PLATE_TOP[2] + (PLATE_BOTTOM[2] - PLATE_TOP[2]) * t,
+            ];
             alpha = 255;
           }
           if (alpha) {
-            if (distToPolyline(px, py, route) < 2.9 * S) colour = ACCENT;
-            else if (inPolygon(px, py, cap)) colour = WHITE;
-            else if (inPolygon(px, py, ridge)) colour = SNOW;
+            // The accent first, so where it meets the summit its cap is the
+            // one that survives and the apex stays a clean point.
+            const w = HALF * A;
+            if (distToPolyline(px, py, routeFlank) < w) colour = ACCENT;
+            else if (distToPolyline(px, py, bigFlank) < w) colour = SNOW;
+            else if (distToPolyline(px, py, smallPeak) < w) colour = SNOW;
           }
           if (alpha) {
             acc[0] += colour[0];

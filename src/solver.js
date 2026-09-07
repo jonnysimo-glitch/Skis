@@ -334,12 +334,29 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
  */
 export const legsOf = (route) => route?.legs ?? route?.segments ?? [];
 
+/**
+ * Whether an edge continues the leg before it, rather than starting a new one.
+ *
+ * Exported because the map has to agree with this. `segments` and `legs` are
+ * different lists — 86 and 59 on a Monterosa day — and the navigate screen
+ * counts legs while the route is drawn per segment, so anything that takes a
+ * leg index and looks it up among the segments is reading a different part of
+ * the mountain. It was: the heading arrow was aiming along the wrong segment
+ * and the dimming was greying the wrong stretch of the day. One rule, two
+ * callers; see routeToGeoJSON, which stamps each segment with its leg.
+ *
+ * Compared against the previous EDGE rather than the merged leg, which is the
+ * same test: joining requires the names to match, so a leg's name and kind are
+ * whatever its first edge had all the way through.
+ */
+export const joinsLeg = (last, edge) =>
+  Boolean(last) && last.kind === edge.kind && Boolean(edge.name) && last.name === edge.name;
+
 function mergeLegs(segments) {
   const legs = [];
   for (const edge of segments) {
     const last = legs[legs.length - 1];
-    const joinable =
-      last && last.kind === edge.kind && Boolean(edge.name) && last.name === edge.name;
+    const joinable = joinsLeg(last, edge);
     if (joinable) {
       last.min += edge.min;
       last.km = Math.round(((last.km || 0) + (edge.km || 0)) * 10) / 10;
