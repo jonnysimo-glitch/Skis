@@ -271,12 +271,24 @@ export function build(osm, { tolerance = 45, elevation }) {
       : t.amenity === "restaurant" ? "restaurant"
         : t.amenity === "cafe" ? "cafe"
           : t.shop === "ski" || t.shop === "rental" || t.amenity === "ski_rental" ? "rental"
-            : null;
+            : t.amenity === "parking" ? "parking"
+              : null;
+  /*
+   * A car park does not have to be named to be the one you want.
+   *
+   * Everything else here is somewhere you would say the name of. A car park is
+   * somewhere you point at, and OSM names maybe a third of them, so the ones
+   * with a capacity and no name get called after the base they serve rather
+   * than being thrown away. The naming happens at emit, where the bases are
+   * known.
+   */
   const places = elements
-    .filter((el) => el.tags?.name && KIND(el.tags))
+    .filter((el) => el.tags && KIND(el.tags) &&
+      (el.tags.name || KIND(el.tags) === "parking"))
     .map((el) => ({
-      name: label(el.tags.name),
+      name: el.tags.name ? label(el.tags.name) : null,
       kind: KIND(el.tags),
+      spaces: Number.parseInt(el.tags.capacity, 10) || null,
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
     }))

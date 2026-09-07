@@ -229,7 +229,12 @@ async function buildOne(id) {
     `${((box[2] - box[0]) * 78).toFixed(1)}x${((box[3] - box[1]) * 111).toFixed(1)}km, ` +
     `${Math.round(terrain.data.length / 1024)}KB`);
 
-  const module = emit({ id, meta: config, ...graph, terrain, fetchedAt: osm.fetchedAt });
+  // The raw ways go through so the place filter can measure to the pistes
+  // rather than to the junctions. See "On the mountain" in emit.mjs.
+  const module = emit({
+    id, meta: config, ...graph, ways: osm.elements ?? [],
+    terrain, fetchedAt: osm.fetchedAt,
+  });
   if (flag("dry")) {
     console.log(`\n  dry run, ${module.split("\n").length} lines not written`);
     return true;

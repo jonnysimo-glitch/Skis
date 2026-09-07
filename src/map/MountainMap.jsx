@@ -980,6 +980,8 @@ export default function MountainMap({
   // The baked elevation grid for this resort, if it has one.
   terrain = ACTIVE_TERRAIN,
   makeProjector = activeProjector,
+  /** Called with the place under a tap, so the app can open it. */
+  onPlace,
   // A satellite drape, or null for the drawn surface. See src/map/imagery.js.
   imagery = null,
   onScale,
@@ -993,8 +995,10 @@ export default function MountainMap({
   });
   const dirty = useRef(true);
   const lastCam = useRef(null);
+  /** The place markers the last frame drew, so a tap can hit-test them. */
+  const tappable = useRef([]);
   const projectRef = useRef(null);
-  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onScale });
+  const propsRef = useRef({ route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onScale, onPlace });
   const mapTest =
     typeof window !== "undefined" && window.location.search.includes("maptest=1");
 
@@ -1019,7 +1023,7 @@ export default function MountainMap({
     view.current.panY = 0;
   }
 
-  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onScale };
+  propsRef.current = { route, graph, pins, camera, viewportBottom, viewportTop, block, nodes, places, imagery, onScale, onPlace };
   dirty.current = true;
 
   // Test hook. Camera state lives in a ref and never reaches the DOM, so a
@@ -3220,7 +3224,11 @@ export default function MountainMap({
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.fill();
       ctx.lineWidth = 1.7;
-      ctx.strokeStyle = kind === "rental" ? "#2c8fb5" : "#c07a1e";
+      // Drive-to places share a blue; ski-to places share the warm brown. The
+      // ring is the first thing you read at eleven pixels, so it carries the
+      // distinction the glyph then names.
+      const drives = kind === "rental" || kind === "parking";
+      ctx.strokeStyle = drives ? "#2c8fb5" : "#c07a1e";
       ctx.stroke();
 
       ctx.save();
@@ -3228,9 +3236,16 @@ export default function MountainMap({
       ctx.lineWidth = 1.25;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      ctx.strokeStyle = kind === "rental" ? "#1d6f8f" : "#8a5510";
+      ctx.strokeStyle = drives ? "#1d6f8f" : "#8a5510";
       ctx.beginPath();
-      if (kind === "rental") {
+      if (kind === "parking") {
+        // A P. Every car park sign on earth, and the one glyph here that does
+        // not have to be learned.
+        ctx.moveTo(-1.5, 3.0); ctx.lineTo(-1.5, -3.0); ctx.lineTo(0.8, -3.0);
+        ctx.quadraticCurveTo(2.4, -3.0, 2.4, -1.3);
+        ctx.quadraticCurveTo(2.4, 0.4, 0.8, 0.4);
+        ctx.lineTo(-1.5, 0.4);
+      } else if (kind === "rental") {
         // Two skis, tips up.
         ctx.moveTo(-2.1, 2.6); ctx.lineTo(-1.1, -2.8);
         ctx.moveTo(1.1, 2.6); ctx.lineTo(2.1, -2.8);
@@ -3600,7 +3615,7 @@ export default function MountainMap({
           continue;
         }
 
-        drawn.push({ name, full, kind, alt, ...box });
+        drawn.push({ name, full, kind, alt, lat, lon, x: s.x, y: s.y, ...box });
         hutsDrawn.add(full);
         shownAt.set(full, frameNow);
       }
@@ -3610,7 +3625,13 @@ export default function MountainMap({
       if (mapTest && labelsOnly) {
         window.__skisPlaceNameLit = nameLit;
       }
-      if (!labelsOnly) lastShownCount = drawn.length;
+      if (!labelsOnly) {
+        lastShownCount = drawn.length;
+        // What is on the glass right now, for the tap handler. The markers
+        // are painted to a canvas, so there is nothing to hang a click on:
+        // hit testing has to be done against the same list that drew them.
+        tappable.current = drawn;
+      }
       if (mapTest && !labelsOnly) {
         window.__skisPlaces = drawn;
         // Everything the resort has, so a check can ask whether what got shown
@@ -4591,7 +4612,23 @@ export default function MountainMap({
      */
     const TAP_MS = 260;
     const TAP_SLOP = 12;
+    /** How near a fingertip has to land. A thumb is about 44px across. */
+    const TAP_REACH = 26;
     let lastTap = 0;
+    /** The place marker under a tap, or null. Nearest within reach wins. */
+    const nearestPlace = (sx, sy) => {
+      let best = null;
+      let near = TAP_REACH;
+      for (const place of tappable.current) {
+        const d = Math.hypot(place.x - sx, place.y - sy);
+        if (d < near) { near = d; best = place; }
+      }
+      return best
+        ? { name: place0(best), full: best.full, kind: best.kind,
+            alt: best.alt, lat: best.lat, lon: best.lon }
+        : null;
+    };
+    const place0 = (p) => p.full ?? p.name;
     let press = null;
     const down = (e) => {
       // Capture is an optimisation, not a requirement, and it throws for a
@@ -4855,7 +4892,29 @@ export default function MountainMap({
       // Only now is it known whether that press was a tap or a drag.
       if (press) {
         const still = Math.hypot(e.clientX - press.x, e.clientY - press.y) < TAP_SLOP;
-        lastTap = still && performance.now() - press.t < TAP_MS ? performance.now() : 0;
+        const tapped = still && performance.now() - press.t < TAP_MS;
+        /*
+         * A tap on a place opens it, and does not also count towards a double
+         * tap zoom.
+         *
+         * TAP_REACH is bigger than the marker: the disc is thirteen pixels
+         * across and a fingertip is about forty-four, so hit testing the disc
+         * itself asks for a precision nobody has with gloves on. Nearest wins
+         * rather than first, so two markers close together open the one you
+         * were actually going for.
+         */
+        const hit = tapped ? nearestPlace(e.clientX, e.clientY) : null;
+        if (hit) {
+          propsRef.current.onPlace?.(hit);
+          lastTap = 0;
+        } else {
+          // A tap on bare mountain puts the card away, which is what every map
+          // does and what a finger reaches for before it finds the close
+          // button. It still counts towards a double tap zoom: dismissing is
+          // not an action you took, it is one you stopped taking.
+          if (tapped) propsRef.current.onPlace?.(null);
+          lastTap = tapped ? performance.now() : 0;
+        }
         press = null;
       }
       // Let go mid-flick and the map should keep going and settle, the way it

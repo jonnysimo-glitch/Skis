@@ -15,6 +15,7 @@ import Sheet from "./ui/Sheet.jsx";
 import MountainMap from "./map/MountainMap.jsx";
 import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
 import { fieldBounds } from "./map/field.js";
+import { describe } from "./lib/places.js";
 
 // MapLibre is ~800KB and not needed until the map is on screen, so it is split
 // out. If the chunk cannot be fetched at all — offline before it was ever
@@ -61,7 +62,7 @@ import {
   routeBounds,
   nearestNode,
 } from "./lib/geo.js";
-import { Compass, Locate, Plus, Minus, Close, Info, Back, Mountain, Layers, ChevronUp, ChevronDown } from "./ui/Icons.jsx";
+import { Arrow, Back, ChevronDown, ChevronUp, Close, Compass, Info, Layers, Locate, Minus, Mountain, Plus } from "./ui/Icons.jsx";
 
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
@@ -202,6 +203,19 @@ const nowMinutes = () => {
  * why it lives here rather than inside either of them. The two disagreeing
  * would be the arrow pointing one way and the camera facing another.
  */
+/**
+ * Where to look this place up.
+ *
+ * Google's documented search URL takes free text, and text plus a centre is
+ * the only form that reliably lands on the right business: coordinates alone
+ * drop a pin in a snowfield with nothing attached to it, and a name alone
+ * finds the Rifugio Gabiet in somebody else's valley.
+ */
+function mapsLink(place) {
+  const q = encodeURIComponent(place.full ?? place.name ?? "");
+  return `https://www.google.com/maps/search/${q}/@${place.lat},${place.lon},16z`;
+}
+
 function aimAlong(routeGeo, step, fallback = null) {
   const line = routeGeo?.features?.find((f) => f.properties.leg === step);
   const pts = line?.geometry?.coordinates ?? [];
@@ -362,6 +376,15 @@ export default function App() {
   // Same for the instruction header, which opens minimised: see onHeadHeight
   // in NavigateScreen. NAV_HEAD_H is the first frame's guess.
   const [navHead, setNavHead] = useState(NAV_HEAD_H);
+  /*
+   * The place a finger last landed on, or null.
+   *
+   * Cleared whenever the screen changes: a card naming a restaurant is about
+   * the mountain you were looking at, and carrying it into navigation would
+   * put it over the instruction.
+   */
+  const [openPlace, setOpenPlace] = useState(null);
+  useEffect(() => setOpenPlace(null), [screen, resortId]);
   // Friends live in storage; this counter only asks React to render again, so
   // the list is re-read. Mirroring it into state would give two truths, and
   // the one the switch wrote to would not be the one the list rendered from.
@@ -996,6 +1019,7 @@ export default function App() {
           viewportTop={navigating ? navHead : 0}
           imagery={skin}
           onScale={setMapScale}
+          onPlace={setOpenPlace}
         />
       )}
     </>
@@ -1184,6 +1208,49 @@ export default function App() {
           </button>
         </div>
         ) : null
+      )}
+
+      {/*
+        * The place you tapped.
+        *
+        * Over the map rather than in a sheet: you are pointing at something on
+        * the mountain and the answer belongs next to it, not on a screen that
+        * replaces it. It sits where the map note sits, and above the scale bar
+        * for the same reason that does.
+        *
+        * The link goes out to Google Maps because that is where the opening
+        * hours, the photographs and the reviews are, and none of those are in
+        * OpenStreetMap. Searched by name and centred on the coordinates rather
+        * than by coordinates alone: a pin in a snowfield tells you nothing,
+        * and the name on its own can find the wrong branch in another valley.
+        */}
+      {onMountain && showSchematic && openPlace && (
+        <div
+          className="placecard"
+          style={{ bottom: chromeBottom + (mapScale ? SCALE_CLEARANCE : 0) }}
+        >
+          <div className="placecard__t">
+            <div className="placecard__n">{openPlace.full}</div>
+            <div className="placecard__k">
+              {describe(openPlace.full, openPlace.kind, openPlace.alt)}
+            </div>
+          </div>
+          <a
+            className="placecard__go"
+            href={mapsLink(openPlace)}
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Google Maps <Arrow width="14" height="14" />
+          </a>
+          <button
+            className="mapnote__x"
+            onClick={() => setOpenPlace(null)}
+            aria-label="Close"
+          >
+            <Close width="16" height="16" />
+          </button>
+        </div>
       )}
 
       {tab === "home" && (

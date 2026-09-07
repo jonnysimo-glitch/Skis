@@ -35,6 +35,7 @@ const BY_KIND = {
   restaurant: "Mountain restaurant",
   cafe: "Bar",
   rental: "Ski hire",
+  parking: "Parking",
 };
 
 /**
@@ -82,6 +83,10 @@ export function shortName(name) {
 export function describe(name, kind, alt) {
   const stripped = String(name || "").slice(0, String(name || "").length - shortName(name).length);
   const implied = IMPLIED.find(([re]) => re.test(stripped) || re.test(String(name || "")));
-  const what = kind === "rental" ? BY_KIND.rental : implied?.[1] ?? BY_KIND[kind] ?? "Mountain restaurant";
+  // A rental or a car park is what its kind says. Everything else can be read
+  // off its own name — "Rifugio Gabiet" is a hut whatever OSM tagged it.
+  const what = kind === "rental" || kind === "parking"
+    ? BY_KIND[kind]
+    : implied?.[1] ?? BY_KIND[kind] ?? "Mountain restaurant";
   return Number.isFinite(alt) ? `${what}, ${alt.toLocaleString()} m` : what;
 }

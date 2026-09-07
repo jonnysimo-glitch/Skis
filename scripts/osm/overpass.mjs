@@ -115,6 +115,16 @@ out center tags;
   nwr["shop"="sports"]["service:bicycle:rental"!~"."]["ski"="yes"](${box});
   nwr["amenity"="ski_rental"](${box});
 );
+out center tags;
+// Where to leave the car, which is the other half of the mid-day case the
+// whole app is built around: "your car is at Champoluc" only means something
+// if the app knows where at Champoluc. Only the ones with a name or a real
+// capacity — an unnamed six-space layby beside a piste is noise, and the
+// filter downstream keeps only what is near a base anyway.
+(
+  nwr["amenity"="parking"]["name"](${box});
+  nwr["amenity"="parking"]["capacity"](${box});
+);
 out center tags;`;
 }
 
@@ -129,6 +139,22 @@ const cachePath = (id) => new URL(`../../data/osm/${id}.json`, import.meta.url).
  * to build at all — so noticing here and re-fetching is the difference between
  * a green run and a person having to work out why.
  */
+/**
+ * What a query asks OSM for, as a sorted list of the tags it selects on.
+ *
+ * The whole query is the wrong fingerprint: it carries the bounding box, so it
+ * changes when the box nudges and matches nothing when the formatting does.
+ * The tag selectors are the question — `["amenity"="parking"]` is a different
+ * question from not asking at all, and that is exactly the difference this has
+ * to notice.
+ */
+export function asked(resort) {
+  if (!resort?.bbox) return null;
+  return [...new Set(
+    (query(resort.bbox).match(/\[[^\]]*"[^\]]*\]/g) ?? []).map((t) => t.trim())
+  )].sort().join(" ");
+}
+
 export function staleReason(raw, resort = null) {
   if (!raw?.elements?.length) return "no elements";
   // A widened bounding box makes the cache the wrong shape, not just old.
@@ -140,6 +166,25 @@ export function staleReason(raw, resort = null) {
     if (moved) {
       return `fetched for a different bounding box (${raw.bbox.join(", ")})`;
     }
+  }
+  /*
+   * A cache answers the question it was asked, and only that one.
+   *
+   * Adding `amenity=parking` to the query changed nothing for a long time and
+   * would have gone on changing nothing: the cache is keyed by resort id, the
+   * staleness check only looked at shape and bounding box, so every later run
+   * — including the monthly one on CI, which has the network this sandbox does
+   * not — would have read a file fetched before parking was ever asked for and
+   * emitted no car parks at all, with no error anywhere. A cache from an older
+   * question is not old data, it is the wrong data.
+   *
+   * Only when the file records what it asked. An export from before this
+   * existed has no `asked` field and is left alone rather than being thrown
+   * away wholesale: the bbox and shape checks still cover it, and refetching
+   * every resort on upgrade is not a decision this function should be making.
+   */
+  if (resort?.bbox && raw.asked && raw.asked !== asked(resort)) {
+    return "fetched for a different query, so it cannot answer this one";
   }
   const ways = raw.elements.filter((el) => el.type === "way" && el.geometry);
   if (!ways.length) return "no ways with geometry";
@@ -230,6 +275,9 @@ export async function fetchResort(resort, { force = false, offline = false, endp
         if (!json.elements?.length) { tried.push(`${url} -> empty result`); continue; }
         json.fetchedAt = new Date().toISOString();
         json.bbox = resort.bbox;
+        // What was asked for, so a later run can tell whether the question
+        // has changed. See `asked` in staleReason.
+        json.asked = asked(resort);
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, JSON.stringify(json));
         return { ...json, source: url, path };

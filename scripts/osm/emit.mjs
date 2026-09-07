@@ -129,20 +129,42 @@ function registryEntry({ id, config, NODES, LIFTS, RUNS }) {
   };
 }
 
-export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], terrain = null, report, fetchedAt }) {
+export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], terrain = null, report, fetchedAt }) {
   const nodeKeys = Object.keys(NODES);
   const keyWidth = Math.max(...nodeKeys.map((k) => k.length)) + 2;
   const nameWidth = Math.max(...nodeKeys.map((k) => quote(NODES[k].name).length)) + 1;
 
   /*
-   * On the mountain, or at a base you could walk from.
+   * On the mountain, measured against the mountain rather than against its
+   * junctions.
    *
-   * 200 m of a graph node is "you can ski to it". A rental shop is a walk from
-   * the car park rather than a stop on a piste, so it gets 600 m of a base and
-   * nothing else qualifies it.
+   * This kept anything within 200 m of a graph NODE, and a node is a junction
+   * or a lift station — `contractChains` deletes everything in between, so a
+   * three kilometre piste has two of them and nothing along its length. A
+   * restaurant beside the middle of that piste is hundreds or thousands of
+   * metres from the nearest node and was dropped. Measured across the four
+   * resorts: 54 named places sitting within 200 m of a piste, thrown away.
+   *
+   * So the distance is to the piste itself. The catch is that a bounding box
+   * holds more than one ski area — Monterosa's reaches Cervinia, Latemar's
+   * takes in Carezza and the Rosengarten — and measuring to every piste in the
+   * box would have hauled in Rifugio Guide del Cervino, which is a fine lunch
+   * and is over a 3,500 m ridge from anything this resort can route you to.
+   *
+   * A way is this resort's if any of its own vertices is within OURS of a kept
+   * node. Our pistes qualify because their ends ARE junctions; a neighbouring
+   * area's do not, because nothing of ours is near them. On Monterosa that is
+   * 133 ways of the 393 in the box.
+   *
+   * A rental is still allowed its walk from the car park, and now also counts
+   * as arrived if it is beside the lifts: Kronplatz has two 150-250 m from a
+   * node and 700 m from a base, which is a shop at the bottom of the gondola
+   * by any reading, and both were being dropped.
    */
   const NEAR_PISTE = 200;
   const NEAR_BASE = 600;
+  const NEAR_NODE = 250;
+  const OURS = 250;
   const spanM = (a, b) => {
     const R = 6371000;
     const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -151,18 +173,85 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], terrain = null
     const x = dLon * Math.cos(lat);
     return Math.round(Math.sqrt(dLat * dLat + x * x) * R);
   };
+  /** Metres from a point to a segment, flat-earth, which over a few km it is. */
+  const toSegment = (p, a, b) => {
+    const R = 6371000;
+    const rad = Math.PI / 180;
+    const k = Math.cos(p.lat * rad);
+    const px = (p.lon - a.lon) * k * R * rad;
+    const py = (p.lat - a.lat) * R * rad;
+    const bx = (b.lon - a.lon) * k * R * rad;
+    const by = (b.lat - a.lat) * R * rad;
+    const len2 = bx * bx + by * by;
+    if (!len2) return Math.hypot(px, py);
+    const t = Math.max(0, Math.min(1, (px * bx + py * by) / len2));
+    return Math.hypot(px - bx * t, py - by * t);
+  };
   const nodeList = nodeKeys.map((k) => NODES[k]);
   const baseList = nodeList.filter((n) => n.base);
   const nearest = (place, list) =>
     list.reduce((best, n) => Math.min(best, spanM(place, n)), Infinity);
+
+  const lines = ways
+    .filter((w) => w.geometry?.length > 1 &&
+      (w.tags?.["piste:type"] === "downhill" || w.tags?.aerialway))
+    .map((w) => w.geometry)
+    .filter((geom) => geom.some((v) => nearest(v, nodeList) <= OURS));
+  const toPistes = (place) => {
+    let best = Infinity;
+    for (const geom of lines) {
+      for (let i = 1; i < geom.length; i++) {
+        const d = toSegment(place, geom[i - 1], geom[i]);
+        if (d < best) best = d;
+        if (best <= 5) return best;
+      }
+    }
+    return best;
+  };
+  /*
+   * Two ways to arrive, so two rules.
+   *
+   * Skis and cars: a rental or a car park is something you walk to from where
+   * you parked, so it is measured against the bases. Everything else is
+   * something you ski to, and measured against the pistes.
+   */
+  const DRIVE_TO = new Set(["rental", "parking"]);
   const kept = PLACES.filter((place) =>
-    place.kind === "rental"
-      ? nearest(place, baseList) <= NEAR_BASE
-      : nearest(place, nodeList) <= NEAR_PISTE);
+    DRIVE_TO.has(place.kind)
+      ? nearest(place, baseList) <= NEAR_BASE || nearest(place, nodeList) <= NEAR_NODE
+      : toPistes(place) <= NEAR_PISTE);
+
+  /*
+   * A car park called after the base it serves.
+   *
+   * OSM names about a third of them, and "the one at Champoluc" is what a
+   * skier means anyway — the mid-day case this app is built around is "my car
+   * is at Champoluc", not "my car is at P3 Frachey". So an unnamed one takes
+   * the nearest base's name, and where a base has several, the biggest wins:
+   * sorted by capacity before the dedupe below, which keeps the first of each
+   * name. Asking for parking with a name OR a capacity is what makes that
+   * possible; a six-space layby with neither is noise and is never fetched.
+   */
+  const baseNameFor = (place) =>
+    baseList.reduce(
+      (best, n) => (spanM(place, n) < spanM(place, best) ? n : best),
+      baseList[0]
+    )?.name;
+  const withNames = kept
+    .map((place) => ({
+      ...place,
+      name: place.name
+        ?? (place.kind === "parking" && baseList.length
+          ? `${baseNameFor(place)} parking`
+          : null),
+    }))
+    .filter((place) => place.name)
+    .sort((a, b) => (b.spaces ?? 0) - (a.spaces ?? 0));
+
   // One entry per name: OSM often has the building and its restaurant as two
   // objects a few metres apart, and two identical pins is worse than one.
   const seenPlace = new Set();
-  const placeLines = kept
+  const placeLines = withNames
     .filter((place) => !seenPlace.has(place.name) && seenPlace.add(place.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((place) =>

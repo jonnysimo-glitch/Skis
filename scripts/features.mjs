@@ -5348,6 +5348,98 @@ if (feature("44. The gestures a real hand makes")) {
   await page.context_.close();
 }
 
+// ============ 45. SOMEWHERE TO EAT, AND HOW TO LOOK IT UP ==
+/*
+ * The places on the mountain, and the tap that opens one.
+ *
+ * Two things here. The pins have to be the right pins — the filter that picks
+ * them kept anything within 200 m of a graph NODE, and contraction deletes
+ * every node along a piste's length, so a restaurant beside the middle of a
+ * three kilometre run was hundreds or thousands of metres from the nearest one
+ * and was dropped. Fifty-four of them across the four resorts. And a tap has
+ * to open the place, because a pin you cannot ask about is decoration.
+ */
+if (feature("45. Somewhere to eat, and how to look it up")) {
+  /*
+   * The count is a floor, not a target. It is here so the filter cannot
+   * quietly narrow again: these are the numbers after the fix, less a couple
+   * of places of slack for OSM moving under us.
+   */
+  const FLOOR = { monterosa: 42, kronplatz: 43, paganella: 12, latemar: 16 };
+  for (const [id, floor] of Object.entries(FLOOR)) {
+    const mod = await import(`../src/resorts/${id}.js`);
+    const kinds = {};
+    for (const p of mod.PLACES) kinds[p[1]] = (kinds[p[1]] ?? 0) + 1;
+    check(`${id} keeps the places beside its pistes`, mod.PLACES.length >= floor,
+      `${mod.PLACES.length} places, ${JSON.stringify(kinds)}`);
+  }
+  // The ones that were being dropped, named, so a regression says which.
+  const rosa = await import("../src/resorts/monterosa.js");
+  const has = (n) => rosa.PLACES.some((p) => p[0] === n);
+  check("Monterosa has Rifugio Gabiet, which sits on the piste", has("Rifugio Gabiet"));
+  check("and Rifugio Vieux Crest", has("Rifugio Vieux Crest"));
+  /*
+   * And nothing from over the ridge. A bounding box holds more than one ski
+   * area — Monterosa's reaches Cervinia — and measuring to every piste in the
+   * box rather than to this resort's own would haul in a rifugio you cannot
+   * ski to from here.
+   */
+  check("and nothing from the Cervinia side of the ridge",
+    !has("Rifugio Guide del Cervino") && !has("Bar Ristorante Cime Bianche Laghi"),
+    "checked Rifugio Guide del Cervino, Bar Ristorante Cime Bianche Laghi");
+
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(2400);
+  for (let i = 0; i < 3; i++) {
+    await openTools(page);
+    await page.click('.maptools .iconbtn[aria-label="Zoom in"]');
+    await page.waitForTimeout(420);
+  }
+  await page.waitForTimeout(1600);
+
+  const marks = await page.evaluate(() =>
+    (window.__skisPlaces ?? []).map((p) => ({ full: p.full, x: Math.round(p.x), y: Math.round(p.y) })));
+  check("there are places on the mountain to tap", marks.length > 0, `${marks.length} markers`);
+  if (marks.length) {
+    const m = marks[0];
+    await multiTouch(page, [[[m.x, m.y]]], { settle: 30 });
+    await page.waitForTimeout(600);
+    check("tapping one opens it", Boolean(await page.$(".placecard")));
+    if (await page.$(".placecard")) {
+      const name = await page.$eval(".placecard__n", (n) => n.textContent.trim());
+      check("and names the one you tapped", name === m.full, `${name} for ${m.full}`);
+      check("and says what it is and how high",
+        /\d/.test(await page.$eval(".placecard__k", (n) => n.textContent)),
+        await page.$eval(".placecard__k", (n) => n.textContent.trim()));
+      const href = await page.$eval(".placecard__go", (n) => n.getAttribute("href"));
+      /*
+       * Name AND centre. Coordinates alone drop a pin in a snowfield with
+       * nothing attached to it, and a name alone finds the Rifugio Gabiet in
+       * somebody else's valley.
+       */
+      check("the link searches Google Maps by name, centred on the place",
+        href.startsWith("https://www.google.com/maps/search/") &&
+        href.includes(encodeURIComponent(m.full).slice(0, 12)) && /@[\d.]+,[\d.]+/.test(href),
+        href);
+      check("and opens away from the app without handing it the referrer",
+        (await page.$eval(".placecard__go", (n) => n.getAttribute("rel") ?? "")).includes("noopener"));
+      const box = await (await page.$(".placecard__go")).boundingBox();
+      check("the link is a proper tap target", box.height >= 44, `${Math.round(box.width)}x${Math.round(box.height)}`);
+    }
+    // Bare mountain puts it away, the way every map does.
+    await multiTouch(page, [[[Math.round(m.x + 160), Math.round(m.y + 170)]]], { settle: 30 });
+    await page.waitForTimeout(600);
+    check("and tapping the mountain puts it away", (await page.$(".placecard")) === null);
+  }
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 // ===================== 39. THE MAP SETTLES, AND IS NOT CROWDED ==
 /*
  * Two complaints from a phone, on Kronplatz, which has more on it than any of
