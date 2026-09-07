@@ -1,6 +1,29 @@
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+
+/**
+ * Which build this is, baked in and shown in Settings.
+ *
+ * Because "is my change live?" was not answerable. The app is offline-first,
+ * so a returning phone runs the cached shell until the service worker has
+ * swapped it — which means a screenshot of the old behaviour and a screenshot
+ * of a stale cache look identical. The only way that got settled was spotting
+ * that the leg counter still said the word "leg", which had been dropped four
+ * commits earlier. Seven characters in Settings answers it instead.
+ *
+ * GITHUB_SHA on the Pages runner, git locally, "dev" if neither is there —
+ * a build must never fail for want of a version string.
+ */
+const BUILD = (() => {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7);
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    return "dev";
+  }
+})();
 
 /**
  * Committing to a route must work in full airplane mode — alpine signal is
@@ -17,6 +40,7 @@ const BASE = process.env.VITE_BASE || "/";
 export default defineConfig(() => {
   return {
   base: BASE,
+  define: { __BUILD__: JSON.stringify(BUILD) },
   plugins: [
     react(),
     VitePWA({

@@ -5140,6 +5140,20 @@ if (feature("43. Every screen takes a finger")) {
   check("settings takes a tap", await touchTap(rest, '[aria-label="Settings"]'));
   await rest.waitForTimeout(800);
   check("and opens as a sheet", Boolean(await rest.$(".modal__body")));
+  /*
+   * And it says which build is running.
+   *
+   * Not a developer's detail on an offline-first app. The phone serves the
+   * cached shell until the service worker swaps it, so a screenshot of the old
+   * behaviour and a screenshot of a stale cache are the same picture — the
+   * only thing that settled it last time was noticing the leg counter still
+   * said a word that had been dropped four commits earlier.
+   */
+  const build = await rest.$$eval(".row", (rows) => {
+    const row = rows.find((r) => /Version/.test(r.textContent));
+    return row ? row.querySelector(".row__v")?.textContent.trim() : null;
+  });
+  check("and says which build it is", /^[0-9a-f]{7}$/.test(build || ""), String(build));
   if (await rest.$(".modal__body")) {
     const room = await rest.$eval(".modal__body", (n) => n.scrollHeight - n.clientHeight);
     if (room >= 12) {

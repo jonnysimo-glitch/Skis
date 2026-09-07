@@ -378,10 +378,28 @@ export default function NavigateScreen({
           )}
         </div>
         {minimised && !following && (
-          /* Only when there is something wrong with it. A skier needs to know
-             the map has lost them; being told it has not is a caption. */
-          <span className="nav__gps" title={gpsExplanation(gps.state)}>
-            <Locate width="15" height="15" />
+          /*
+           * Only when there is something wrong with it. A skier needs to know
+           * the map has lost them; being told it has not is a caption.
+           *
+           * A warning, not a crosshair. This said what it means with the
+           * universal "recentre on me" glyph, sitting a few pixels from the
+           * map's actual recentre button, which is a crosshair that does
+           * exactly that — two of the same mark, one an action and one a
+           * passive status, on the same band. It is not a control at all: what
+           * it is telling you is that the map does not know where you are.
+           *
+           * Labelled as well as titled. A span with only a `title` says
+           * nothing to a screen reader and nothing at all on a touchscreen,
+           * where there is no hover to reveal it.
+           */
+          <span
+            className="nav__gps"
+            role="status"
+            title={gpsExplanation(gps.state)}
+            aria-label={gpsExplanation(gps.state)}
+          >
+            <Warning width="15" height="15" />
           </span>
         )}
         <button
@@ -390,7 +408,15 @@ export default function NavigateScreen({
           aria-expanded={!minimised}
           aria-label={minimised ? "Show the detail" : "Just the instruction"}
         >
-          {minimised ? <ChevronUp width="18" height="18" /> : <ChevronDown width="18" height="18" />}
+          {/*
+            * Down to open, up to close, because this panel is at the TOP.
+            *
+            * It was the other way round, which is the right pair for a sheet
+            * that rises from the bottom and the wrong one here: the detail
+            * arrives by coming DOWN over the map, so the arrow that offers it
+            * has to point the way the panel is about to move.
+            */}
+          {minimised ? <ChevronDown width="18" height="18" /> : <ChevronUp width="18" height="18" />}
         </button>
         <button className="nav__stop" onClick={onAbandon} aria-label="Stop navigating">
           <Close width="20" height="20" />

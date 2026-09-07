@@ -182,6 +182,18 @@ export default function SettingsSheet({ ability, setAbility, onClose, onProfileC
                 <span>Resort data</span>
                 <span className="row__v">OpenStreetMap</span>
               </li>
+              {/*
+                * Which build is running, which is not a developer's detail on
+                * an offline-first app: the phone keeps serving the cached
+                * shell until the service worker has swapped it, so "the change
+                * is not there" and "the change has not arrived yet" look
+                * exactly the same. This is the difference, in seven
+                * characters. See __BUILD__ in vite.config.js.
+                */}
+              <li className="row">
+                <span>Version</span>
+                <span className="row__v">{__BUILD__}</span>
+              </li>
             </ul>
             <p className="note" style={{ marginTop: "var(--s-3)" }}>
               Run names and shapes come from OpenStreetMap. Lift times are
