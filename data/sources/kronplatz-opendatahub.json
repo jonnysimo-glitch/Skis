@@ -1,0 +1,208 @@
+{
+ "asked": "https://mobility.api.opendatahub.com/v2/flat/ParkingStation?limit=-1&distinct=true&select=scode,sname,scoordinate,smetadata,sorigin&where=scoordinate.bbi.(11.8,46.66,12.08,46.84,4326)",
+ "fetchedAt": "2026-09-07T23:32:26.821Z",
+ "data": [
+  {
+   "scode": "608612_0",
+   "scoordinate": {
+    "x": 11.927622,
+    "y": 46.792815,
+    "srid": 4326
+   },
+   "smetadata": {
+    "capacity": 240,
+    "free_limit": 240,
+    "municipality": "Brunico – Bruneck",
+    "standard_name": "Parcheggio Stazione Brunico Mobilitätszentrum",
+    "occupancy_limit": 240,
+    "capacity_short_stay": 220,
+    "capacity_subscribers": 20,
+    "free_limit_short_stay": 219,
+    "free_limit_subscribers": 20,
+    "occupancy_limit_short_stay": 219,
+    "occupancy_limit_subscribers": 21
+   },
+   "sname": "Parcheggio Stazione Brunico Mobilitätszentrum",
+   "sorigin": "skidata"
+  },
+  {
+   "scode": "urn:parking:skidata:05cc47f5-24d8-5d41-8cc3-3567bebe75f8",
+   "scoordinate": {
+    "x": 11.933859,
+    "y": 46.797215,
+    "srid": 4326
+   },
+   "smetadata": {
+    "name_de": "Parkplatz Nobis",
+    "name_en": "Parking Nobis",
+    "name_it": "Parcheggio Nobis",
+    "capacity": 372,
+    "carpark_id": 1,
+    "free_limit": 369,
+    "facility_id": "0601336",
+    "provider_id": "0601336_1",
+    "municipality": "Brunico - Bruneck",
+    "netex_parking": {
+     "type": "urbanParking",
+     "layout": "underground",
+     "charging": false,
+     "reservation": "noReservations",
+     "surveillance": true,
+     "vehicletypes": "allPassengerVehicles",
+     "hazard_prohibited": true
+    },
+    "standard_name": "Parcheggio Nobis",
+    "occupancy_limit": 372,
+    "capacity_nobis_abo": 21,
+    "capacity_meusburger": 0,
+    "capacity_short_stay": 266,
+    "capacity_subscribers": 0,
+    "free_limit_nobis_abo": 20,
+    "capacity_nobis_privat": 85,
+    "free_limit_meusburger": 0,
+    "free_limit_short_stay": 265,
+    "free_limit_subscribers": 0,
+    "free_limit_nobis_privat": 84,
+    "occupancy_limit_nobis_abo": 21,
+    "occupancy_limit_meusburger": 0,
+    "occupancy_limit_short_stay": 266,
+    "occupancy_limit_subscribers": 0,
+    "occupancy_limit_nobis_privat": 85
+   },
+   "sname": "Parcheggio Nobis",
+   "sorigin": "skidata_dynamicdata"
+  },
+  {
+   "scode": "urn:parking:skidata:416a76f5-fa00-5fad-bbf3-c2b1cfda21b8",
+   "scoordinate": {
+    "x": 11.938246,
+    "y": 46.799739,
+    "srid": 4326
+   },
+   "smetadata": {
+    "name_de": "Parkplatz Bruneck Krankenhaus",
+    "name_en": "Parking Bruneck Krankenhaus",
+    "name_it": "Parcheggio Ospedale di Brunico",
+    "capacity": 208,
+    "carpark_id": 0,
+    "free_limit": 207,
+    "facility_id": "0603589",
+    "provider_id": "0603589_0",
+    "municipality": "Brunico - Bruneck",
+    "netex_parking": {
+     "type": "urbanParking",
+     "layout": "underground",
+     "charging": false,
+     "reservation": "noReservations",
+     "surveillance": true,
+     "vehicletypes": "allPassengerVehicles",
+     "hazard_prohibited": true
+    },
+    "standard_name": "Parcheggio Ospedale di Brunico",
+    "occupancy_limit": 208,
+    "capacity_short_stay": 179,
+    "capacity_subscribers": 30,
+    "free_limit_short_stay": 178,
+    "free_limit_subscribers": 29,
+    "occupancy_limit_short_stay": 179,
+    "occupancy_limit_subscribers": 30
+   },
+   "sname": "Parcheggio Ospedale di Brunico",
+   "sorigin": "skidata_dynamicdata"
+  },
+  {
+   "scode": "urn:parking:skidata:878bf2bc-8a82-50e4-8b7c-61d0575fda71",
+   "scoordinate": {
+    "x": 11.936233,
+    "y": 46.796646,
+    "srid": 4326
+   },
+   "smetadata": {
+    "name_de": "Parkplatz Zentrum",
+    "name_en": "Parking City Center",
+    "name_it": "Parcheggio Centro Città",
+    "capacity": 361,
+    "carpark_id": 0,
+    "free_limit": 361,
+    "facility_id": "0601336",
+    "provider_id": "0601336_0",
+    "municipality": "Brunico - Bruneck",
+    "netex_parking": {
+     "type": "urbanParking",
+     "layout": "underground",
+     "charging": false,
+     "reservation": "noReservations",
+     "surveillance": true,
+     "vehicletypes": "allPassengerVehicles",
+     "hazard_prohibited": true
+    },
+    "standard_name": "Parcheggio Centro Città",
+    "occupancy_limit": 361,
+    "capacity_nobis_abo": 0,
+    "capacity_meusburger": 21,
+    "capacity_short_stay": 191,
+    "capacity_subscribers": 150,
+    "free_limit_nobis_abo": 0,
+    "capacity_nobis_privat": 0,
+    "free_limit_meusburger": 20,
+    "free_limit_short_stay": 191,
+    "free_limit_subscribers": 150,
+    "free_limit_nobis_privat": 0,
+    "occupancy_limit_nobis_abo": 0,
+    "occupancy_limit_meusburger": 21,
+    "occupancy_limit_short_stay": 193,
+    "occupancy_limit_subscribers": 151,
+    "occupancy_limit_nobis_privat": 0
+   },
+   "sname": "Parcheggio Centro Città",
+   "sorigin": "skidata_dynamicdata"
+  },
+  {
+   "scode": "urn:parking:skidata:f63389c3-81e2-58dc-b0af-c8c288ee4e1f",
+   "scoordinate": {
+    "x": 11.933859,
+    "y": 46.797215,
+    "srid": 4326
+   },
+   "smetadata": {
+    "name_de": "Parkplatz Nobis Privat",
+    "name_en": "Parking Nobis Private",
+    "name_it": "Parcheggio Nobis Privato",
+    "capacity": 85,
+    "carpark_id": 2,
+    "free_limit": 84,
+    "facility_id": "0601336",
+    "provider_id": "0601336_2",
+    "municipality": "Brunico - Bruneck",
+    "netex_parking": {
+     "type": "urbanParking",
+     "layout": "underground",
+     "charging": false,
+     "reservation": "noReservations",
+     "surveillance": true,
+     "vehicletypes": "allPassengerVehicles",
+     "hazard_prohibited": true
+    },
+    "standard_name": "Parcheggio Nobis Privato",
+    "occupancy_limit": 85,
+    "capacity_nobis_abo": 0,
+    "capacity_meusburger": 0,
+    "capacity_short_stay": 0,
+    "capacity_subscribers": 0,
+    "free_limit_nobis_abo": 0,
+    "capacity_nobis_privat": 85,
+    "free_limit_meusburger": 0,
+    "free_limit_short_stay": 0,
+    "free_limit_subscribers": 0,
+    "free_limit_nobis_privat": 84,
+    "occupancy_limit_nobis_abo": 0,
+    "occupancy_limit_meusburger": 0,
+    "occupancy_limit_short_stay": 0,
+    "occupancy_limit_subscribers": 0,
+    "occupancy_limit_nobis_privat": 85
+   },
+   "sname": "Parcheggio Nobis Privato",
+   "sorigin": "skidata_dynamicdata"
+  }
+ ]
+}
