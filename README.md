@@ -210,7 +210,7 @@ src/
   lib/useSolver.js     worker hook — only the newest request can resolve
 
   map/MapCanvas.jsx      MapLibre + MapTiler terrain
-  map/FallbackTerrain.jsx  the no-key terrain view
+  map/MountainMap.jsx      the map: terrain, drape, pistes, route, labels, gestures
   map/layers.js          route casing, difficulty-coloured runs, dashed lifts
 
   ui/Sheet.jsx           the bottom sheet, the primary surface

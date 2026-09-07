@@ -118,19 +118,3 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
     </ul>
   );
 }
-
-export function Metrics({ items, three }) {
-  return (
-    <div className={`metrics${three ? " metrics--3" : ""}`}>
-      {items.map((item) => (
-        <div className="metric" key={item.k}>
-          <div className="metric__v">
-            {item.v}
-            {item.unit && <span>{item.unit}</span>}
-          </div>
-          <div className="metric__k">{item.k}</div>
-        </div>
-      ))}
-    </div>
-  );
-}

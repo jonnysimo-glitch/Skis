@@ -27,7 +27,7 @@
  * have on a blue of the same length. Planning for the confident case strands
  * everyone else.
  */
-export const RUN_SPEED = { blue: 300, red: 275, black: 245 };
+const RUN_SPEED = { blue: 300, red: 275, black: 245 };
 
 /**
  * How much a steep pitch speeds you up. Deliberately weak: gradient is already
@@ -60,7 +60,7 @@ export function runMinutes(lengthM, dropM, difficulty) {
  * skier they can make the last lift with a minute to spare when they cannot,
  * so it is deliberately slower than the slowest grade.
  */
-export const LINK_SPEED = 100;
+const LINK_SPEED = 100;
 
 /**
  * Minutes to cross a connector.

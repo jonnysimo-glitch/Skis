@@ -11,7 +11,7 @@
  */
 import { HomeIcon, Mountain, Chart } from "./Icons.jsx";
 
-export const TABS = [
+const TABS = [
   { id: "home", label: "Home", Icon: HomeIcon },
   { id: "skiing", label: "Skiing", Icon: Mountain },
   { id: "stats", label: "Stats", Icon: Chart },

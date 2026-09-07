@@ -24,7 +24,7 @@
  *      ground it belongs to, and "close enough" is a map that is subtly wrong.
  *
  *   2. The colour maths matches `photoColour` and `surfaceColour` in
- *      FallbackTerrain.jsx. Two renderers that disagree about what snow looks
+ *      MountainMap.jsx. Two renderers that disagree about what snow looks
  *      like is worse than either of them alone.
  *
  *   3. It returns null rather than throwing when WebGL is not there. The 2D

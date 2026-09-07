@@ -65,9 +65,6 @@ export const Plus = (p) => (
 export const Minus = (p) => (
   <svg {...base} {...p}><path d="M5 10h10" /></svg>
 );
-export const Rotate = (p) => (
-  <svg {...base} {...p}><path d="M16 10a6 6 0 1 1-1.8-4.3" /><path d="M16 3v3.2h-3.2" /></svg>
-);
 export const Clock = (p) => (
   <svg {...base} {...p}><circle cx="10" cy="10" r="7" /><path d="M10 6v4.2l2.6 1.6" /></svg>
 );
@@ -85,9 +82,6 @@ export const Warning = (p) => (
 );
 export const Info = (p) => (
   <svg {...base} {...p}><circle cx="10" cy="10" r="7" /><path d="M10 9.2v4.2" /><circle cx="10" cy="6.7" r=".8" fill="currentColor" stroke="none" /></svg>
-);
-export const Wifi = (p) => (
-  <svg {...base} {...p}><path d="M3 8.2a10 10 0 0 1 14 0" /><path d="M5.8 11a6 6 0 0 1 8.4 0" /><circle cx="10" cy="14.4" r=".9" fill="currentColor" stroke="none" /></svg>
 );
 export const Locate = (p) => (
   <svg {...base} {...p}><circle cx="10" cy="10" r="4.6" /><path d="M10 1.6v2.4M10 16v2.4M18.4 10H16M4 10H1.6" /></svg>
@@ -142,9 +136,6 @@ export const Brand = (p) => (
     <path d="M12.9 7.7 L18 15.5" />
     <path d="M7.9 15.5 L12.9 7.7" stroke="var(--accent-line)" />
   </svg>
-);
-export const Peak = (p) => (
-  <svg {...base} {...p}><path d="m2.5 16 5-8 2.5 4L14 5l4 11z" /><path d="M12 8.6 14 5l2 3.6z" fill="currentColor" stroke="none" /></svg>
 );
 
 /* Tab bar. Drawn at 24px, so slightly simpler than the inline icons above. */

@@ -22,40 +22,19 @@
  */
 
 import { GRAPHS } from "./graphs.js";
-import { NODES, RUNS } from "../resort.js";
 
-const baseKeys = Object.keys(NODES).filter((k) => NODES[k].base);
-const alts = Object.values(NODES).map((n) => n.alt);
-
-/** Monterosa from the hand-typed graph. Superseded by a generated monterosa.js. */
-const BUILT_IN = {
-  id: "monterosa",
-  name: "Monterosa Ski",
-  region: "Valle d'Aosta",
-  country: "Italy",
-  available: true,
-  /** Camera home position for the 3D map. */
-  center: [7.8309, 45.8636],
-  zoom: 11.6,
-  pitch: 62,
-  bearing: -24,
-  /** Bounding box for offline tile warming: [w, s, e, n]. */
-  bbox: [7.7, 45.8, 7.96, 45.92],
-  bases: baseKeys,
-  defaultBase: "staffal",
-  /** Sensible clock defaults. Minute-of-day. */
-  firstLift: 8 * 60 + 30,
-  lastDown: 16 * 60 + 30,
-  stats: {
-    lifts: 12,
-    runs: 17,
-    km: RUNS.reduce((sum, r) => sum + r[4], 0),
-    top: Math.max(...alts),
-    bottom: Math.min(...alts),
-    valleys: 3,
-  },
-  blurb: "Gressoney, Ayas and Alagna, linked over two high cols.",
-};
+/**
+ * Which resort opens the list, after the live ones.
+ *
+ * A string, not an entry. There was a whole hand-typed Monterosa record here —
+ * centre, zoom, pitch, bbox, bases and published stats, derived from
+ * src/resort.js — as the fallback for a resort with no generated graph. It has
+ * not been reachable since monterosa.js was generated: the loop below
+ * registers every graph's own META first, and the fallback was only added
+ * `if (!byId.has(...))`. All that survived was its id, used here to order the
+ * list, so that is all this is now.
+ */
+const FIRST_RESORT = "monterosa";
 
 const COMING = [
   {
@@ -95,7 +74,6 @@ const byId = new Map();
 for (const module of Object.values(GRAPHS)) {
   if (module.META?.id) byId.set(module.META.id, module.META);
 }
-if (!byId.has(BUILT_IN.id)) byId.set(BUILT_IN.id, BUILT_IN);
 for (const entry of COMING) {
   if (!byId.has(entry.id)) byId.set(entry.id, entry);
 }
@@ -113,8 +91,8 @@ for (const entry of COMING) {
  */
 export const RESORTS = [...byId.values()].sort((a, b) => {
   if (a.available !== b.available) return a.available ? -1 : 1;
-  if (a.id === BUILT_IN.id) return -1;
-  if (b.id === BUILT_IN.id) return 1;
+  if (a.id === FIRST_RESORT) return -1;
+  if (b.id === FIRST_RESORT) return 1;
   return (a.name || "").localeCompare(b.name || "");
 });
 

@@ -89,7 +89,7 @@ function noise2(x, y) {
   );
 }
 
-export function fbm(x, y) {
+function fbm(x, y) {
   let sum = 0;
   let amp = 0.5;
   let freq = 1;
@@ -144,7 +144,7 @@ export const FIELD_PAD = 0.55;
  * one before the pad is taken off it. Only elongated resorts move — the other
  * three here are within 1.21 of square and are untouched.
  */
-export const APRON_SQUARENESS = 0.62;
+const APRON_SQUARENESS = 0.62;
 
 /**
  * How far the mesh reaches past the nodes, in the projector's own metres.
@@ -206,7 +206,7 @@ export function skyAt(t) {
  *
  * Cool grey rather than brown, so the one saturated colour on screen is still
  * the route. There is an old warning against this in the comment on the rim in
- * FallbackTerrain.jsx and it is worth reading before touching these: a rim
+ * MountainMap.jsx and it is worth reading before touching these: a rim
  * this dark is honest about where it is, so if a change here makes the model
  * look worse, the rim is covering something and the colour is what exposed it,
  * not what caused it.
@@ -241,7 +241,7 @@ export const STRATA = [
  * `thickness` is what the rim hangs below the ground, and `base` is where the
  * flat underside sits. The rim follows the ground at a constant thickness
  * instead of dropping to `base`, which is the whole reason the model works —
- * see the block comment in FallbackTerrain.jsx before changing it.
+ * see the block comment in MountainMap.jsx before changing it.
  */
 export function slabFor(field) {
   /*

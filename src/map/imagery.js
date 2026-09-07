@@ -63,21 +63,6 @@ export function zoomFor(bounds, budget = 96, min = 8, max = 17, maxSide = 24) {
   return min;
 }
 
-/**
- * The zoom whose pixels are about the size of the screen's, at a latitude.
- *
- * The other half of picking a zoom. `zoomFor` answers "how much can I afford
- * to fetch"; this answers "how much is worth fetching" — asking for imagery
- * finer than the screen can show is bytes over a mountain connection for
- * detail that gets averaged away on arrival. The smaller of the two is the one
- * to use.
- */
-export function zoomForResolution(lat, metresPerPixel, tile = FALLBACK_TILE, max = 18) {
-  if (!(metresPerPixel > 0)) return max;
-  const circumference = 40075017 * Math.cos((lat * Math.PI) / 180);
-  return Math.max(1, Math.min(max, Math.ceil(Math.log2(circumference / (metresPerPixel * tile)))));
-}
-
 /** Which tiles cover a bounding box at a zoom, as an inclusive range. */
 export function tilesFor(bounds, z) {
   return {
@@ -220,7 +205,7 @@ export function checkerTile(z, x, y) {
 }
 
 /** An <img>, as a promise. Anonymous CORS so the composite stays readable. */
-export function loadImage(url) {
+function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";

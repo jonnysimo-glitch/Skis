@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Sheet from "./ui/Sheet.jsx";
-import FallbackTerrain from "./map/FallbackTerrain.jsx";
+import MountainMap from "./map/MountainMap.jsx";
 import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
 import { fieldBounds } from "./map/field.js";
 
@@ -625,7 +625,7 @@ export default function App() {
        * Where you are and which way you are going, not the middle of the leg.
        *
        * The map places itself at `center` and faces along `aim` — see
-       * NAV_ACROSS in FallbackTerrain. Centring the LEG instead, which is what
+       * NAV_ACROSS in MountainMap. Centring the LEG instead, which is what
        * this did, is a different screen: a six kilometre lift came out as a
        * thread across a view of the whole massif, because the framing had to
        * hold both ends of it at once. What a skier standing at the bottom of
@@ -983,7 +983,7 @@ export default function App() {
   const MapLayer = (
     <>
       {onMountain && showSchematic && (
-        <FallbackTerrain
+        <MountainMap
           route={routeGeo}
           graph={graphGeo}
           pins={pins}

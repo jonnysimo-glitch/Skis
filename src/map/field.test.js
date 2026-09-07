@@ -335,7 +335,7 @@ console.log("\nWHICH WAY BEARING TURNS THE PICTURE");
 // The gesture code subtracts the finger twist from the bearing, and that sign
 // is only correct because of what is asserted here. If the projection is ever
 // changed so bearing turns the picture the other way, this fires and the
-// rotate branch in FallbackTerrain.jsx has to flip with it.
+// rotate branch in MountainMap.jsx has to flip with it.
 {
   const view = (bearing) => ({ bearing, pitch: 46, zoom: 1 });
   const right = { x: mono.cx + mono.span * 0.3, y: mono.cy, z: mono.cz };

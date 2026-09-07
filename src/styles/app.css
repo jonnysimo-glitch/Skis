@@ -594,7 +594,6 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   justify-content: space-between;
 }
 .stat { flex: 0 1 auto; min-width: 0; }
-.stat__icon { display: none; }
 .stat__v {
   display: block;
   font-family: var(--display);
@@ -677,20 +676,6 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   border-radius: var(--r-lg);
   padding: var(--s-4) var(--s-5);
 }
-.banner__k {
-  display: block;
-  font-size: var(--t-caption-2); font-weight: 700;
-  letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--accent-line);
-}
-.banner__d {
-  font-family: var(--display);
-  font-size: var(--t-title-1); font-weight: 700; line-height: 1.08;
-  letter-spacing: -0.02em;
-  margin-top: var(--s-1);
-}
-.banner__s { font-size: var(--t-subhead); opacity: 0.66; margin-top: var(--s-1); line-height: 1.35; }
-
 /* A caution rather than a headline: something the user must read once and can
    then get on with.
 

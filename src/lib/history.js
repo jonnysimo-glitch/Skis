@@ -51,7 +51,6 @@ export function recordDay({ route, resortId }) {
   return day;
 }
 
-export const removeDay = (id) => save("history", listDays().filter((d) => d.id !== id));
 export const clearHistory = () => save("history", []);
 
 /** Season totals. The numbers a skier actually repeats to people. */

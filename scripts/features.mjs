@@ -1859,9 +1859,20 @@ if (feature("33. The sun casts shadows")) {
    */
   await page.evaluate(() => window.__skisSetShadows(false));
   await page.waitForTimeout(1000);
+  /*
+   * Read the toggle back, which is not belt and braces.
+   *
+   * The first time this check was written the setter was swallowed by the
+   * frame cache and both readings came from the same lit frame, so the check
+   * compared a picture with itself and passed. `__skisShadowsOn` exists for
+   * exactly that and nothing was calling it.
+   */
+  check("the sun really did go off",
+    (await page.evaluate(() => window.__skisShadowsOn())) === false);
   const plain = await ground();
   await page.evaluate(() => window.__skisSetShadows(true));
   await page.waitForTimeout(1000);
+  check("and back on", (await page.evaluate(() => window.__skisShadowsOn())) === true);
   const lit = await ground();
   check("there is ground on screen to shade", lit.filter((v) => v >= 0).length > 400,
     `${lit.filter((v) => v >= 0).length} samples of ground`);

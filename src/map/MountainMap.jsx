@@ -1,15 +1,37 @@
 /**
- * The 3D view when there is no MapTiler key.
+ * The map. All of it.
  *
- * The brief is explicit that a missing key must not produce a broken grey box.
- * So this builds a terrain surface out of the only elevation data we already
- * have — the altitudes on the resort graph's own nodes — and lets you orbit it
- * with the route draped over the top. You lose real satellite relief, pistes
- * and lift lines from the basemap; you keep the thing that matters, which is
- * seeing the shape of the day on a mountain you can turn around.
+ * Terrain, satellite drape, the piste network, the route, five tiers of label
+ * and every gesture, drawn to one canvas on the GPU. There is no other map:
+ * MapLibre and its basemap were the original plan and are not a dependency any
+ * more, which is why this file is called what it is called. It was
+ * `FallbackTerrain.jsx` — the no-key fallback — and its header described a
+ * schematic built from the altitudes on the resort graph's own nodes. Neither
+ * has been true since the terrain started coming from a real elevation grid.
  *
- * It is a schematic and the UI says so. It is also, usefully, offline by
- * construction: there is nothing to fetch.
+ * What is here now:
+ *
+ *   the ground     a mesh built in field.js from the resort's DEM, drawn as a
+ *                  block with a rim so it reads as an object on a table
+ *   the picture    MapTiler satellite composited once and draped over that
+ *                  mesh. Without a key the ground is shaded from its own
+ *                  height instead, which is a complete map and says so
+ *   the lines      the whole piste network, washed out, with the route over
+ *                  it in the brand casing, both depth tested against the mesh
+ *   the writing    valley bases, mountain places, huts, hut names and run
+ *                  names, each ranked and faded, never popped
+ *   the camera     two of them. `fit` frames a subject — the resort, or the
+ *                  route — and `navWindow` places you on the glass at a fixed
+ *                  ground scale while navigating. See NAV_ACROSS
+ *
+ * It is offline by construction once the drape is cached: there is nothing
+ * else to fetch.
+ *
+ * It is also five thousand lines, which is too many. The seams are already
+ * there — field.js owns the mesh, gl.js owns the GPU path, glmatrix.js the
+ * projection — and the labelling and the gesture handling are the two blocks
+ * that would come out next. Not today: every one of those moves is a chance
+ * to break something the checks would not catch.
  */
 import { useEffect, useRef } from "react";
 import { NODES as ACTIVE_NODES, PLACES as ACTIVE_PLACES, TERRAIN as ACTIVE_TERRAIN, activeProjector } from "../active-resort.js";
@@ -942,7 +964,7 @@ function photoColour(rgb, shade, haze, shadow = 0) {
   );
 }
 
-export default function FallbackTerrain({
+export default function MountainMap({
   route,
   graph,
   pins,
@@ -1036,11 +1058,6 @@ export default function FallbackTerrain({
     // call time rather than captured.
     window.__skisRoutePts = () =>
       (propsRef.current.route?.features ?? []).flatMap((f) => f.geometry.coordinates);
-    // The solved camera: focal length and centring. The blur that dissolves
-    // the facets is a function of how big a mesh cell is on screen, which is a
-    // function of f, so a test that wants to check the softening scales has to
-    // be able to see it.
-    window.__skisCamera = () => (lastCam.current ? { ...lastCam.current } : null);
     // The mountain's own nodes, so a test can pick whatever is under a finger
     // and follow it through a gesture.
     window.__skisNodes = propsRef.current.nodes ?? nodes;
@@ -1761,13 +1778,11 @@ export default function FallbackTerrain({
       depthSpan = span;
       depthScale = GL_DEPTH_SCALE;
       depthBias = field.span * GL_DEPTH_BIAS_FRAC;
-      const t0 = mapTest ? performance.now() : 0;
       depthData = glr.depthImage(
         Math.max(1, Math.round(w * GL_DEPTH_SCALE)),
         Math.max(1, Math.round(h * GL_DEPTH_SCALE)),
         { matrix, depth: range }
       );
-      if (mapTest) window.__skisDepthMs = Math.round((performance.now() - t0) * 10) / 10;
 
       if (mapTest) {
         window.__skisSurface = { flat: 0, textured: glr.textured ? 1 : 0, cells: 0, patch: 0, gpu: true };
@@ -1791,7 +1806,6 @@ export default function FallbackTerrain({
       // Nothing on the offscreen came from a renderer that still exists.
       cachedAt = null;
       dirty.current = true;
-      if (mapTest) window.__skisGpuGaveUp = Math.round(median);
     };
 
     const drawTerrain = (v, cam, g, dep, step = 1) => {
@@ -2371,7 +2385,6 @@ export default function FallbackTerrain({
       const lit = mapTest ? [] : null;
       // Why each name is not on the mountain, for the feature suite: a churn
       // number with no cause attached is not something you can act on.
-      const why = mapTest ? {} : null;
 
       /*
        * One label per piste, on the best piece of it.
@@ -2546,7 +2559,6 @@ export default function FallbackTerrain({
         if (!anywhere) {
           const pts = was ? toScreen(was.geometry.coordinates, v, cam) : null;
           if (!pts || pts.length < 2) {
-            if (why) why[name] = "nowhere long enough to write it";
             fades.set(`r:${name}`, 0);
             continue;
           }
@@ -2728,12 +2740,6 @@ export default function FallbackTerrain({
         const cramped = steady(`rr:${name}`, !room, frameNow, RUN_NAME_OCCLUSION_MS);
         const keep = zoomOk && !behind && !cramped && shown < runBudget;
         if (keep) shown++;
-        if (why && !keep) {
-          why[name] = !zoomOk ? "too far out"
-            : behind ? "behind a ridge"
-              : cramped ? "no room anywhere along it"
-                : "past the budget";
-        }
         const solid = fadeOf(`r:${name}`, keep, frameDt);
         // Reserved only while it is wanted. A label on its way out stops
         // holding the ground it is leaving, so the one that displaced it can
@@ -2760,7 +2766,6 @@ export default function FallbackTerrain({
       if (mapTest) {
         window.__skisRunNames = drawnNames;
         window.__skisRunLit = lit;
-        window.__skisRunWhy = why;
       }
       return placed;
     };
@@ -3435,7 +3440,6 @@ export default function FallbackTerrain({
       const drawn = [];
       // Why a place is not on the mountain, for when the answer matters. Four
       // different tests can drop one and they need different fixes.
-      const why = mapTest ? {} : null;
       const lit = mapTest ? [] : null;
       /*
        * Incumbents first, then everyone else, both in altitude order.
@@ -3475,13 +3479,11 @@ export default function FallbackTerrain({
          * comes back the way a new one does.
          */
         if (s.x < -60 || s.x > width + 60 || s.y < -60 || s.y > height + 60) {
-          if (why) why[full] = "off screen";
           fades.set(`m:${full}`, 0);
           fades.set(`n:${full}`, 0);
           continue;
         }
         const hidden = steady(`h:${full}`, !visible(s), frameNow);
-        if (hidden && why) why[full] = "behind the mountain";
         /*
          * The hut owns the name from here, not from wherever it ends up.
          *
@@ -3595,7 +3597,6 @@ export default function FallbackTerrain({
           if (lit) lit.push({ full, alpha: Math.round(solid * 100) / 100 });
         }
         if (!keep) {
-          if (why) why[full] = !inside ? "half off the edge" : !room ? "past the budget" : "no room beside it";
           continue;
         }
 
@@ -3604,11 +3605,9 @@ export default function FallbackTerrain({
         shownAt.set(full, frameNow);
       }
       if (mapTest && !labelsOnly) {
-        window.__skisPlaceWhy = why;
         window.__skisPlaceLit = lit;
       }
       if (mapTest && labelsOnly) {
-        window.__skisPlaceNames = named;
         window.__skisPlaceNameLit = nameLit;
       }
       if (!labelsOnly) lastShownCount = drawn.length;

@@ -1,10 +1,21 @@
 /**
- * Monterosa Ski — resort graph.
+ * Monterosa Ski — the hand-typed graph. Not what the app shows any more.
  *
  * PROVENANCE: hand-typed from memory. Altitudes and lat/lon are approximately
- * right, run names are plausible, times are estimates. This is scaffolding, not
- * data. Replace with the OpenStreetMap Overpass extraction (see CLAUDE.md,
- * "Replacing this file") before anything ships to a real skier.
+ * right, run names are plausible, queue times are estimates. It is scaffolding,
+ * not data, and it said so while it was the only mountain there was.
+ *
+ * It has since been superseded: every resort the app offers, Monterosa
+ * included, is generated from OpenStreetMap into src/resorts/, and the
+ * registry serves those. Nothing a skier sees comes from here.
+ *
+ * It is kept, deliberately, for two jobs. It is the graph `solve()` falls back
+ * to when it is called without one, which keeps the solver runnable on its own
+ * — the property that lets it live in a worker and be benchmarked. And it is
+ * the fixture eight test files are written against: a small graph whose shape
+ * is known by hand is a better thing to assert against than 86 generated
+ * segments that change whenever OSM does. Delete it and those tests have to be
+ * rewritten against data that moves under them.
  *
  * Run minutes are NOT hand-typed: they are generated from src/lib/pace.js,
  * which the Overpass pipeline uses too, so the planner and the pipeline agree

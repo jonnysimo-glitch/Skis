@@ -178,7 +178,7 @@ export function toggleRefinement(refine, id) {
  * them — and the solver returns fewer rather than padding when it does not, so
  * asking wide costs nothing but a few milliseconds.
  */
-export const ROUTE_COUNT = 5;
+const ROUTE_COUNT = 5;
 
 export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
   let budget = plan.t1 - plan.t0;

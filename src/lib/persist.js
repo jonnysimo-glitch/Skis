@@ -47,7 +47,3 @@ export const load = (key) => readAll()[key];
 export function save(key, value) {
   writeAll({ ...readAll(), [key]: value });
 }
-
-export function clearCommitted() {
-  save("committed", null);
-}

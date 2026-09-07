@@ -185,16 +185,3 @@ async function warmTiles(route, onProgress) {
   onProgress?.({ done: urls.length, total: urls.length, phase: "done" });
   return { tiles: urls.length - failed - skipped, failed, skipped };
 }
-
-/** Rough cache footprint, for the honest line in the UI. */
-export async function cachedTileCount() {
-  try {
-    const names = await caches.keys();
-    const name = names.find((n) => n.includes("maptiler"));
-    if (!name) return 0;
-    const cache = await caches.open(name);
-    return (await cache.keys()).length;
-  } catch {
-    return 0;
-  }
-}
