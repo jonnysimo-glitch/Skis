@@ -260,6 +260,104 @@ export const toMinutes = (hhmm) => {
 };
 
 /**
+ * A gesture held open across several steps.
+ *
+ * `multiTouch` opens and closes a CDP session per call, so it can only ever
+ * express one complete gesture. The interesting ones are not complete: a
+ * second finger arriving mid-drag, one of two lifting while the other carries
+ * on, a leg advancing under a thumb that is still down. Those need the
+ * session held open, which is what this is.
+ *
+ *   const hand = await fingers(page);
+ *   await hand.down([[215, 420]]);
+ *   await hand.move([[200, 400]]);
+ *   await hand.down([[200, 400, 1], [300, 500, 2]]);   // a second finger
+ *   await hand.up([[300, 500, 2]]);                    // and it lifts
+ *   await hand.release();
+ *   await hand.close();
+ *
+ * A point is [x, y] or [x, y, id]; ids default to position in the list, which
+ * is what you want for a single finger and not what you want once two are
+ * down and one of them leaves.
+ */
+export async function fingers(page) {
+  const cdp = await page.context_.newCDPSession(page);
+  const pts = (list) =>
+    list.map((p, i) => ({
+      x: p[0], y: p[1], id: p[2] ?? i + 1, radiusX: 12, radiusY: 12, force: 1,
+    }));
+  const send = (type, list = []) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: pts(list) });
+  return {
+    down: (list) => send("touchStart", list),
+    move: (list) => send("touchMove", list),
+    up: (list) => send("touchEnd", list),
+    /** Every finger off the glass. */
+    release: () => send("touchEnd", []),
+    close: () => cdp.detach().catch(() => {}),
+  };
+}
+
+/**
+ * A real one-finger drag, in `steps` moves.
+ *
+ * Not `page.mouse`: a mouse drag skips touch-action, the browser's gesture
+ * recogniser and pointercancel, so the suite passes on gestures the phone
+ * does not deliver. Every drag a check makes should be this one.
+ */
+export function touchDrag(page, from, to, { steps = 14, settle = 18 } = {}) {
+  const frames = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    frames.push([[from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]]);
+  }
+  return multiTouch(page, frames, { settle });
+}
+
+/** Where a selector's middle is, in viewport pixels, or null if it is not there. */
+export async function centreOf(page, selector) {
+  const el = await page.$(selector);
+  if (!el) return null;
+  const box = await el.boundingBox();
+  return box
+    ? [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)]
+    : null;
+}
+
+/** A tap with a finger. False when there was nothing there to tap. */
+export async function touchTap(page, selector, { settle = 30 } = {}) {
+  const at = await centreOf(page, selector);
+  if (!at) return false;
+  await multiTouch(page, [[at]], { settle });
+  return true;
+}
+
+/**
+ * A finger held still on a point, for `ms`.
+ *
+ * With jitter, because a real hand has some and a browser reconsiders whether
+ * a still touch is turning into a scroll. `reachNext` holds the mouse down,
+ * which is not the same event stream at all: the hold button listens to
+ * pointer events and the browser can cancel a touch mid-hold.
+ */
+export async function touchHold(page, x, y, ms) {
+  const cdp = await page.context_.newCDPSession(page);
+  const at = (dx) => [{ x: x + dx, y, id: 1, radiusX: 12, radiusY: 12, force: 1 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(0) });
+  const step = 40;
+  for (let t = 0; t < ms; t += step) {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: at(t % 80 ? 0.4 : -0.4),
+    });
+    await page.waitForTimeout(step);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(120);
+  await cdp.detach().catch(() => {});
+}
+
+/**
  * Multi-touch, dispatched through the browser's own input pipeline.
  *
  * Playwright's mouse is one pointer and its touchscreen only taps, so two

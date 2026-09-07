@@ -705,11 +705,19 @@ const NAV_LABEL_ZOOM = 2.2;
 /**
  * And how far you may push it before the recentre button has work to do.
  *
- * Half a frame each way. Enough to see what is off the edge, not enough to
- * lose yourself: this is the one screen where the map has a job other than
- * being looked at.
+ * A screen and a half each way, which is enough to look up the mountain at
+ * where the day goes next and not so far that you cannot find yourself again.
+ *
+ * It was half a frame, and half a frame is the mistake PAN_REACH's own note
+ * describes: the wall lands 321 pixels from the anchor on a 900 pixel screen,
+ * which is shorter than an ordinary thumb drag, so every normal pan ran into
+ * the resistance and sprang back. That does not feel like an edge, it feels
+ * like the map skipping — you push, it stops giving, you let go, it moves on
+ * its own. Measured before the change: a single 560 pixel drag ended 254
+ * pixels behind the thumb. The recentre button is what makes a loose wall
+ * safe here, and it is one tap away.
  */
-const NAV_PAN = 0.5;
+const NAV_PAN = 1.5;
 /**
  * How far over the camera leans while navigating.
  *
@@ -4361,10 +4369,12 @@ export default function FallbackTerrain({
         // Null when there is no drag, or when the grab landed on sky: a
         // gesture with no anchor never takes the ground-holding path, so there
         // is nothing there to measure.
-        if (!gesture?.anchor || !lastCam.current || !projectRef.current) return null;
+        if (!gesture?.anchor || !projectRef.current) return null;
+        // Solved now, like the drag itself. Against `lastCam` this measured
+        // the renderer's lag as if it were the gesture's error.
         const at = projectRef.current(
           gesture.anchor.x, gesture.anchor.y, gesture.anchor.z,
-          view.current, lastCam.current);
+          view.current, fit(view.current));
         if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return null;
         return Math.hypot(
           gesture.x - gesture.grabDX - at.x,
@@ -4375,8 +4385,19 @@ export default function FallbackTerrain({
     const startGesture = () => {
       const c = centroid();
       const grabbed = groundUnder(view.current, c.x, c.y);
-      const grabAt = grabbed && lastCam.current && projectRef.current
-        ? projectRef.current(grabbed.x, grabbed.y, grabbed.z, view.current, lastCam.current)
+      /*
+       * The camera as it is now, not as it was when the page last drew.
+       *
+       * `move` solves `fit(v)` per pointer event and measures the grab against
+       * that; this recorded the grab's offset against `lastCam` instead. When
+       * the two disagree — and they do whenever anything is still animating
+       * when the finger lands, which after a zoom, a recentre or a leg change
+       * is most of the time — the difference is subtracted from every move of
+       * the gesture and never recovered. Measured after a two finger tap: the
+       * next drag ran 57 pixels behind the thumb, for the whole drag.
+       */
+      const grabAt = grabbed && projectRef.current
+        ? projectRef.current(grabbed.x, grabbed.y, grabbed.z, view.current, fit(view.current))
         : null;
       const sp = pointers.size >= 2 ? spread() : {};
       const pts = [...pointers.values()];
@@ -4574,8 +4595,18 @@ export default function FallbackTerrain({
       // aborted the rest of this handler and the gesture never started at all.
       try { canvas.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      startGesture();
+      /*
+       * Marked as dragging BEFORE the gesture starts, not after.
+       *
+       * `startGesture` solves the camera now that it records its grab against
+       * the same one the drag will use, and solving the camera settles the pan
+       * inside its wall unless a finger is down. Setting the flag afterwards
+       * meant a touch landing while the map was still springing back snapped
+       * it home in one frame instead of letting the spring finish — the dead
+       * stop the spring exists to replace.
+       */
       view.current.dragging = true;
+      startGesture();
       // A new touch stops a glide, so the map is always grabbable.
       glide.x = 0;
       glide.y = 0;

@@ -28,6 +28,11 @@ import {
   reachNext,
   openLegs,
   openTools,
+  touchDrag,
+  touchTap,
+  touchHold,
+  centreOf,
+  fingers,
 } from "./harness.mjs";
 
 /*
@@ -4804,6 +4809,404 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
     back ? `${Math.round(back.across)} m across, ${(back.down * 100).toFixed(0)}% down` : "?");
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+// ================== 43. EVERY SCREEN TAKES A FINGER ==
+/*
+ * Reported as: touchscreen bugs during navigation.
+ *
+ * The suite drove a mouse nearly everywhere. A mouse is one pointer that
+ * never gets cancelled, so touch-action, the browser's gesture recogniser and
+ * pointercancel all went untested and the app passed while the phone did not.
+ * Section 16 was the only touch coverage there was, and it only ran on the
+ * explore screen.
+ *
+ * Two things this found, both real. The navigation pan wall sat at half a
+ * frame — 321 pixels on a 900 pixel screen, shorter than an ordinary thumb
+ * drag, so every normal pan hit the resistance and sprang back, and a single
+ * drag ended 254 pixels behind the thumb. And the grab offset a drag measures
+ * from was recorded against the last DRAWN camera while the drag itself
+ * solves a fresh one, so after anything that animates — a zoom, a recentre, a
+ * leg change — the whole gesture ran 57 pixels behind the finger and never
+ * caught up. That one was on every screen with a map.
+ */
+if (feature("43. Every screen takes a finger")) {
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+
+  /** Does the scroller scroll, and is it left where the user can see it? */
+  const scrolls = async (sel, label) => {
+    if (!(await page.$(sel))) { check(`${label} has something to scroll`, false, sel); return; }
+    const room = await page.$eval(sel, (n) => n.scrollHeight - n.clientHeight);
+    if (room < 12) return; // Nothing to scroll is not a failure.
+    const box = await (await page.$(sel)).boundingBox();
+    const cx = Math.round(box.x + box.width / 2);
+    const before = await page.$eval(sel, (n) => n.scrollTop);
+    await touchDrag(page,
+      [cx, Math.round(box.y + box.height * 0.8)],
+      [cx, Math.round(box.y + box.height * 0.25)]);
+    await page.waitForTimeout(400);
+    const after = await page.$eval(sel, (n) => n.scrollTop);
+    check(`${label} scrolls under a finger`, after > before, `${before} -> ${after} of ${room}`);
+    /*
+     * And put it back, which is not tidiness.
+     *
+     * A list left scrolled hides its first card under the sticky header, and
+     * a button under the header still reports itself visible with pointer
+     * events on — so the next tap in this check lands on the header and the
+     * failure looks like a broken button.
+     */
+    await page.$eval(sel, (n) => { n.scrollTop = 0; });
+    await page.waitForTimeout(350);
+  };
+
+  /** Does the map move under a finger here, all three ways? */
+  const mapMoves = async (label, y) => {
+    const a = await page.evaluate(() => ({ ...window.__skisView }));
+    await touchDrag(page, [300, y], [180, y - 90]);
+    await page.waitForTimeout(500);
+    const b = await page.evaluate(() => ({ ...window.__skisView }));
+    check(`${label}: a finger pans the map`,
+      Math.abs(b.panX - a.panX) > 4 || Math.abs(b.panY - a.panY) > 4,
+      `pan ${Math.round(a.panX)},${Math.round(a.panY)} -> ${Math.round(b.panX)},${Math.round(b.panY)}`);
+    const pinch = [];
+    for (let i = 0; i <= 12; i++) { const d = 60 + i * 12; pinch.push([[215 - d, y], [215 + d, y]]); }
+    await multiTouch(page, pinch);
+    const c = await page.evaluate(() => ({ ...window.__skisView }));
+    check(`${label}: a pinch zooms`, c.targetZoom > b.targetZoom * 1.15,
+      `${b.targetZoom.toFixed(2)} -> ${c.targetZoom.toFixed(2)}`);
+    const twist = [];
+    for (let i = 0; i <= 16; i++) {
+      const th = (i * 3 * Math.PI) / 180;
+      const R = 90;
+      twist.push([
+        [215 - R * Math.cos(th), y - R * Math.sin(th)],
+        [215 + R * Math.cos(th), y + R * Math.sin(th)],
+      ]);
+    }
+    await multiTouch(page, twist);
+    const d = await page.evaluate(() => ({ ...window.__skisView }));
+    check(`${label}: a twist rotates`, Math.abs(d.bearing - c.bearing) > 5,
+      `${c.bearing.toFixed(0)} -> ${d.bearing.toFixed(0)}`);
+  };
+
+  // ---- home ---------------------------------------------------------------
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await scrolls(".page__body", "home");
+  check("a resort card takes a tap", await touchTap(page, ".hero"));
+  await page.waitForTimeout(400);
+  check("and the go button appears", Boolean(await page.$("text=Go skiing")));
+  check("and takes one too", await touchTap(page, "text=Go skiing"));
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.waitForTimeout(1800);
+
+  // ---- explore ------------------------------------------------------------
+  await mapMoves("explore", 380);
+  await openTools(page);
+  check("explore: a map control takes a tap",
+    await touchTap(page, '.maptools .iconbtn[aria-label="Zoom in"]'));
+  await page.waitForTimeout(600);
+
+  // ---- plan ---------------------------------------------------------------
+  check("the plan button takes a tap", await touchTap(page, ".planbtn"));
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await page.waitForTimeout(900);
+  await scrolls(".page__body", "the plan form");
+  check("find routes takes a tap", await touchTap(page, "text=Find routes"));
+  await page.waitForSelector(".routecard", { timeout: 30000 });
+
+  // ---- choose -------------------------------------------------------------
+  await scrolls(".page__body", "the day list");
+  // A named chip, not the first: "Shorter" can legitimately rule everything
+  // out, and then there is no day left to open.
+  check("a refine chip takes a tap", await touchTap(page, '.chip:has-text("Longer")'));
+  await page.waitForTimeout(1800);
+  check("and it re-solves in place rather than going back to the form",
+    (await page.$$eval(".chip", (n) => n.length)) > 0);
+  await touchTap(page, '.chip:has-text("Longer")');
+  await page.waitForTimeout(1800);
+  check("opening a day takes a tap", await touchTap(page, "text=See this day"));
+  await page.waitForSelector(".detail__legs", { timeout: 20000 });
+  await page.waitForTimeout(2000);
+
+  // ---- detail and the leg list -------------------------------------------
+  await mapMoves("detail", 300);
+  check("leg by leg takes a tap", await touchTap(page, ".detail__legs"));
+  await page.waitForTimeout(800);
+  check("and the legs are listed", Boolean(await page.$(".leg")));
+  await scrolls(".page__body", "the leg list");
+  check("back takes a tap", await touchTap(page, '[aria-label="Back to the map"]'));
+  await page.waitForTimeout(800);
+  // Not `.sheet__foot .btn`, which is Back: it sits first in the row.
+  check("save and start takes a tap",
+    await touchTap(page, ".sheet__foot .btn:not(.btn--quiet)"));
+  await page.waitForSelector(".nav", { timeout: 15000 });
+  await page.waitForTimeout(2400);
+
+  // ---- navigating ---------------------------------------------------------
+  await mapMoves("navigate", 420);
+  check("the expand chevron takes a tap", await touchTap(page, ".nav__grow"));
+  await page.waitForTimeout(700);
+  check("and the panel opens", Boolean(await page.$(".nav__metrics")));
+  if (await page.$(".nav__more")) {
+    await touchTap(page, ".nav__more");
+    await page.waitForTimeout(800);
+    await scrolls(".nav__allbody", "the rest of the day");
+    await touchTap(page, ".nav__more");
+    await page.waitForTimeout(700);
+  }
+  await touchTap(page, ".nav__grow");
+  await page.waitForTimeout(700);
+
+  /*
+   * The hold, with a finger.
+   *
+   * `reachNext` holds the MOUSE down, which is a different event stream: the
+   * button listens to pointer events and a browser can cancel a touch part
+   * way through a hold, which would leave the one action on this screen
+   * impossible to perform on a phone.
+   */
+  const legNow = () =>
+    page.$eval(".nav__legcount", (n) => n.textContent.trim()).catch(() => "?");
+  const at = await centreOf(page, ".nav__foot .btn--hold, .nav__foot .btn");
+  check("the Reached button is on screen", Boolean(at));
+  if (at) {
+    const was = await legNow();
+    await multiTouch(page, [[at]], { settle: 30 });
+    await page.waitForTimeout(500);
+    check("a tap does not advance a leg", (await legNow()) === was,
+      `${was} -> ${await legNow()}`);
+    await touchHold(page, at[0], at[1], 700);
+    await page.waitForTimeout(700);
+    check("but a finger held on it does", (await legNow()) !== was,
+      `${was} -> ${await legNow()}`);
+  }
+
+  check("no page errors so far", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+
+  /*
+   * The tabs and the settings sheet, on a fresh page.
+   *
+   * Not the summary: reaching it means holding the button through every leg
+   * of a real day, which is minutes of gesture for a screen that is one
+   * button. The mouse-driven suites walk that path; this one covers the
+   * screens a finger can reach in a few taps.
+   */
+  const rest = await newPage(browser, { at: [9, 30], touch: true });
+  await rest.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await rest.waitForSelector(".tabbar", { timeout: 20000 });
+  const tabs = await rest.$$(".tabbar button");
+  check("there are three tabs", tabs.length >= 3, `${tabs.length}`);
+  for (const t of tabs) {
+    const box = await t.boundingBox();
+    if (!box) continue;
+    const label = (await t.evaluate((n) => n.textContent.trim())) || "?";
+    await multiTouch(
+      rest,
+      [[[Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)]]],
+      { settle: 30 }
+    );
+    await rest.waitForTimeout(700);
+    check(`the ${label} tab takes a tap`, Boolean(await rest.$(".page, .app__map")));
+  }
+  await touchTap(rest, ".tabbar button");
+  await rest.waitForTimeout(700);
+  check("settings takes a tap", await touchTap(rest, '[aria-label="Settings"]'));
+  await rest.waitForTimeout(800);
+  check("and opens as a sheet", Boolean(await rest.$(".modal__body")));
+  if (await rest.$(".modal__body")) {
+    const room = await rest.$eval(".modal__body", (n) => n.scrollHeight - n.clientHeight);
+    if (room >= 12) {
+      const box = await (await rest.$(".modal__body")).boundingBox();
+      const cx = Math.round(box.x + box.width / 2);
+      const before = await rest.$eval(".modal__body", (n) => n.scrollTop);
+      await touchDrag(rest,
+        [cx, Math.round(box.y + box.height * 0.8)],
+        [cx, Math.round(box.y + box.height * 0.25)]);
+      await rest.waitForTimeout(400);
+      const after = await rest.$eval(".modal__body", (n) => n.scrollTop);
+      check("and its sheet scrolls under a finger", after > before,
+        `${before} -> ${after} of ${room}`);
+    }
+    check("and closing it takes a tap", await touchTap(rest, '[aria-label="Close"]'));
+  }
+  check("no page errors", rest.errors.length === 0, rest.errors.join(" | "));
+  await rest.context_.close();
+}
+
+// ============== 44. THE GESTURES A REAL HAND MAKES ==
+/*
+ * The clean gestures all worked. These are the ones that did not.
+ *
+ * A hand on a phone does not deliver one complete gesture at a time: a second
+ * finger arrives half way through a drag, one of two lifts and the other
+ * carries on, a drag runs off the map onto the chrome, a thumb lands while
+ * the map is still gliding, a leg advances under the other thumb. Every one
+ * of those is ordinary, none of them is expressible as a single gesture, and
+ * both of the faults this section was written for hid in them.
+ *
+ * The measure throughout is `__skisGroundGap`: how far the ground the finger
+ * grabbed has got from the finger, right now, mid-gesture. Pan magnitude
+ * cannot say — after release it includes the fling, and while held it is
+ * stable but says nothing about whether the map outran the thumb.
+ */
+if (feature("44. The gestures a real hand makes")) {
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+  await toPlan(page, `${url}?maptest=1`);
+  await solve(page);
+  await openRoute(page);
+  await page.waitForSelector(".sheet__foot .btn");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 15000 });
+  await page.waitForTimeout(2400);
+
+  const hand = await fingers(page);
+  const view = () => page.evaluate(() => ({ ...window.__skisView }));
+  const gap = () => page.evaluate(() => window.__skisGroundGap?.() ?? null);
+  /*
+   * Two pixels, not zero. The anchor is a point the height field was sampled
+   * at and the correction lands in whole screen pixels, so an exact zero is
+   * luck. With either fault present this reads 57 and 254.
+   */
+  const HELD = 2;
+  const sane = (v) =>
+    Number.isFinite(v.panX) && Number.isFinite(v.panY) && Number.isFinite(v.zoom) &&
+    Number.isFinite(v.bearing) && Number.isFinite(v.pitch) &&
+    v.zoom > 0.3 && v.zoom < 60 && v.pitch >= 0 && v.pitch <= 84;
+  const recentre = async () => {
+    await openTools(page);
+    await page.click('.maptools .iconbtn[aria-label="Recentre the view"]');
+    await page.waitForTimeout(900);
+  };
+  const step = async (list) => { await hand.move(list); await page.waitForTimeout(18); };
+
+  // ---- a second finger arrives mid-drag -----------------------------------
+  await recentre();
+  await hand.down([[215, 420]]);
+  for (let i = 1; i <= 6; i++) await step([[215 - i * 8, 420 - i * 6]]);
+  const held = await gap();
+  check("the ground stays under the thumb while dragging",
+    held !== null && held <= HELD, held === null ? "no grab" : `${held.toFixed(1)}px off`);
+  await hand.down([[167, 384, 1], [280, 470, 2]]);
+  for (let i = 1; i <= 8; i++) {
+    await step([[167 - i * 6, 384 - i * 4, 1], [280 + i * 6, 470 + i * 4, 2]]);
+  }
+  const mid = await view();
+  check("a pan becoming a pinch leaves the view sane", sane(mid),
+    `zoom ${mid.zoom.toFixed(2)}, pan ${Math.round(mid.panX)},${Math.round(mid.panY)}`);
+  check("and it actually zooms", mid.targetZoom > 1.05, mid.targetZoom.toFixed(2));
+
+  // ---- one of two fingers lifts -------------------------------------------
+  const beforeLift = await view();
+  await hand.up([[328, 502, 2]]);
+  await page.waitForTimeout(40);
+  for (let i = 1; i <= 8; i++) await step([[119 - i * 8, 352, 1]]);
+  const afterLift = await view();
+  check("losing a finger leaves the view sane", sane(afterLift));
+  // The fault this is for: the remaining finger must not teleport the map.
+  const jump = Math.hypot(afterLift.panX - beforeLift.panX, afterLift.panY - beforeLift.panY);
+  check("and the map does not jump when it happens", jump < 200, `${Math.round(jump)}px of pan`);
+  const held2 = await gap();
+  check("and the ground is under the remaining thumb",
+    held2 !== null && held2 <= HELD, held2 === null ? "no grab" : `${held2.toFixed(1)}px off`);
+  await hand.release();
+  await page.waitForTimeout(500);
+
+  /*
+   * ---- a long drag, which is where the wall was -------------------------
+   *
+   * 560 pixels down the screen, which is an ordinary thumb drag and was more
+   * than the navigation pan wall allowed: it stopped at 321 and the ground
+   * ended 254 pixels behind the finger, then sprang back. That is not an edge,
+   * it is the map skipping.
+   */
+  await recentre();
+  const before = await view();
+  await hand.down([[215, 300]]);
+  for (let i = 1; i <= 14; i++) await step([[215, 300 + i * 40]]);
+  const held3 = await gap();
+  check("an ordinary long drag keeps the ground under the thumb",
+    held3 !== null && held3 <= HELD, held3 === null ? "lost the grab" : `${held3.toFixed(1)}px off`);
+  await hand.release();
+  await page.waitForTimeout(600);
+  const after = await view();
+  check("and it moved the map that far", Math.abs(after.panY - before.panY) > 400,
+    `panY ${Math.round(before.panY)} -> ${Math.round(after.panY)}`);
+
+  // ---- a thumb lands while the map is still gliding ------------------------
+  await recentre();
+  await hand.down([[300, 500]]);
+  for (let i = 1; i <= 10; i++) await step([[300 - i * 22, 500 - i * 10]]);
+  await hand.release();
+  await page.waitForTimeout(60); // mid-glide
+  const g1 = await view();
+  await hand.down([[200, 400]]);
+  await page.waitForTimeout(120);
+  await hand.release();
+  await page.waitForTimeout(500);
+  const g2 = await view();
+  check("a tap mid-glide leaves the view sane", sane(g2));
+  check("and stops the glide rather than adding to it",
+    Math.abs(g2.panX - g1.panX) < 90,
+    `panX ${Math.round(g1.panX)} -> ${Math.round(g2.panX)}`);
+
+  /*
+   * ---- a two finger tap, and then a pan --------------------------------
+   *
+   * The other fault. A drag records where its grab landed relative to the
+   * thumb, and it recorded that against the last DRAWN camera while the drag
+   * itself solves a fresh one every move. Anything still animating when the
+   * finger lands makes those two disagree, and the difference is subtracted
+   * from the whole gesture: 57 pixels behind the thumb, for the whole drag,
+   * never recovered.
+   */
+  await recentre();
+  await hand.down([[170, 420, 1], [260, 420, 2]]);
+  await page.waitForTimeout(80);
+  await hand.release();
+  await page.waitForTimeout(200);
+  const h1 = await view();
+  await hand.down([[215, 420]]);
+  for (let i = 1; i <= 10; i++) await step([[215 - i * 9, 420 - i * 5]]);
+  const held5 = await gap();
+  check("a pan straight after a two finger tap holds the ground",
+    held5 !== null && held5 <= HELD, held5 === null ? "no grab" : `${held5.toFixed(1)}px off`);
+  await hand.release();
+  await page.waitForTimeout(500);
+  const h2 = await view();
+  check("and it pans rather than rotating or zooming",
+    Math.abs(h2.bearing - h1.bearing) < 3 && Math.abs(h2.targetZoom - h1.targetZoom) < 0.05,
+    `bearing ${Math.round(h1.bearing)} -> ${Math.round(h2.bearing)}, ` +
+    `zoom ${h1.targetZoom.toFixed(2)} -> ${h2.targetZoom.toFixed(2)}`);
+
+  // ---- a leg advances under the other thumb -------------------------------
+  const legNow = () =>
+    page.$eval(".nav__legcount", (n) => n.textContent.trim()).catch(() => "?");
+  await recentre();
+  await hand.down([[215, 420]]);
+  for (let i = 1; i <= 6; i++) await step([[215 - i * 7, 420 - i * 4]]);
+  const was = await legNow();
+  await reachNext(page);
+  await page.waitForTimeout(700);
+  const after6 = await view();
+  check("a leg advancing mid-drag leaves the view sane", sane(after6),
+    `zoom ${after6.zoom.toFixed(2)}, pan ${Math.round(after6.panX)},${Math.round(after6.panY)}`);
+  check("and the leg did advance", (await legNow()) !== was, `${was} -> ${await legNow()}`);
+  await hand.release();
+  await page.waitForTimeout(400);
+  // And the map still works, which is the thing a stuck gesture would break.
+  await hand.down([[215, 420]]);
+  for (let i = 1; i <= 8; i++) await step([[215 - i * 9, 420 - i * 5]]);
+  const held6 = await gap();
+  check("and the map still takes a drag afterwards",
+    held6 !== null && held6 <= HELD, held6 === null ? "no grab" : `${held6.toFixed(1)}px off`);
+  await hand.release();
+  await page.waitForTimeout(300);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await hand.close();
   await page.context_.close();
 }
 
