@@ -257,6 +257,12 @@ const RUN_NAME_OCCLUSION_MS = 1100;
  */
 const INCUMBENT_SLACK = 7;
 /**
+ * How finely a piste is walked looking for somewhere to write its name, in
+ * pixels. Fine enough to find a gap between two other labels, coarse enough
+ * that a piste crossing the whole screen costs a few dozen tries.
+ */
+const LABEL_STEP_PX = 24;
+/**
  * How far outside the frame a label is still worth keeping, in pixels.
  *
  * Wide enough that a label has room to fade out completely after it has left
@@ -2163,14 +2169,40 @@ export default function FallbackTerrain({
       }, 0);
       const runBudget = Math.round(
         RUN_NAME_BASE_COUNT * Math.max(1, v.zoom - NAME_ZOOM + 1) ** RUN_NAME_ZOOM_POWER);
-      // Ranked, and marked past the budget rather than removed — see the note
-      // in drawPlaces about what removing them does to the fade.
+      /*
+       * Ranked, and the budget counted against what actually gets written.
+       *
+       * Marking the first N by rank and calling the rest spare wastes the
+       * budget: a piste can be top-ranked and still have nowhere to put its
+       * name — off the screen, behind a ridge, no gap between two other
+       * labels — and its slot went with it. Monterosa drew three names at
+       * every zoom out of a budget of nine, because six of the nine longest
+       * pistes could not be placed and the tenth was never asked.
+       *
+       * Walking in rank order and taking the first N that CAN be placed is
+       * still a prefix, and still stable frame to frame, because what can be
+       * placed barely changes between frames. It just does not throw slots
+       * away.
+       */
       const order = [...byName]
         .map(([name, features]) => ({ name, features, span: spanOf(features) }))
-        .sort((a, b) => b.span - a.span || a.name.localeCompare(b.name))
-        .map((r, i) => ({ ...r, spare: i >= runBudget }));
+        /*
+         * Incumbents first, then the rest by length.
+         *
+         * Counting the budget against what gets written recovered the coverage
+         * a rank prefix threw away, and brought back the churn the prefix was
+         * for: a name that loses its spot frees a slot, another takes it, and
+         * when the first comes back they trade. Letting whoever is already on
+         * the mountain claim their slot before any newcomer is asked settles
+         * that, and it is stable because incumbency changes slowly — a name
+         * holds for PLACE_HOLD_MS after it was last written.
+         */
+        .sort((a, b) => (held(b.name) ? 1 : 0) - (held(a.name) ? 1 : 0)
+          || b.span - a.span
+          || a.name.localeCompare(b.name));
+      let shown = 0;
 
-      for (const { name, features, spare } of order) {
+      for (const { name, features } of order) {
         const w = ctx.measureText(name).width;
         /*
          * A whole piste fragment, not a link of it.
@@ -2188,6 +2220,16 @@ export default function FallbackTerrain({
          */
         let best = null;
         let stayed = null;
+        /*
+         * Every fragment that could hold the word, not only the best of them.
+         *
+         * Which fragment wins used to be decided before anyone asked whether
+         * the word would fit ON THE SCREEN there, so a piste whose longest
+         * stretch runs off the edge got no label at all while a shorter
+         * stretch of the same piste sat in the middle of the frame doing
+         * nothing. Monterosa went from eighteen names to three.
+         */
+        const seen = [];
         const was = lastOn.get(name);
         /* eslint-disable-next-line prefer-const -- reassigned by the fade-out path below */
         let anywhere = null;
@@ -2207,6 +2249,7 @@ export default function FallbackTerrain({
           const score = chord * (1.35 - flat);
           const cand = { pts, a, b, dx, dy, chord, score, feature };
           if (!anywhere || score > anywhere.score) anywhere = cand;
+          seen.push(cand);
           // A fragment hidden behind a ridge is not a place to write its name:
           // the word would float on bare snow with no line under it. But the
           // fragment is still where the label has to fade out FROM, so the
@@ -2319,14 +2362,93 @@ export default function FallbackTerrain({
         let at = null;
         let box = null;
         const slack = held(name) ? INCUMBENT_SLACK : 0;
-        for (const t of along) {
-          const p = pts[Math.min(pts.length - 1, Math.max(0, Math.round(t * (pts.length - 1))))];
-          const candidate = boxesAt(p);
-          if (candidate.some((b) => hits(b, slack))) continue;
-          at = p;
-          box = candidate;
-          break;
+        /*
+         * And it has to be all on the screen.
+         *
+         * A place name is clamped inside the frame — only the words move, the
+         * dot stays put — but a run name cannot be: it is written along the
+         * piste, so sliding it sideways would take it off the snow. The
+         * position is rejected instead and the next one along the run tried,
+         * which is a move the piste allows.
+         *
+         * Without this, every run whose middle fell near an edge was sliced by
+         * it. Kronplatz showed "Arndt" with the A cut off, "interberg" for
+         * Hinterberg and "Sylvest" for Sylvester in one frame: a name cut by
+         * the screen is not a name, and it reads as a rendering fault rather
+         * than as a label that did not fit.
+         */
+        const onScreen = (bs) => bs.every((b) =>
+          b.l >= 0 && b.t >= 0 && b.r <= width && b.b <= height);
+        /*
+         * Positions taken from the part of the run you can see.
+         *
+         * Fractions of the whole fragment were the first attempt and they fail
+         * at close range: zoom in far enough and a piste is several screens
+         * long, so its middle — and every position measured from its ends — is
+         * off the edge. Run names went from fifteen to none.
+         *
+         * So the vertices whose label would be wholly on screen are collected
+         * first, and the middle of THAT is where the word goes. A word reads
+         * best in the middle of the stretch you can see, which is not the
+         * middle of the piste.
+         */
+        /*
+         * Sampled along the line, not at its vertices.
+         *
+         * Vertices were the first attempt and they vanish at close range: OSM
+         * samples a piste every twenty or thirty metres, which at this zoom is
+         * hundreds of pixels, so a run crossing the screen can have no vertex
+         * ON the screen at all. Fifteen names at Kronplatz reported "no room
+         * anywhere along it" while their pistes ran right through the middle
+         * of the frame.
+         *
+         * Walking the polyline at a fixed pixel spacing finds a position
+         * wherever the line is visible, however far apart the data is.
+         */
+        /*
+         * Somewhere on this piste, on the screen, with nothing already there.
+         *
+         * Tried over every fragment in score order rather than only the best
+         * one, because the best-scoring stretch is often the one running off
+         * the edge. Within a fragment the line is walked at a fixed pixel
+         * spacing rather than vertex by vertex: OSM samples a piste every
+         * twenty or thirty metres, which at close range is hundreds of pixels,
+         * so a run crossing the whole frame can have no vertex on the screen
+         * at all.
+         *
+         * Outwards from the middle of the visible stretch, so the first free
+         * spot is the most central one — a word reads best in the middle of
+         * the piste you can see, which is not the middle of the piste.
+         */
+        const place = (line) => {
+          const found = [];
+          for (let i = 1; i < line.length; i++) {
+            const a = line[i - 1];
+            const b = line[i];
+            const span = Math.hypot(b.x - a.x, b.y - a.y);
+            const steps = Math.max(1, Math.min(60, Math.round(span / LABEL_STEP_PX)));
+            for (let k = 0; k <= steps; k++) {
+              const t = k / steps;
+              const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+              const boxes = boxesAt(p);
+              if (onScreen(boxes)) found.push({ p, boxes, at: found.length });
+            }
+          }
+          const mid = (found.length - 1) / 2;
+          // The index is carried on each entry: `indexOf` inside a comparator
+          // reads the half-sorted order and orders by nothing at all.
+          found.sort((x, y) => Math.abs(x.at - mid) - Math.abs(y.at - mid));
+          return found.find((f) => !f.boxes.some((b) => hits(b, slack))) ?? null;
+        };
+        let got = place(pts);
+        if (!got) {
+          for (const cand of [...seen].sort((x, y) => y.score - x.score)) {
+            if (cand === best) continue;
+            got = place(cand.pts);
+            if (got) break;
+          }
         }
+        if (got) { at = got.p; box = got.boxes; }
         // Nothing free anywhere along it: fade out from the middle, which is
         // where it was.
         const mid = pts[Math.floor(pts.length / 2)];
@@ -2335,10 +2457,24 @@ export default function FallbackTerrain({
         box = box ?? boxesAt(mid);
         const mx = at.x;
         const my = at.y;
-        const keep = zoomOk && !behind && room && !spare;
+        /*
+         * Losing its place is given the same patience as going behind a ridge.
+         *
+         * Requiring the whole word on the screen stopped names being sliced by
+         * the edge, and cost stability: a name near an edge now flips off and
+         * on as the view turns, where before it stayed and was cut. So an
+         * unplaceable name holds its last position for a moment before it
+         * goes — invisible while it is off the frame, and the difference
+         * between a name that blinks as you turn and one that does not.
+         */
+        const cramped = steady(`rr:${name}`, !room, frameNow, RUN_NAME_OCCLUSION_MS);
+        const keep = zoomOk && !behind && !cramped && shown < runBudget;
+        if (keep) shown++;
         if (why && !keep) {
-          why[name] = !zoomOk ? "too far out" : spare ? "past the budget"
-            : behind ? "behind a ridge" : "no room anywhere along it";
+          why[name] = !zoomOk ? "too far out"
+            : behind ? "behind a ridge"
+              : cramped ? "no room anywhere along it"
+                : "past the budget";
         }
         const solid = fadeOf(`r:${name}`, keep, frameDt);
         // Reserved only while it is wanted. A label on its way out stops
@@ -2635,7 +2771,7 @@ export default function FallbackTerrain({
          * freezes at whatever it last was, so the budget edge became a pop.
          * The hut tier has carried a comment saying so for weeks.
          */
-        .map(((n) => (c) => ({ ...c, spare: c.taken ? true : n++ >= placeBudget }))(0));
+        ;
 
       /*
        * No encroachment allowance here, unlike the run names.
@@ -2653,7 +2789,11 @@ export default function FallbackTerrain({
 
       const drawn = [];
       const lit = mapTest ? [] : null;
-      for (const { key, n, s, behind, onScreen, spare } of candidates) {
+      // Counted against what gets written, not against rank position: a
+      // top-ranked name with nowhere to go would otherwise take its slot with
+      // it. Same reasoning as the run names above.
+      let up = 0;
+      for (const { key, n, s, behind, onScreen, taken } of candidates) {
         const w = ctx.measureText(n.name).width;
         // Four places to put it, in order of preference. Dropping a name on the
         // first collision cost Champoluc every time, because the zoom buttons
@@ -2696,7 +2836,8 @@ export default function FallbackTerrain({
           tx = cx;
           y = spots[0].y;
         }
-        const keep = room && !behind && onScreen && !spare;
+        const keep = room && !behind && onScreen && !taken && up < placeBudget;
+        if (keep) up++;
         const solid = fadeOf(`l:${key}`, keep, frameDt);
         /*
          * The box is reserved on the decision, not on the fade.
