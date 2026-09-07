@@ -126,8 +126,9 @@ out center tags;
 // very often a polygon somebody traced with neither tag on it, and that is the
 // single most important one at the whole resort. What separates the two is not
 // the tags, it is whether anyone bothered to draw it: a layby is a node, a
-// real car park is an area. `out center tags` says which, so the filter
-// downstream can use it, and it still keeps only what is near a base.
+// real car park is an area. The out line below returns the element type, so
+// the filter downstream can use it, and it still keeps only what is near a
+// base. (No backticks in this comment: it is inside the template literal.)
 (
   nwr["amenity"="parking"](${box});
 );
