@@ -1,7 +1,9 @@
 /**
  * Pieces shared between the choose, detail, navigate and summary screens.
  */
+import { Fragment } from "react";
 import { minutesToClock, legsOf } from "../solver.js";
+import { LUNCH_MINUTES as LUNCH_STOP_MINUTES } from "../lib/plan.js";
 import { Clock, Ruler, Descend, Runs, Lift } from "./Icons.jsx";
 
 export const hours = (minutes) => {
@@ -74,7 +76,7 @@ export const detailStats = (route) => [
  * "To next junction", not "to next turn" — pistes have decision points where
  * runs split, they do not have turns.
  */
-export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
+export function LegList({ route, clocks, current = -1, doneThrough = -1, lunch = null }) {
   return (
     <ul className="legs">
       {legsOf(route).map((edge, i) => {
@@ -91,9 +93,18 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
             : edge.link
               ? `link · ${edge.min} min · skating or on foot`
               : `${edge.difficulty} · ${edge.km} km · ${edge.drop} m down`;
+        /*
+         * The stop itself, as a row in the day rather than a note about it.
+         *
+         * "Sit-down lunch" put the day past a rifugio and then said nothing,
+         * so it read as a filter. A named row between two legs is what a
+         * skier means by a stop: this is where you get off, this is what it
+         * is called, this is roughly when.
+         */
+        const eating = lunch && lunch.leg === i;
         return (
+          <Fragment key={`${edge.id}-${i}`}>
           <li
-            key={`${edge.id}-${i}`}
             className={`leg${done ? " leg--done" : ""}${now ? " leg--now" : ""}`}
           >
             {/* The same number the map draws on the leg.
@@ -121,6 +132,24 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
                 getting you down before the lifts stop. */}
             {clocks && <span className="leg__t">{done ? "" : minutesToClock(clocks[i])}</span>}
           </li>
+          {eating && (
+            <li className="leg leg--stop">
+              <span className="leg__n" aria-hidden="true" />
+              <span className="leg__rail">
+                <i className="leg__dot leg__dot--stop" />
+              </span>
+              <span>
+                <span className="leg__nm">Lunch at {lunch.name}</span>
+                <span className="leg__sub">
+                  {LUNCH_STOP_MINUTES} min
+                  {lunch.where !== lunch.name ? ` · ${lunch.where}` : ""}
+                  {lunch.all.length > 1 ? ` · ${lunch.all.length} places here` : ""}
+                </span>
+              </span>
+              {clocks && <span className="leg__t">{minutesToClock(lunch.at)}</span>}
+            </li>
+          )}
+          </Fragment>
         );
       })}
     </ul>

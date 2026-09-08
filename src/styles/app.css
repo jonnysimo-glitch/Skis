@@ -820,6 +820,20 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 /* A connector: neutral, and smaller than a run, because it is a gap between
    two of them rather than one of them. */
 .leg__dot--link { background: var(--link); border-radius: 50%; width: 8px; height: 8px; }
+/*
+ * The lunch stop, which is not a leg.
+ *
+ * Marked in the accent and set on the tinted row the waypoint chips use, so
+ * it reads as something you asked for rather than as another piece of piste.
+ * Shorter than a leg row: it is a pause in the day, not a part of it.
+ */
+.leg--stop { min-height: 46px; background: var(--accent-tint); border-bottom: 0; }
+.leg--stop + .leg { border-top: 1px solid var(--surface-3); }
+.leg__dot--stop {
+  background: var(--accent); border-radius: 50%; width: 10px; height: 10px;
+  border-color: var(--accent-tint);
+}
+.leg--stop .leg__nm { color: var(--accent-ink); font-weight: 600; }
 .leg--now .leg__dot { box-shadow: 0 0 0 3px var(--accent-tint), 0 0 0 4.5px var(--accent); }
 .leg__nm { display: block; font-size: var(--t-callout); font-weight: 500; line-height: 1.25; }
 .leg__sub { display: block; font-size: var(--t-footnote); color: var(--ink-3); margin-top: 2px; }

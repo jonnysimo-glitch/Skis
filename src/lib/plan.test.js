@@ -138,11 +138,29 @@ console.log("\nWAYPOINTS ON THE WAY TO THE SOLVER");
     JSON.stringify(viaOf(day)) === JSON.stringify(["gabiet"]), JSON.stringify(viaOf(day)));
   check(`no more than ${VIA_MAX}`,
     viaOf({ ...day, via: ["a", "b", "c", "d", "e"] }).length === VIA_MAX);
-  check("carried into the solver options",
-    JSON.stringify(toSolverOpts({ plan: day, ability: "red", refine: new Set() }).via) === JSON.stringify(["gabiet"]));
+  /*
+   * Groups of node keys, not the ids the plan stores.
+   *
+   * The plan holds an id so it survives a reload; the solver takes "reach any
+   * of these nodes" because one lift is two stations under one name. This is
+   * where the two meet, and getting it wrong is silent — the solver drops a
+   * key it does not recognise and plans a day without the stop.
+   */
+  check("resolved to node keys for the solver",
+    JSON.stringify(toSolverOpts({ plan: day, ability: "red", refine: new Set() }).via) ===
+      JSON.stringify([["gabiet"]]),
+    JSON.stringify(toSolverOpts({ plan: day, ability: "red", refine: new Set() }).via));
   check("and every refinement keeps them",
     JSON.stringify(toSolverOpts({ plan: day, ability: "red", refine: new Set(["shorter", "harder"]) }).via) ===
-      JSON.stringify(["gabiet"]));
+      JSON.stringify([["gabiet"]]));
+  // A restaurant chosen by name resolves to the station it stands at.
+  check("a place to eat resolves to its station",
+    JSON.stringify(toSolverOpts({
+      plan: { ...day, via: ["eat:gabiet:Rifugio Gabiet"] }, ability: "red", refine: new Set(),
+    }).via) === JSON.stringify([["gabiet"]]),
+    JSON.stringify(toSolverOpts({
+      plan: { ...day, via: ["eat:gabiet:Rifugio Gabiet"] }, ability: "red", refine: new Set(),
+    }).via));
   // A transfer is one path to one place. See the note in toSolverOpts.
   check("but a transfer carries none",
     toSolverOpts({ plan: { ...day, mode: "direct", finish: "gabiet" }, ability: "red", refine: new Set() }).via.length === 0);

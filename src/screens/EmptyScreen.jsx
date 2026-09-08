@@ -7,6 +7,7 @@
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import { minutesToClock } from "../lib/plan.js";
 import { NODES } from "../active-resort.js";
+import { viaLabel } from "../lib/via.js";
 import { Warning, Arrow } from "../ui/Icons.jsx";
 
 /**
@@ -40,7 +41,7 @@ const FIXES = {
   dropVia: (plan) => {
     const names = (plan.via ?? [])
       .filter((key) => key !== plan.start)
-      .map((key) => NODES[key]?.name ?? key);
+      .map((key) => viaLabel(key, NODES));
     if (!names.length) return null;
     return names.length === 1
       ? { title: `Plan a day without ${names[0]}`, sub: "Everything else stays as it is." }

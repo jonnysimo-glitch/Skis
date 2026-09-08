@@ -15,6 +15,7 @@
  * eighty-two nodes carry a description rather than a name, and a picker
  * padded with them is a picker nobody reads to the bottom.
  */
+import { legsOf } from "../solver.js";
 import { metresBetween } from "./geo.js";
 import { shortName } from "./places.js";
 
@@ -124,9 +125,51 @@ export function viaChoices(nodes, places = [], opts = {}) {
     };
   });
 
-  return out.sort(
+  const junctions = out.sort(
     (a, b) => (a.areas[0] ?? "").localeCompare(b.areas[0] ?? "") || a.name.localeCompare(b.name)
   );
+
+  /*
+   * And every place to eat as a choice of its own.
+   *
+   * "Must stop at the Gabiet" is the thing a group of skiers actually says,
+   * and until now the only way to ask for it was to know which lift station
+   * it stands at. The constraint the solver can take is still a node — so
+   * picking "Rifugio Gabiet" and picking "Gabiet" are the same constraint,
+   * which is fine: both get you to the terrace, which is what was asked.
+   *
+   * Filed under `kind: "eat"` so the form can group them ahead of the
+   * junctions. Only ones within AT_NODE of an offerable node: a restaurant in
+   * the village with no lift beside it is not somewhere a ski route can be
+   * made to pass, and offering it would be a promise the solver cannot keep.
+   *
+   * Deduplicated by the shortened name, because two elements at one station
+   * can shorten to the same word and a picker with the same entry twice is
+   * the fault this whole file exists to avoid.
+   */
+  const eats = [];
+  const seenEat = new Set();
+  for (const c of junctions) {
+    for (const name of c.at) {
+      if (seenEat.has(name)) continue;
+      seenEat.add(name);
+      eats.push({
+        id: `eat:${c.id}:${name}`,
+        kind: "eat",
+        name,
+        keys: c.keys,
+        areas: c.areas,
+        alt: c.alt,
+        // Where it is, for the line under the name — unless that is the same
+        // word. Paganella's Albi de Mez is a restaurant at a lift station of
+        // the same name, and "Albi de Mez — Albi de Mez" is not a subtitle.
+        at: name === c.name ? [] : [c.name],
+      });
+    }
+  }
+  eats.sort((a, b) => a.name.localeCompare(b.name));
+
+  return [...eats, ...junctions.map((c) => ({ ...c, kind: "junction" }))];
 }
 
 /**
@@ -140,20 +183,129 @@ export function viaChoices(nodes, places = [], opts = {}) {
  * group rather than a special case at the call site.
  */
 export function viaGroups(choices) {
+  // Somewhere to eat first, in one group and alphabetical, because a person
+  // looking for the Gabiet is looking for a name and not for a valley.
+  const eats = choices.filter((c) => c.kind === "eat");
   const byArea = new Map();
   for (const c of choices) {
+    if (c.kind === "eat") continue;
     const key = c.areas[0] ?? "";
     if (!byArea.has(key)) byArea.set(key, []);
     byArea.get(key).push(c);
   }
-  return [...byArea].map(([area, items]) => ({ area, items }));
+  return [
+    ...(eats.length ? [{ area: "Somewhere to eat", items: eats }] : []),
+    ...[...byArea].map(([area, items]) => ({ area, items })),
+  ];
 }
 
-/** The keys a chosen id stands for, for handing to the solver. */
-export const viaKeys = (choices, ids) => {
-  const by = new Map(choices.map((c) => [c.id, c]));
-  return (ids ?? []).map((id) => by.get(id)?.keys ?? [id]);
+/**
+ * The node keys a stored id stands for, without needing the choice list.
+ *
+ * A plan holds ids so it survives a reload, and the solver takes groups of
+ * node keys — so something has to translate, and it cannot be the picker: the
+ * translation happens in `toSolverOpts`, which runs on a refine tap with no
+ * screen in sight. An id carries its node inside it for exactly this reason.
+ *
+ * The group is every node sharing that node's name, which is the same rule
+ * the picker groups by: one lift is two stations under one name and either end
+ * answers it.
+ */
+export const viaResolve = (id, nodes) => {
+  if (typeof id !== "string") return [];
+  let key = id;
+  if (id.startsWith("eat:")) {
+    const at = id.indexOf(":", 4);
+    key = at > 0 ? id.slice(4, at) : id.slice(4);
+  }
+  const name = nodes?.[key]?.name;
+  if (!name) return [key];
+  return Object.keys(nodes).filter((k) => nodes[k].name === name).sort();
+};
+
+/** The keys each of a list of chosen ids stands for. */
+export const viaKeys = (choices, ids, nodes) => {
+  const by = new Map((choices ?? []).map((c) => [c.id, c]));
+  return (ids ?? []).map((id) => by.get(id)?.keys ?? viaResolve(id, nodes ?? {}));
 };
 
 /** The choice behind an id, for naming it in the UI. */
 export const viaChoice = (choices, id) => choices.find((c) => c.id === id) ?? null;
+
+/**
+ * Where the day stops for lunch, and what the place is called.
+ *
+ * `opts.lunch` already makes the solver refuse any day that does not pass a
+ * node with a rifugio beside it, so the stop is in every route it returns.
+ * What was missing is that nothing said so: the day went past the Gabiet and
+ * the app called it "a sit-down lunch" without ever naming it, which reads as
+ * a filter rather than a plan.
+ *
+ * Which one, out of the several a long day passes: the one you get to nearest
+ * the middle of the skiing. That is what lunch means, and it beats "the first
+ * one" — a day from Stafal passes a rifugio in its first ten minutes.
+ *
+ * Returns null when the route passes none, which is the case for every day
+ * that was not asked for lunch.
+ *
+ * @param {object} route   a solved route
+ * @param {number[]} clocks  legClocks(route, startClock) — arrival per leg
+ * @param {object} nodes   the resort's NODES
+ * @param {Array} places   the resort's PLACES
+ */
+export function lunchStop(route, clocks, nodes, places = []) {
+  const legs = legsOf(route);
+  if (!legs.length) return null;
+  const first = clocks?.[0] ?? 0;
+  const last = clocks?.[clocks.length - 1] ?? 0;
+  const middle = (first + last) / 2;
+
+  let best = null;
+  for (let i = 0; i < legs.length; i++) {
+    const key = legs[i].to;
+    if (!nodes[key]?.rifugio) continue;
+    // The clock at the END of this leg, which is when you would arrive.
+    const at = clocks?.[i + 1] ?? clocks?.[i] ?? middle;
+    const off = Math.abs(at - middle);
+    if (!best || off < best.off) best = { leg: i, key, at, off };
+  }
+  if (!best) return null;
+
+  const n = nodes[best.key];
+  const near = places
+    .filter(([, kind]) => STOPS.has(kind))
+    .map(([name, , lat, lon]) => ({ name, m: metresBetween(n.lat, n.lon, lat, lon) }))
+    .filter((p) => p.m <= AT_NODE)
+    .sort((a, b) => a.m - b.m);
+  return {
+    leg: best.leg,
+    key: best.key,
+    at: best.at,
+    // The junction is the fallback: `rifugio` is set from a tighter radius
+    // than this one, so a node can be flagged with nothing inside AT_NODE.
+    name: near.length ? shortName(near[0].name) : n.name,
+    where: n.name,
+    /* Everything at the stop, for a card that wants to offer a choice. */
+    all: near.map((p) => shortName(p.name)),
+  };
+}
+
+/**
+ * A stop's name, from the id a plan stores.
+ *
+ * A plan holds ids rather than objects so it can survive a reload, and two
+ * shapes of id go in it: a node key, and `eat:<node>:<place>` for a place at
+ * one. The empty state and the diagnoses both have to name what the reader
+ * chose, and neither of them has the choice list to hand.
+ *
+ * Everything after the second colon, so a place with a colon in its name
+ * comes back whole.
+ */
+export const viaLabel = (id, nodes) => {
+  if (typeof id !== "string") return String(id);
+  if (id.startsWith("eat:")) {
+    const at = id.indexOf(":", 4);
+    if (at > 0) return id.slice(at + 1);
+  }
+  return nodes?.[id]?.name ?? id;
+};

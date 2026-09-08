@@ -366,14 +366,17 @@ export default function PlanScreen({
                       ? "Nothing to add here"
                       : full
                         ? `${VIA_MAX} is the most`
-                        : "Pick a place…"}
+                        : "Somewhere to eat, or a place on the mountain…"}
                   </option>
                   {viaGroups(choices).map((g) => (
                     <optgroup key={g.area || "all"} label={g.area || "On the mountain"}>
                       {g.items.map((c) => (
                         <option key={c.id} value={c.id} disabled={stops.includes(c.id)}>
                           {c.name}
-                          {c.at.length ? ` — ${c.at[0]}` : ""}
+                          {/* A restaurant says which station it is at; a
+                              station says what is there. Same dash, opposite
+                              directions, and neither repeats itself. */}
+                          {c.at.length ? ` — ${c.at.slice(0, 2).join(", ")}` : ""}
                         </option>
                       ))}
                     </optgroup>

@@ -4132,7 +4132,10 @@ export default function MountainMap({
         // A place to swing by is smaller than either end of the day: it is
         // something the route passes, not something it is for. Where you are
         // is the biggest, and gets a point on it — see drawPins.
-        const r = role === "now" ? 9 : role === "via" ? 5 : 6;
+        const r = role === "now" ? 9 : role === "via" || role === "lunch" ? 5 : 6;
+        // The lunch pin carries the restaurant's name rather than the
+        // junction's: "Bedemi" is what a skier is looking for, and "Bedemie"
+        // is the lift station it stands at.
         const name = feature.properties.name;
         const w = ctx.measureText(name).width;
         // The dot stays where the place is; only the words move inside the
@@ -4241,7 +4244,8 @@ export default function MountainMap({
            * is where you are while navigating and the one thing on the map
            * that should never have a twin.
            */
-          ctx.strokeStyle = role === "via" ? ACCENT : role === "start" ? "#0b1a24" : "#ffffff";
+          ctx.strokeStyle = role === "via" || role === "lunch" ? ACCENT
+            : role === "start" ? "#0b1a24" : "#ffffff";
           ctx.stroke();
         }
 

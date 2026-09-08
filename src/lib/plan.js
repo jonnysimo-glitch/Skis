@@ -8,6 +8,7 @@
 
 import { minutesToClock, clockToMinutes, legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
+import { viaLabel, viaResolve } from "./via.js";
 
 export { minutesToClock, clockToMinutes };
 
@@ -232,10 +233,20 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
     lunch,
     emphasis,
     count,
+    /*
+     * Resolved to node keys here, not in the picker.
+     *
+     * A plan stores ids — a node key, or `eat:<node>:<place>` — because that
+     * is what survives a reload and what the form's list is keyed by. The
+     * solver takes groups of node keys. This is the only place both are in
+     * scope, and it runs on every refine tap with no screen involved, which
+     * is why the translation cannot live in the component that built the
+     * list.
+     */
     // Places to swing by survive every refinement. "Shorter" means a shorter
     // day that still goes past the rifugio; dropping the waypoint to satisfy
     // the chip would answer a question nobody asked.
-    via: viaOf(plan),
+    via: viaOf(plan).map((id) => viaResolve(id, NODES)),
   };
 }
 
@@ -256,16 +267,26 @@ export const viaOf = (plan) =>
 export const backAt = (route, opts) =>
   opts.startClock + route.minutes + (opts.lunch ? LUNCH_MINUTES : 0);
 
-/** Start-of-leg clock time for each segment. */
-export function legClocks(route, startClock) {
+/**
+ * Start-of-leg clock time for each leg, plus the arrival at the end.
+ *
+ * `lunchAfter` is the index of the leg you stop for lunch at, and everything
+ * after it moves back by the sit-down. Without it the clocks were the pace of
+ * a day that does not stop: `backAt` added the forty-five minutes on at the
+ * end, so the finish time was right and every leg in between was three
+ * quarters of an hour early. That was invisible until the leg list grew a
+ * lunch row, which then sat at 12:21 above a leg that also said 12:21.
+ */
+export function legClocks(route, startClock, lunchAfter = -1) {
   const out = [];
   let t = startClock;
   // Over the legs a skier steps through, not the graph edges: these clocks are
   // shown beside a leg list and have to line up with it.
-  for (const edge of legsOf(route)) {
+  legsOf(route).forEach((edge, i) => {
     out.push(t);
     t += edge.min;
-  }
+    if (i === lunchAfter) t += LUNCH_MINUTES;
+  });
   out.push(t);
   return out;
 }
@@ -277,7 +298,19 @@ export function legClocks(route, startClock) {
 export function diagnose(plan, ability, opts, resort, capacity = null, trouble = []) {
   const window = plan.t1 - plan.t0;
   const via = viaOf(plan);
-  const named = (keys) => keys.map((k) => NODES[k]?.name ?? k);
+  const named = (ids) => ids.map((k) => viaLabel(k, NODES));
+  /*
+   * Back from a node key to the thing the reader chose.
+   *
+   * viaTrouble answers in node keys, because that is what it was given. If
+   * somebody asked for Al Cir and the answer is about Col d'Ancona — the lift
+   * station it stands at — they have been told about a place they did not
+   * pick. So the key is matched back to whichever of their choices resolves
+   * to it.
+   */
+  const asPicked = (key) =>
+    via.find((id) => viaResolve(id, NODES).includes(key)) ?? key;
+  const named1 = (key) => viaLabel(asPicked(key), NODES);
   const list = (names) =>
     names.length < 2
       ? names[0] ?? ""
@@ -295,7 +328,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
    */
   if (via.length && trouble.length) {
     const first = trouble[0];
-    const name = NODES[first.key]?.name ?? "that place";
+    const name = first.key ? named1(first.key) : "that place";
     const grade = ability === "blue" ? "blue" : `${ability} or below`;
     if (first.reason === "grade") {
       return {

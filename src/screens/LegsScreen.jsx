@@ -8,18 +8,39 @@
  */
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { LegList, StatRow, detailStats, hours, ridesDown } from "../ui/RouteBits.jsx";
+import { lunchStop } from "../lib/via.js";
 import { backAt, legClocks, LUNCH_MINUTES } from "../lib/plan.js";
 import { minutesToClock, legsOf } from "../solver.js";
-import { NODES } from "../active-resort.js";
+import { NODES, PLACES } from "../active-resort.js";
 import { Back, Warning, Check, Clock, Lift } from "../ui/Icons.jsx";
 
 export default function LegsScreen({ route, opts, plan, onBack }) {
   const back = backAt(route, opts);
   const slack = plan.t1 - back;
-  const clocks = legClocks(route, opts.startClock);
+  /*
+   * Two passes, because the two depend on each other.
+   *
+   * Which rifugio is "nearest the middle of the day" barely moves for a
+   * forty-five minute shift, so the stop is chosen against the clocks of a
+   * day that does not stop — and then the clocks are worked out again with
+   * the stop in them, so every leg after lunch reads the time you will
+   * actually be there.
+   */
+  const paceClocks = legClocks(route, opts.startClock);
   const finishName = NODES[route.segments[route.segments.length - 1].to].name;
   const stats = detailStats(route);
   const down = ridesDown(route);
+  // Where the day actually stops to eat, when it was asked to.
+  const lunch = opts.lunch ? lunchStop(route, paceClocks, NODES, PLACES) : null;
+  const clocks = legClocks(route, opts.startClock, lunch ? lunch.leg : -1);
+  /*
+   * When you ARRIVE, not when you leave.
+   *
+   * `clocks[i]` is the start of leg i, so `clocks[lunch.leg + 1]` is the leg
+   * after the stop — which now begins forty-five minutes later, because that
+   * is the whole point. Arrival is that, less the sit-down.
+   */
+  const eatAt = lunch ? clocks[lunch.leg + 1] - LUNCH_MINUTES : null;
 
   return (
     <div className="page">
@@ -81,12 +102,33 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
           </div>
         )}
 
+        {/*
+          * The stop, by name and by clock.
+          *
+          * It said "Passes a rifugio", which is true and is not a plan: the
+          * solver had already picked the place and the app would not say
+          * which. Naming it is the difference between a filter and lunch.
+          *
+          * `about`, because the clock is the pace implied by the route rather
+          * than a booking, and a skier reading an exact time against a queue
+          * they have not joined yet would be right to distrust it.
+          */}
         {opts.lunch && (
           <div className="info">
             <Check className="info__icon" width="17" height="17" />
             <span>
-              Passes a rifugio. The {LUNCH_MINUTES} minutes for lunch are already
-              taken out of the skiing time above.
+              {lunch ? (
+                <>
+                  Lunch at <b>{lunch.name}</b>, about <b>{minutesToClock(eatAt)}</b>
+                  {lunch.all.length > 1 && ` — ${lunch.all.length} places there`}. The{" "}
+                  {LUNCH_MINUTES} minutes are already out of the skiing time above.
+                </>
+              ) : (
+                <>
+                  Passes a rifugio. The {LUNCH_MINUTES} minutes for lunch are already
+                  taken out of the skiing time above.
+                </>
+              )}
             </span>
           </div>
         )}
@@ -97,7 +139,7 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
           </div>
         </div>
 
-        <LegList route={route} clocks={clocks} />
+        <LegList route={route} clocks={clocks} lunch={lunch ? { ...lunch, at: eatAt } : null} />
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import MountainMap from "./map/MountainMap.jsx";
 import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
 import { fieldBounds } from "./map/field.js";
 import { describe } from "./lib/places.js";
+import { lunchStop, viaResolve } from "./lib/via.js";
 
 // MapLibre is ~800KB and not needed until the map is on screen, so it is split
 // out. If the chunk cannot be fetched at all — offline before it was ever
@@ -41,7 +42,7 @@ import PlanButton from "./ui/PlanButton.jsx";
 
 import { getResort, defaultResort } from "./resorts/index.js";
 import { recordDay } from "./lib/history.js";
-import { NODES, buildEdges, activeGraph, setActiveResort, ensureActive, activeProjector } from "./active-resort.js";
+import { NODES, PLACES, buildEdges, activeGraph, setActiveResort, ensureActive, activeProjector } from "./active-resort.js";
 import { graphFor } from "./resorts/graphs.js";
 import { useSolver } from "./lib/useSolver.js";
 import { legsOf, viaTrouble } from "./solver.js";
@@ -54,6 +55,7 @@ import {
   toggleRefinement,
   diagnose,
   viaOf,
+  legClocks,
   LUNCH_MINUTES,
 } from "./lib/plan.js";
 import {
@@ -583,7 +585,18 @@ export default function App() {
        * rather than being overdrawn by a smaller dot.
        */
       const ends = [plan.start, plan.finish];
-      const stops = viaOf(plan).filter((key) => !ends.includes(key));
+      /*
+       * Resolved to node keys, because a stop is stored as an id.
+       *
+       * `eat:gabiet:Alpenhutten Lys` is a real thing to have chosen and is not
+       * a key in NODES, so handing it straight to nodesToGeoJSON read `.name`
+       * off undefined and took the whole plan screen down the moment a
+       * restaurant was picked. The first key of the group is the pin: either
+       * end of a lift is the same place to a marker.
+       */
+      const stops = viaOf(plan)
+        .map((id) => viaResolve(id, NODES)[0])
+        .filter((key) => key && NODES[key] && !ends.includes(key));
       return nodesToGeoJSON(
         [...ends, ...stops].filter((v, i, a) => a.indexOf(v) === i),
         (key) => ({
@@ -594,6 +607,27 @@ export default function App() {
     const startKey = shownRoute.segments[0].from;
     const finishKey = shownRoute.segments[shownRoute.segments.length - 1].to;
     const keys = [startKey, finishKey];
+    /*
+     * And where the day stops to eat, when it was asked to.
+     *
+     * The solver has always refused a day that does not pass one; what it
+     * never did was say which, so "sit-down lunch" read as a filter. A pin
+     * with the place's name on it, on the map that is the subject of this
+     * screen, is the plan.
+     */
+    const eat = opts?.lunch
+      ? lunchStop(shownRoute, legClocks(shownRoute, opts.startClock), NODES, PLACES)
+      : null;
+    if (eat && !keys.includes(eat.key)) keys.push(eat.key);
+    /*
+     * And the places you asked to swing by, marked on the route as well as on
+     * the form. Somebody who asked for the Gabiet wants to see it on the day
+     * they are being offered, not take it on trust.
+     */
+    const asked = viaOf(plan)
+      .map((id) => viaResolve(id, NODES)[0])
+      .filter((key) => key && NODES[key] && !keys.includes(key));
+    keys.push(...asked);
     if (screen === "navigate") {
       const here = legsOf(shownRoute)[step]?.from;
       if (here && !keys.includes(here)) keys.push(here);
@@ -611,6 +645,8 @@ export default function App() {
           const aim = aimAlong(routeGeo, step, to ? [to.lon, to.lat] : null);
           return { role: "now", ...(aim ? { aim } : {}) };
         }
+        if (eat && key === eat.key) return { role: "lunch", name: eat.name };
+        if (asked.includes(key)) return { role: "via" };
         return key === startKey ? { role: "start" } : { role: "finish" };
       }
     );
@@ -620,7 +656,8 @@ export default function App() {
     // plan.via is a fresh array on every change, so it is joined rather than
     // handed in as-is: React compares dependencies by identity and a new empty
     // array every render would recompute this on every render.
-  }, [screen, shownRoute, step, plan.start, plan.finish, (plan.via ?? []).join(","), resort.id]);
+  }, [screen, shownRoute, step, plan.start, plan.finish, (plan.via ?? []).join(","),
+      opts?.lunch, opts?.startClock, resort.id]);
 
   // Test hook, same opt-in as the map's. The heading arrow is painted on a
   // canvas in the dot's own colour, so a check needs the leg it should be
