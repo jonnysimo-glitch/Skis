@@ -6353,22 +6353,32 @@ if (feature("48. The day is numbered, in the order you ski it")) {
   check("and past the first two they run in fives", offStride.length === 0,
     offStride.join(", ") || far.join(", "));
   /*
-   * And the other half of the ask: "the more you zoom in, the more you see".
-   * The gap between numbers has to close as you come in, which is the claim
-   * the two readings above can actually be compared on — counts cannot, since
-   * how many fit is geometry rather than stride.
+   * And the guarantee that came out of the crowding, at BOTH zooms.
+   *
+   * "Zooming in closes the gap between them" was asserted here, and it was
+   * the behaviour until NAV_FAR_STRIDE: close in the stride was 1, so every
+   * remaining leg whose geometry landed in frame got a number, and on the
+   * first leg out of a base that is nineteen of them from three hours later
+   * in a 480 m frame. Measured after the fix, on the same day: close in
+   * 1, 2, 30, 35, 45 and pulled back 1, 2, 10, 20, 25, 30, 35, 45.
+   *
+   * So the gap does not close any more, on purpose. What holds at every zoom
+   * is the pair of things a reader needs: the leg under your skis and the
+   * next one are always numbered, and everything from later in the day runs
+   * in fives however close in you are. Pulling back then shows more of that
+   * sequence rather than a denser one, which is the difference between
+   * seeing the shape of the day and being handed the whole day at once.
    */
-  const gapOf = (list) => {
-    const rest = list.slice(1);
-    if (rest.length < 2) return null;
-    const gaps = rest.slice(1).map((s, i) => s - rest[i]).filter((g) => g > 0);
-    return gaps.length ? Math.min(...gaps) : null;
-  };
-  const gapNear = gapOf(near);
-  const gapFar = gapOf(far);
-  check("and zooming in closes the gap between them",
-    gapNear === null || gapFar === null || gapNear < gapFar,
-    `${gapNear} steps apart close in, ${gapFar} far out`);
+  const nearPair = (list) => list.slice(0, 2);
+  check("your own leg and the next are numbered at either zoom",
+    nearPair(near).join() === nearPair(far).join() && near[0] === 1,
+    `${nearPair(near).join(", ")} close in, ${nearPair(far).join(", ")} far out`);
+  const strideOf = (list) => list.slice(2).filter((s) => s % 5 !== 0);
+  check("and the ones from later run in fives at either zoom",
+    strideOf(near).length === 0 && strideOf(far).length === 0,
+    `[${near.join(", ")}] close in, [${far.join(", ")}] far out`);
+  check("and pulling back shows more of the day, not a denser crowd",
+    far.length >= near.length, `${near.length} close in, ${far.length} far out`);
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
