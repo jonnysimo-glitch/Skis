@@ -369,8 +369,12 @@ export default function PlanScreen({
                     would have. Value is always empty: this is an action, not
                     a field, and leaving the last choice showing in it reads
                     as though that one is still pending. */}
+                {/* "Add a place", not "Somewhere to go past". The row above
+                    already calls these places to swing by, and a third
+                    phrasing for the same thing on one screen reads as three
+                    different features. This label is the action. */}
                 <label className="flabel" htmlFor="p-via">
-                  {chosen.length ? "Add another" : "Somewhere to go past"}
+                  {chosen.length ? "Add another" : "Add a place"}
                 </label>
                 <select
                   id="p-via"

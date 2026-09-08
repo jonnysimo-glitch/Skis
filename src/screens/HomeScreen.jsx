@@ -126,7 +126,20 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
                     pieces the pistes happen to be mapped in, which is not a
                     number a skier can check against anything. */}
                 <span className="hero__stat"><b>{r.stats.km ?? r.stats.runs}</b><span>{r.stats.km ? "km piste" : "runs"}</span></span>
-                <span className="hero__stat"><b>{(r.stats.top / 1000).toFixed(1)}k</b><span>m top</span></span>
+                {/* The metres, not a rounded thousand.
+                    "3.0k m top" is what Monterosa's 2,994 m came out as: six
+                    metres of rounding across the one line on a piste map that
+                    anybody quotes, and it crosses it in the flattering
+                    direction. Every other number on this card is the number,
+                    and the whole claim of the app is that its figures are
+                    checkable against the mountain.
+
+                    `?? NaN` keeps the property the e2e check relies on: a
+                    resort promoted to live with an incomplete META has to
+                    render something a check can see, and "NaN" is that.
+                    Calling toLocaleString on undefined would throw and take
+                    the whole home screen down instead. */}
+                <span className="hero__stat"><b>{(r.stats.top ?? NaN).toLocaleString()}</b><span>m top</span></span>
                 <span className="hero__stat"><b>{r.stats.valleys}</b><span>{r.stats.valleys === 1 ? "valley" : "valleys"}</span></span>
               </span>
             </span>
