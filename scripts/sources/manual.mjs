@@ -21,6 +21,22 @@
  *     check-places knows not to look for it in the export and a reader can
  *     see which pins are not from the map.
  *
+ * On where the coordinate comes from, since six entries have now gone in and
+ * every one of them faced the same question. No geocoder is reachable from
+ * this build, so a street address cannot be turned into a point. What can be
+ * done is to check that the shop's own page puts it AT a lift station, and
+ * then use that station's node — from the OSM export, not the graph's snapped
+ * copy — and say in the note that this is what the coordinate is. That is a
+ * shop placed inside a building or two of where it is, with the error stated.
+ * A street number placed by eye off a map is not, and the difference is
+ * somebody walking to the wrong end of a village in ski boots. Twice the
+ * addresses closed the loop by themselves: the Reischach shop shares
+ * Seilbahnstraße 12 with a restaurant OSM has an address node for, 51 m from
+ * the station, and Rent and Go Andalo is Via Rindole 3B where the cabinovia's
+ * valley station is Via Rindole 3. Where the sources disagree about WHICH
+ * lift, the entry waits — at Andalo two aggregators named a chairlift 334 m
+ * from the right one.
+ *
  * CLAUDE.md already says where this ends up: queue times and last-lift times
  * are not in OSM and need resort partnerships, which is the business model.
  * This is the same shape of fact arriving the same way, by hand, until there
