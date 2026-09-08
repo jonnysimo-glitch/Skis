@@ -247,12 +247,21 @@ export function build(osm, { tolerance = 45, elevation }) {
   const named = elements.filter(
     (el) => el.type === "node" && el.tags?.name && (el.tags.aerialway === "station" || el.tags.natural === "peak" || el.tags.mountain_pass === "yes")
   );
-  // Anywhere you can sit down and eat. Ways and relations come back with a
-  // `center` rather than a position of their own.
+  /*
+   * Anywhere you can sit down and eat, which marks the nodes the solver may be
+   * asked to route past for lunch. Ways and relations come back with a
+   * `center` rather than a position of their own.
+   *
+   * Same eight tags as KIND below, and it has to stay that way: this list and
+   * that one answer the same question — is this somewhere to eat — for two
+   * different consumers, and when they drifted apart a bar was a place on the
+   * map that lunch could not be routed past.
+   */
+  const EATS = new Set(["restaurant", "cafe", "bar", "pub", "fast_food", "biergarten"]);
   const huts = elements
     .filter((el) => el.tags && (
       el.tags.tourism === "alpine_hut" || el.tags.tourism === "wilderness_hut" ||
-      el.tags.amenity === "restaurant" || el.tags.amenity === "cafe"))
+      EATS.has(el.tags.amenity)))
     .map((el) => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: label(el.tags.name) }))
     .filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lon));
 
@@ -269,7 +278,7 @@ export function build(osm, { tolerance = 45, elevation }) {
   const KIND = (t) =>
     t.tourism === "alpine_hut" || t.tourism === "wilderness_hut" ? "hut"
       : t.amenity === "restaurant" ? "restaurant"
-        : t.amenity === "cafe" ? "cafe"
+        : EATS.has(t.amenity) ? "cafe"
           : t.shop === "ski" || t.shop === "rental" || t.amenity === "ski_rental" ? "rental"
             : t.amenity === "parking" ? "parking"
               : null;

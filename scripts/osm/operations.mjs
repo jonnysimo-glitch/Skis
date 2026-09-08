@@ -197,7 +197,25 @@ function applyOperations(graph, config) {
       // Monterosa's Alagna gondola station is just a way endpoint, so the app
       // opened its default day at "Point 31". The configured name that found
       // it is the right name for it, and the one a skier would use.
-      const name = generated(node) ? chosenBy.get(key) ?? node.name : node.name;
+      /*
+       * What to call it, in the order a skier would want.
+       *
+       * `baseNames` in the config wins outright, because there are bases OSM
+       * names correctly and nobody calls by that name: Kronplatz's Bruneck
+       * base is the cable car station "Kronplatz I", which is right, is on the
+       * sign, and is not what a person means when they say where they left the
+       * car. They say Bruneck, or Brunico. A rename here is a claim about what
+       * a place is called rather than a repair, so it is explicit in the
+       * config and nowhere else.
+       *
+       * Then the old rule: a base found through a lift's name and having none
+       * of its own takes the name that found it. Monterosa's Alagna gondola
+       * station is a bare way endpoint, and without this the app opened its
+       * default day at "Point 31".
+       */
+      const named = config.baseNames?.[node.name];
+      const name = named
+        ?? (generated(node) ? chosenBy.get(key) ?? node.name : node.name);
       if (name !== node.name) renamedBases++;
       NODES[key] = {
         ...node,

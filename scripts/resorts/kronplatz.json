@@ -35,7 +35,8 @@
     "Korer": "Percha",
     "St. Vigil": "St. Vigil",
     "San Vigilio": "St. Vigil",
-    "Miara": "St. Vigil"
+    "Miara": "St. Vigil",
+    "Bruneck / Brunico": "Bruneck"
   },
   "firstLift": 510,
   "lastDown": 1020,
@@ -60,5 +61,9 @@
   },
   "publishedSource": "Kronplatz's own published network figures, as recorded in src/resorts/index.js before this resort had data.",
   "bboxWhy": "Widened south and out to take in St Vigil / San Vigilio and Pfalzen. The old box stopped at 46.71 and three lifts — Miara, Col Toron, Ski Pfalzen — already ran off its edges, which is why the graph held 19 of the 32 lifts the resort publishes.",
-  "basesWhy": "The village names OSM does not use, plus the lift names it does. Kronplatz's valley stations are nodes called Kronplatz 2000 (Reischach), Korer (Percha) and Miara (St. Vigil), so asking only for the villages found one base out of four and left three car parks unreachable."
+  "basesWhy": "The village names OSM does not use, plus the lift names it does. Kronplatz's valley stations are nodes called Kronplatz 2000 (Reischach), Korer (Percha) and Miara (St. Vigil), so asking only for the villages found one base out of four and left three car parks unreachable.",
+  "baseNames": {
+    "Kronplatz I": "Bruneck / Brunico"
+  },
+  "baseNamesWhy": "The Kronplatz I cable car is the Bruneck base, and 'Kronplatz I' is what OSM and the sign at the bottom both call it. It is not what anyone says when they say where the car is: they say Bruneck, or Brunico. Both, because South Tyrol signs both and a skier may know either."
 }

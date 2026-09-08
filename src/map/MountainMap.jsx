@@ -678,8 +678,24 @@ const ZOOM_MAX = 32;
  * NAV_ANCHOR down the part of it that is not covered by the instruction or
  * the button, and the way you are about to go running straight up.
  */
-const NAV_ACROSS = 340;
+const NAV_ACROSS = 480;
 const NAV_ANCHOR = 0.74;
+/**
+ * And how far back you may pull, which is much further than the default.
+ *
+ * The window above is NAV_ACROSS divided by the zoom, and while the zoom sat
+ * on the same floor the rest of the app uses — 0.34, chosen so the whole
+ * cut-out fits with air around it — the widest a navigating skier could get
+ * was about 1.4 km. That is not enough to answer "where does the rest of the
+ * day go", which is the question a person asks when they back off, and being
+ * unable to answer it reads as being pinned.
+ *
+ * 0.03 puts sixteen kilometres across the frame, which is wider than any of
+ * these resorts. There is no reason for navigation to have a tighter ceiling
+ * on backing off than the map it is drawn on; it only ever needed a different
+ * default, and that is what NAV_ACROSS is.
+ */
+const NAV_ZOOM_MIN = 0.03;
 /**
  * How much of the day ahead is drawn as the route while navigating.
  *
@@ -834,7 +850,16 @@ const strata = (g, rgb, band) => {
   return paint;
 };
 
-const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+const clampZoom = (z, floor = ZOOM_MIN) => Math.max(floor, Math.min(ZOOM_MAX, z));
+/**
+ * How far out this screen may go.
+ *
+ * Navigating gets its own floor because its window is NAV_ACROSS/zoom rather
+ * than the whole resort, so the same number means a completely different
+ * amount of ground. Read through propsRef so it answers for the screen as it
+ * is now, not as it was when a handler was bound.
+ */
+const zoomFloorFor = (props) => (isFollowing(props) ? NAV_ZOOM_MIN : ZOOM_MIN);
 
 const mix = (a, b, t) => [
   a[0] + (b[0] - a[0]) * t,
@@ -1082,58 +1107,94 @@ export default function MountainMap({
    * effects below both see the current props without either of them having to
    * list them. Same idiom as `propsRef` above, for the same reason.
    */
-  const homeView = useRef(null);
-  homeView.current = () => {
+  /**
+   * The bearing that puts the way you are going straight up the screen, or
+   * null when that is not a question this screen asks.
+   *
+   * toUnit rotates the ground by the bearing and reads `rx` as screen right
+   * and `rz` as into the distance, so a direction runs up the screen when
+   * rx = 0, which is bearing = atan2(dx, dz). Sanity check: north is -z here,
+   * so travelling north gives atan2(0, -1) = 180, which is NORTH_UP.
+   */
+  const courseUp = () => {
     const f = fieldRef.current;
     const cam = propsRef.current.camera;
-    if (f && isFollowing(propsRef.current)) {
-      const here = f.proj.project(cam.center[1], cam.center[0]);
-      const there = f.proj.project(cam.aim[1], cam.aim[0]);
-      const fx = there.x - here.x;
-      const fz = there.z - here.z;
-      if (fx || fz) {
-        /*
-         * The bearing that puts the way you are going straight up the screen.
-         *
-         * toUnit rotates the ground by the bearing and reads `rx` as screen
-         * right and `rz` as into the distance, so a direction runs up the
-         * screen when rx = 0, which is bearing = atan2(dx, dz). Sanity check:
-         * north is -z here, so travelling north gives atan2(0, -1) = 180,
-         * which is NORTH_UP.
-         */
-        Object.assign(view.current, {
-          bearing: (Math.atan2(fx, fz) * 180) / Math.PI,
-          pitch: NAV_PITCH,
-          zoom: 1,
-          targetZoom: 1,
-          panX: 0,
-          panY: 0,
-        });
-        dirty.current = true;
-        return;
-      }
+    if (!f || !isFollowing(propsRef.current)) return null;
+    const here = f.proj.project(cam.center[1], cam.center[0]);
+    const there = f.proj.project(cam.aim[1], cam.aim[0]);
+    const fx = there.x - here.x;
+    const fz = there.z - here.z;
+    if (!fx && !fz) return null;
+    return (Math.atan2(fx, fz) * 180) / Math.PI;
+  };
+
+  /**
+   * The recentre button: back to the framing this screen means, bearing and
+   * all. Navigating, that is course-up at the default zoom with no pan.
+   */
+  const homeView = useRef(null);
+  homeView.current = () => {
+    const bearing = courseUp();
+    if (bearing !== null) {
+      Object.assign(view.current, {
+        bearing,
+        pitch: NAV_PITCH,
+        zoom: 1,
+        targetZoom: 1,
+        panX: 0,
+        panY: 0,
+      });
+      dirty.current = true;
+      return;
     }
     Object.assign(view.current, HOME, { targetZoom: HOME.zoom, panX: 0, panY: 0 });
     dirty.current = true;
   };
 
-  /*
-   * Re-aim on every leg.
+  /**
+   * A new leg turns the map. It does not undo what you did to it.
    *
-   * `doneThrough` is the leg index while navigating and -1 everywhere else,
-   * so this fires on the way in and once per "Reached", and never while the
-   * map is merely being looked at. Between legs the camera is left exactly
-   * where the skier put it: turning to look at something and having the map
-   * snap back under you is worse than a stale bearing.
+   * This used to call the recentre above, which sets zoom to 1 and pan to
+   * zero along with the bearing — so backing the camera off to see where the
+   * day was going lasted until the next junction and was then thrown away,
+   * every time, with no way to keep it. Reported as being locked in position,
+   * and it was: not by a limit, by a reset.
+   *
+   * Course-up is still the point of the screen, so the bearing follows. Zoom,
+   * pitch and pan are the user's, and stay theirs until they press recentre.
    */
+  const reaim = useRef(null);
+  reaim.current = () => {
+    const bearing = courseUp();
+    if (bearing === null) return;
+    view.current.bearing = bearing;
+    dirty.current = true;
+  };
+
   const navLeg = isFollowing({ camera, route }) ? camera.doneThrough : null;
+  /*
+   * Arriving sets the view up. Advancing only turns it.
+   *
+   * Both used to be the same call, and taking the reset off the advance took
+   * it off the arrival too: navigation opened at whatever pitch the last
+   * screen had, 46 rather than 72, so the first thing it did was fail to lean
+   * over. Which of the two this is comes from whether there was a leg before:
+   * null to a number is walking on to the screen, number to number is a
+   * junction.
+   */
+  const wasFollowing = useRef(false);
   useEffect(() => {
-    if (navLeg === null) return;
-    homeView.current?.();
+    const following = navLeg !== null;
+    const arriving = following && !wasFollowing.current;
+    wasFollowing.current = following;
+    if (!following) return;
+    if (arriving) homeView.current?.();
+    else reaim.current?.();
   }, [navLeg]);
 
   useEffect(() => {
     if (!controlRef) return;
+    const zoomFloor = () => zoomFloorFor(propsRef.current);
     controlRef.current = {
       orbit: (deg) => { view.current.bearing += deg; dirty.current = true; },
       // Two controls, two meanings, the way a map app has them. The compass
@@ -1146,7 +1207,7 @@ export default function MountainMap({
       resetView: () => homeView.current?.(),
       zoom: (delta) => {
         const v = view.current;
-        v.targetZoom = clampZoom(v.targetZoom * (delta > 0 ? 1.32 : 0.76));
+        v.targetZoom = clampZoom(v.targetZoom * (delta > 0 ? 1.32 : 0.76), zoomFloor());
         dirty.current = true;
       },
     };
@@ -3943,6 +4004,20 @@ export default function MountainMap({
       const dt = Math.min(64, lastFrameAt ? now - lastFrameAt : 16.7);
       lastFrameAt = now;
 
+      /*
+       * A zoom only navigation allows does not outlive it.
+       *
+       * Backing off to sixteen kilometres is a navigation thing — the window
+       * there is NAV_ACROSS/zoom, not the resort. Leave the screen with that
+       * zoom still set and the framing camera reads it as a multiplier on the
+       * whole mountain and puts the resort in a corner. Corrected here rather
+       * than on the transition, because there is no single place a transition
+       * happens and this is checked every frame anyway.
+       */
+      const floor = zoomFloorFor(propsRef.current);
+      if (v.targetZoom < floor) v.targetZoom = floor;
+      if (v.zoom < floor) v.zoom = floor;
+
       const gap = v.targetZoom - v.zoom;
       if (Math.abs(gap) > 0.001) {
         const was = v.zoom;
@@ -4527,9 +4602,11 @@ export default function MountainMap({
      *   pan' = pan + (1 - k)(s - ax - pan)
      * which is all this is.
      */
+    const zoomFloor = () => zoomFloorFor(propsRef.current);
+
     const zoomAbout = (v, k, sx, sy) => {
       const before = v.targetZoom;
-      v.targetZoom = clampZoom(v.targetZoom * k);
+      v.targetZoom = clampZoom(v.targetZoom * k, zoomFloor());
       const actual = v.targetZoom / before; // k, unless the clamp took a bite
       // A pinch is its own anchor, every frame. Any eased zoom still owed pan
       // is cancelled rather than left to fight the fingers.
@@ -4549,7 +4626,7 @@ export default function MountainMap({
      * as the zoom actually moves.
      */
     const zoomTowards = (v, k, sx, sy) => {
-      v.targetZoom = clampZoom(v.targetZoom * k);
+      v.targetZoom = clampZoom(v.targetZoom * k, zoomFloor());
       v.zoomAt = { x: sx, y: sy };
     };
 

@@ -4931,6 +4931,41 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
   const pulled = await shot();
   check("you can pull back off yourself", pulled && pulled.across > 900,
     pulled?.across ? `${Math.round(pulled.across)} m across` : "?");
+
+  /*
+   * And a junction does not undo it.
+   *
+   * Reported from a phone as being locked into the follow position, and it was
+   * — not by a limit but by a reset. The leg-change handler called the same
+   * function the recentre button does, which sets the zoom back to 1 and the
+   * pan back to nothing along with the bearing. So backing the camera off to
+   * see where the rest of the day went lasted until the next junction, every
+   * time, with no way to keep it. Turning the map is the point of the screen;
+   * throwing away what the person did to it is not.
+   */
+  const zoomOf = () => page.evaluate(() => window.__skisView?.zoom ?? null);
+  const wideZoom = await zoomOf();
+  const wideBearing = (await shot())?.bearing;
+  await reachNext(page);
+  await page.waitForTimeout(1200);
+  const afterZoom = await zoomOf();
+  const afterBearing = (await shot())?.bearing;
+  /*
+   * The zoom, not the metres. `across` is sampled at your own row of the
+   * screen, and pulled right back that row is looking at ground kilometres
+   * off, so the number swings on where the horizon lands rather than on the
+   * camera. The zoom is the thing the reset used to overwrite, so it is the
+   * thing to watch: it was set to exactly 1 at every junction.
+   */
+  check("and advancing a leg does not undo it",
+    wideZoom !== null && afterZoom !== null && Math.abs(afterZoom - wideZoom) < 0.01,
+    `zoom ${wideZoom?.toFixed(3)} before the junction, ${afterZoom?.toFixed(3)} after`);
+  // The half that should still happen: course-up follows the new leg.
+  check("and the map still turns to the new leg",
+    Number.isFinite(wideBearing) && Number.isFinite(afterBearing) &&
+    Math.abs(afterBearing - wideBearing) > 1,
+    `bearing ${Math.round(wideBearing)} to ${Math.round(afterBearing)}`);
+
   await openTools(page);
   await page.click('.maptools .iconbtn[aria-label="Recentre the view"]');
   await page.waitForTimeout(1200);

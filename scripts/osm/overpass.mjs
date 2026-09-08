@@ -97,11 +97,24 @@ out geom;
 out body;
 // Somewhere to have lunch. The solver can be asked to route past one, so this
 // is a feature of the graph rather than decoration.
+//
+// Four of these eight were missing for a long time, and the omission was
+// specific to where this app operates. In Italy and South Tyrol the place you
+// stop for a coffee and a panino is a BAR, tagged amenity=bar, and the query
+// asked only for restaurant and cafe — so every one of them was invisible.
+// Monterosa's own Bar Gabiet is in the graph only because somebody also
+// tagged it a restaurant. pub, fast_food and biergarten are here for the same
+// reason: the tag a mapper reaches for varies by country and by mood, and a
+// skier looking for lunch does not care which one they picked.
 (
   nwr["tourism"="alpine_hut"](${box});
   nwr["tourism"="wilderness_hut"](${box});
   nwr["amenity"="restaurant"](${box});
   nwr["amenity"="cafe"](${box});
+  nwr["amenity"="bar"](${box});
+  nwr["amenity"="pub"](${box});
+  nwr["amenity"="fast_food"](${box});
+  nwr["amenity"="biergarten"](${box});
 );
 out center tags;
 // Where to hire skis. Not part of the routing, but it is the first thing

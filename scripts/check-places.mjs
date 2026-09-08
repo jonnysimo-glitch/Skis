@@ -194,7 +194,63 @@ for (const meta of RESORTS.filter((r) => r.available)) {
     `every place sits between ${Math.round(lo)} and ${Math.round(hi)} m` +
     (badAlt.length ? `: ${badAlt.slice(0, 4).map((p) => `${p[0]} at ${p[4]}`).join(", ")}` : ""));
 
-  // 4. A link that opens somewhere, and a line that says what the place is.
+  /*
+   * 4. Is a restaurant a restaurant?
+   *
+   * Everything above asks whether the right places are present. This asks
+   * whether they are what the file says they are, by going back to the tags
+   * the classification was made from — because a wrong kind is worse than a
+   * missing place. A skier sent to a bus shelter for lunch is a skier who
+   * stops trusting the map, and the pin gives no clue: it looks exactly like
+   * the pin for a rifugio.
+   *
+   * The tag has to say so. `amenity` in the eating set, or `tourism` one of
+   * the hut kinds — nothing is admitted on the strength of its name.
+   */
+  const EATS = new Set(["restaurant", "cafe", "bar", "pub", "fast_food", "biergarten"]);
+  const tagsFor = new Map();
+  for (const el of raw.elements ?? []) {
+    if (el.tags?.name) tagsFor.set(el.tags.name, el.tags);
+  }
+  const wrongKind = [];
+  for (const p of mod.PLACES) {
+    const [name, kind] = p;
+    if (kind === "parking") continue;             // named after a base, not OSM
+    const t = tagsFor.get(name);
+    if (!t) continue;                             // covered by the export check
+    const ok =
+      kind === "rental"
+        ? t.shop === "ski" || t.shop === "rental" || t.amenity === "ski_rental" || t.shop === "sports"
+        : kind === "hut"
+          ? t.tourism === "alpine_hut" || t.tourism === "wilderness_hut"
+          : EATS.has(t.amenity) || t.tourism === "alpine_hut" || t.tourism === "wilderness_hut";
+    if (!ok) {
+      const said = ["amenity", "shop", "tourism"].map((k) => t[k] && `${k}=${t[k]}`).filter(Boolean);
+      wrongKind.push(`${name} is "${kind}" but OSM says ${said.join(" ") || "nothing relevant"}`);
+    }
+  }
+  note(wrongKind.length === 0,
+    `every place is the kind OSM says it is` +
+    (wrongKind.length ? `: ${wrongKind.slice(0, 4).join("; ")}` : ""));
+
+  /*
+   * And a place to eat that is really somewhere to sleep.
+   *
+   * Not a failure — a hotel with a restaurant is a real lunch stop and OSM
+   * tags plenty of them amenity=restaurant, correctly. But it is worth
+   * printing, because the difference between "Hotel Something serves lunch"
+   * and "Hotel Something is on the map for no reason" is a judgement nobody
+   * can make without seeing the list.
+   */
+  const LODGING = /\b(hotel|garni|pension|residence|apartments?|appartement|camping|b&b|bed ?and ?breakfast)\b/i;
+  const beds = mod.PLACES
+    .filter((p) => ["restaurant", "cafe", "hut"].includes(p[1]) && LODGING.test(p[0]))
+    .map((p) => p[0]);
+  if (beds.length) {
+    console.log(`        ${beds.length} place(s) to eat are named like lodging: ${beds.slice(0, 5).join(", ")}`);
+  }
+
+  // 5. A link that opens somewhere, and a line that says what the place is.
   const badLink = mod.PLACES.filter((p) => {
     const q = encodeURIComponent(p[0]);
     const url = `https://www.google.com/maps/search/${q}/@${p[2]},${p[3]},16z`;
