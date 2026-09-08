@@ -3050,8 +3050,16 @@ export default function MountainMap({
         return a - b;
       });
 
-      const R = 9.5;
-      ctx.font = "700 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+      /*
+       * Ten pixels of disc carrying a thirteen pixel numeral.
+       *
+       * It was 9.5 and 11, and the number floated in the middle of a lot of
+       * fill — a badge reads as a badge when the digit is most of it. Two
+       * pixels of white ring rather than one, because the thing it has to
+       * survive is being drawn on top of the route line it belongs to.
+       */
+      const R = 10;
+      ctx.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const drawn = [];
@@ -3084,7 +3092,16 @@ export default function MountainMap({
         ctx.fill();
         ctx.beginPath();
         ctx.arc(b.x, b.y, R - 2, 0, Math.PI * 2);
-        ctx.fillStyle = b.past ? "rgba(11,26,36,0.45)" : "#0b1a24";
+        /*
+         * The brand accent, not the route casing.
+         *
+         * ACCENT_LINE is the bright cyan the route is drawn in, and white on
+         * it measures 2.05:1 — a numeral nobody can read. ACCENT is the same
+         * blue at the weight chosen for exactly this, a solid fill with white
+         * on top, and measures 5.04:1. The badge belongs to the route and has
+         * to be legible; those are two different jobs for one hue.
+         */
+        ctx.fillStyle = b.past ? "rgba(0,119,163,0.45)" : ACCENT;
         ctx.fill();
         ctx.fillStyle = "#ffffff";
         ctx.fillText(String(b.leg + 1), b.x, b.y + 0.5);
