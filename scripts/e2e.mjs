@@ -625,8 +625,27 @@ try {
      * metric behind the chevron. The compact bar is what a skier sees, and it
      * says "300 m to Gabiet · leg 1 of 59".
      */
+    /*
+     * Read off the button, because that is where the junction is named now.
+     *
+     * The compact bar did say "300 m to Gabiet · leg 1 of 59" and stopped: the
+     * line is nowrap and the destination pushed the leg count off the end, so
+     * a reader got "10 min to Olang I / II · 1 ..." with the one number on the
+     * line that is written nowhere else cut in half. What is left there is how
+     * far and how far through, and both of those are checked. Where you are
+     * going moved to the button, which is also the better place to ask it: the
+     * instruction above names the run you are skiing, the button names the
+     * junction you are skiing to.
+     */
     const compact = await page.$eval(".nav__then", (n) => n.textContent.trim());
-    check("navigate points at a named junction", /\bto [A-Z]/.test(compact), compact);
+    check("the compact bar says how far and how far through",
+      /\d/.test(compact) && /\d+ of \d+/.test(compact), compact);
+    const bound = await page
+      .$eval('.nav__foot .btn:has-text("Reached")', (n) => n.innerText.trim().split("\n")[0])
+      .catch(() => "");
+    check("navigate points at a named junction",
+      /^reached\s+\p{L}/iu.test(bound) && /\p{Lu}/u.test(bound.replace(/^reached\s*/i, "")),
+      bound || "no destination on the button");
     check("and never says turn", !/turn/i.test(await page.$eval(".nav", (n) => n.textContent)));
     check(
       "the button says where you are going",
@@ -1077,10 +1096,26 @@ try {
     await openRoute(page);
     await page.waitForSelector(".sheet__foot .btn", { timeout: 10000 });
     await openLegs(page);
-    check(
-      "the legs page confirms it passes a rifugio",
-      /rifugio/i.test(await page.$eval(".page__body", (b) => b.textContent))
-    );
+    /*
+     * And it says where, not that there is somewhere.
+     *
+     * This used to look for the word "rifugio", which the page carried in a
+     * fallback line reading "Passes a rifugio" — said in the branch that runs
+     * when nothing could put a name to the place, which is the one claim a
+     * failure to name it argues against. Measured across all four resorts,
+     * every base and every ability: 81 lunch routes and all 81 name their
+     * stop, because the solver throws away a lunch route that passes nothing.
+     *
+     * So the page names it, and this asks for the name and the time — which
+     * is a stronger claim than the word was, and true of every route that
+     * gets here.
+     */
+    const legsText = await page.$eval(".page__body", (b) => b.innerText);
+    check("the legs page names where lunch is", /Lunch at\s+\S/.test(legsText),
+      legsText.split("\n").find((l) => /lunch/i.test(l)) || "nothing about lunch");
+    check("and when you would be sitting down",
+      /Lunch at[^.]*\b\d{1,2}:\d{2}/.test(legsText.replace(/\n/g, " ")),
+      legsText.split("\n").find((l) => /lunch/i.test(l)) || "no time");
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
