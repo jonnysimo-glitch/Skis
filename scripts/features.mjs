@@ -6028,6 +6028,104 @@ if (feature("47. A double tap zooms where you tapped")) {
   await page.context_.close();
 }
 
+if (feature("48. The day is numbered, in the order you ski it")) {
+  /*
+   * Reported as: the route is highlighted and the rest is dimmed, and it is
+   * still not clear what the track is.
+   *
+   * Which is a limit of the medium rather than of the styling. A day that
+   * comes back through the same junction three times draws as a tangle of one
+   * colour, and no amount of contrast says which strand you are on or which
+   * way round they go. A line says where; a number says when.
+   */
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await page.click("text=Find routes");
+  await page.waitForSelector(".routecard", { timeout: 25000 });
+
+  const badges = () => page.evaluate(() => window.__skisStepBadges ?? []);
+
+  // Before you have picked one, which is where the shape of the day is being
+  // judged and where the numbers are most useful.
+  await atRest(page, { quiet: 600, limit: 16000 });
+  const choosing = await badges();
+  check("the steps are numbered while you are still choosing", choosing.length > 0,
+    `${choosing.length} numbers`);
+
+  await openRoute(page, 0);
+  await page.waitForTimeout(1200);
+  await atRest(page, { quiet: 700, limit: 16000 });
+  const shown = await badges();
+  check("and on the route itself", shown.length > 0, `${shown.length} numbers`);
+
+  /*
+   * The first one is there.
+   *
+   * It was the first casualty of the first version: its place on the leg is
+   * near the start pin, the pins claim their boxes first, and a badge with
+   * nowhere to go was dropped. Losing any number is bad and losing the one a
+   * person looks for first is absurd, so a leg now slides along itself for
+   * room instead of giving up.
+   */
+  check("and step 1 is one of them", shown.some((b) => b.step === 1),
+    shown.map((b) => b.step).sort((a, b) => a - b).slice(0, 8).join(", "));
+
+  // In order, and each one only once: two badges saying 4 is worse than none.
+  const steps = shown.map((b) => b.step);
+  check("no number appears twice", new Set(steps).size === steps.length,
+    `${steps.length} numbers, ${new Set(steps).size} distinct`);
+  check("and they all count from one upwards",
+    steps.every((n) => Number.isInteger(n) && n >= 1),
+    `lowest ${Math.min(...steps)}, highest ${Math.max(...steps)}`);
+
+  /*
+   * And none of them sits on another.
+   *
+   * The whole tier is a declutter rather than a budget — every leg offers a
+   * badge and the ones with nowhere to go are dropped — so overlap is the one
+   * way it can fail, and it fails invisibly: a nine pixel disc over another
+   * nine pixel disc is a slightly bolder disc.
+   */
+  const overlaps = [];
+  for (let i = 0; i < shown.length; i++) {
+    for (let j = i + 1; j < shown.length; j++) {
+      const a = shown[i];
+      const b = shown[j];
+      if (Math.hypot(a.x - b.x, a.y - b.y) < 19) overlaps.push(`${a.step}/${b.step}`);
+    }
+  }
+  check("and no two numbers overlap", overlaps.length === 0,
+    overlaps.slice(0, 4).join(", ") || `${shown.length} numbers, all clear`);
+
+  // Decluttered rather than exhaustive: a fifty leg day does not put fifty
+  // discs on a phone screen.
+  const legs = await page.evaluate(() =>
+    new Set((window.__skisRouteDrawn ?? []).map((d) => d.leg)).size);
+  check("and a long day shows a readable subset, not all of it",
+    legs === 0 || shown.length <= legs, `${shown.length} numbers for ${legs} legs`);
+
+  // Navigating: the leg you are on is the one question this screen answers, so
+  // its number is drawn at full weight and the ones behind you step back.
+  await page.click("text=Save and start");
+  await page.waitForSelector(".nav__head", { timeout: 20000 });
+  await atRest(page, { quiet: 700, limit: 16000 });
+  const navving = await badges();
+  check("the numbers are there while navigating too", navving.length > 0,
+    `${navving.length} numbers`);
+  check("and the ones already skied are drawn back",
+    navving.every((b) => typeof b.past === "boolean"),
+    `${navving.filter((b) => b.past).length} of ${navving.length} behind you`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
 } catch (err) {
   /*
    * A check that throws is a failing check, not a run that produced nothing.

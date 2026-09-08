@@ -2395,8 +2395,18 @@ export default function MountainMap({
       // Faded enough to sit behind the route, solid enough to still be read.
       // At 0.45 the network had effectively vanished on the navigate screen,
       // which is the one place a skier most wants to see what else is around.
-      const alpha = hasRoute ? 0.62 : 1;
-      const casing = hasRoute ? 0.6 : 0.9;
+      /*
+       * How far back, and it depends on the screen.
+       *
+       * Navigating, the network is wanted: it is the one place a skier most
+       * wants to see what else is around, and 0.45 made it vanish. Choosing
+       * between routes it is competing with the only thing on the screen that
+       * matters, and "it is not super clear what the track is" was reported
+       * against 0.62 everywhere. So the route's own screens push it further
+       * back and the navigate screen does not.
+       */
+      const alpha = hasRoute ? (isFollowing(propsRef.current) ? 0.62 : 0.46) : 1;
+      const casing = hasRoute ? (isFollowing(propsRef.current) ? 0.6 : 0.42) : 0.9;
       let seen = 0;
       let hidden = 0;
       let clipped = 0;
@@ -2956,6 +2966,136 @@ export default function MountainMap({
         for (const seg of l.runs) stroke(seg, colour, (lift || link ? 2.4 : 3.4) * k, dash);
         ctx.globalAlpha = 1;
       }
+    };
+
+    /**
+     * A number on each stretch of the day, in the order you ski it.
+     *
+     * Reported as: the route is highlighted and the rest is dimmed, and it is
+     * still not clear what the track IS. Which is right, and it is a limit of
+     * the medium rather than of the styling — a day that comes back through
+     * the same junction three times draws as a tangle of one colour, and no
+     * amount of contrast tells you which strand you are on or which way round
+     * they go. A line says where. A number says when.
+     *
+     * At the middle of each leg rather than at its ends. The ends are
+     * junctions, which is where the pins and most of the names already are,
+     * and a number at a junction is ambiguous between the leg arriving and the
+     * one leaving. The middle of a stretch belongs to that stretch alone.
+     *
+     * Declutter rather than budget. Every leg offers a badge and the ones that
+     * collide are dropped, so pulled back you get 1, 4, 7 — spread along the
+     * day — and zooming in fills in the rest without anything moving. Ordered
+     * by leg so a low number always wins its patch: the beginning of the day
+     * is what you look for first. Navigating, the leg you are ON is ordered
+     * first of all, because that is the one question that screen answers.
+     */
+    const stepBadges = (v, cam, placed) => {
+      const r = propsRef.current.route;
+      if (!r?.features?.length) return placed;
+
+      // Group the drawn segments back into legs, in leg order.
+      const byLeg = new Map();
+      for (const f of r.features) {
+        const leg = f.properties?.leg;
+        if (!Number.isFinite(leg)) continue;
+        const into = byLeg.get(leg) ?? [];
+        into.push(...(f.geometry?.coordinates ?? []));
+        byLeg.set(leg, into);
+      }
+      if (!byLeg.size) return placed;
+
+      const flat = isFollowing(propsRef.current);
+      const done = propsRef.current.camera?.doneThrough ?? 0;
+      const ahead = flat ? done + NAV_LOOKAHEAD : Infinity;
+
+      /*
+       * The point half way along the leg, by length rather than by index.
+       *
+       * A piste's coordinates are not evenly spaced — OSM puts vertices where
+       * the line bends — so the middle of the array is wherever the mapper
+       * happened to click most. Half the arc length is the middle of the
+       * stretch as a skier experiences it.
+       */
+      const along = (coords, frac) => {
+        if (coords.length < 2) return coords[0] ?? null;
+        const seg = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+        let total = 0;
+        for (let i = 1; i < coords.length; i++) total += seg(coords[i - 1], coords[i]);
+        let run = 0;
+        for (let i = 1; i < coords.length; i++) {
+          run += seg(coords[i - 1], coords[i]);
+          if (run >= total * frac) return coords[i];
+        }
+        return coords[coords.length - 1];
+      };
+      /*
+       * Slide along the leg rather than give up on it.
+       *
+       * The first version took the midpoint and dropped the badge if anything
+       * was already there — and step 1 was the first casualty, every time,
+       * because its middle is near the start pin and the pins claim their
+       * boxes first. Losing any number is bad and losing the first one is
+       * absurd: it is the one a person looks for. So a leg offers the middle,
+       * then either side of it, and only a leg with nowhere at all along its
+       * length goes unnumbered.
+       */
+      const SPOTS = [0.5, 0.38, 0.62, 0.26, 0.74];
+
+      const order = [...byLeg.keys()].sort((a, b) => {
+        if (flat) {
+          const mine = (n) => (n === done ? -1 : n < done ? 1e6 + n : n);
+          return mine(a) - mine(b);
+        }
+        return a - b;
+      });
+
+      const R = 9.5;
+      ctx.font = "700 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const drawn = [];
+      for (const leg of order) {
+        const coords = byLeg.get(leg);
+        for (const frac of SPOTS) {
+          const at = along(coords, frac);
+          if (!at) break;
+          const { x, z } = field.proj.project(at[1], at[0]);
+          const p = project(x, field.sample(x, z), z, v, cam);
+          if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+          if (p.x < R || p.x > width - R || p.y < R || p.y > height - R) continue;
+          // Behind the mountain is behind the mountain: a number floating over
+          // a ridge the route does not cross is worse than no number.
+          if (!flat && !visible(p)) continue;
+          const box = { l: p.x - R - 2, r: p.x + R + 2, t: p.y - R - 2, b: p.y + R + 2 };
+          if (placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t)) continue;
+          placed.push(box);
+          drawn.push({ leg, x: p.x, y: p.y, past: leg < done || leg > ahead });
+          break;
+        }
+      }
+
+      for (const b of drawn) {
+        ctx.globalAlpha = b.past ? 0.4 : 1;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
+        // White ring so it holds over the route line it sits on, and over snow.
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, R - 2, 0, Math.PI * 2);
+        ctx.fillStyle = b.past ? "rgba(11,26,36,0.45)" : "#0b1a24";
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(String(b.leg + 1), b.x, b.y + 0.5);
+        ctx.globalAlpha = 1;
+      }
+      if (mapTest) {
+        window.__skisStepBadges = drawn.map((b) => ({
+          step: b.leg + 1, x: Math.round(b.x), y: Math.round(b.y), past: b.past,
+        }));
+      }
+      return placed;
     };
 
     /**
@@ -4391,7 +4531,11 @@ export default function MountainMap({
         // Ahead of every other name, because these three are the route's own
         // ends and where the skier is standing. Only the boxes are claimed
         // here; the dots are painted at the end so nothing draws over them.
+        // The step numbers claim their room before any name does, and after
+        // the pins have claimed theirs. A name is worth losing for a number
+        // that says which way round the day goes; the route's own ends are not.
         const pins = planPins(v, cam, boxes);
+        stepBadges(v, cam, boxes);
         // One name, said once, whichever layer says it.
         const spoken = new Set(
           (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
