@@ -16,13 +16,26 @@
  * Residenza claimed six minutes for a kilometre that takes three.
  */
 import fs from "node:fs";
-import { metres, wayLength, label, DIFFICULTY } from "/home/user/Skis/scripts/osm/graph.mjs";
-import { runMinutes, liftMinutes, LIFT_SPEED_MS } from "/home/user/Skis/src/lib/pace.js";
+/*
+ * Relative to this file, not to the machine it was written on.
+ *
+ * These four paths were absolute, rooted in the author's own home directory,
+ * which resolves on exactly one computer and nowhere else. It cost a day.
+ * This check went into `npm test`, `npm test` is the gate in the Pages
+ * workflow, and so every deploy since died here — while the site went on
+ * serving the last artifact that had got through, satellite imagery and all.
+ * A live site that is merely old is indistinguishable from a phone holding a
+ * cached copy, so three people checked three devices before anyone looked
+ * here. scripts/check-portable.mjs now refuses the whole class.
+ */
+const HERE = (p) => new URL(p, import.meta.url).pathname;
+const { metres, wayLength, label, DIFFICULTY } = await import(HERE("./osm/graph.mjs"));
+const { runMinutes, liftMinutes, LIFT_SPEED_MS } = await import(HERE("../src/lib/pace.js"));
 
 let problems = 0;
 for (const id of ["monterosa", "kronplatz", "paganella", "latemar"]) {
-  const M = await import(`/home/user/Skis/src/resorts/${id}.js`);
-  const els = JSON.parse(fs.readFileSync(`/home/user/Skis/data/osm/${id}.json`, "utf8")).elements || [];
+  const M = await import(HERE(`../src/resorts/${id}.js`));
+  const els = JSON.parse(fs.readFileSync(HERE(`../data/osm/${id}.json`), "utf8")).elements || [];
   const bad = [];
 
   // --- node positions: every node should sit on something it belongs to ----
