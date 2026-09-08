@@ -3202,6 +3202,27 @@ export default function MountainMap({
        * stop. That is the view a skier spends the day in, and "some of the
        * stops" is not a thing anybody asked for.
        */
+      /*
+       * Five is the bottom of the ladder, and a wider stride was tried and
+       * measured worse.
+       *
+       * The reasoning for going further looked sound: pulled right out,
+       * navigation frames sixteen kilometres, an eighty-three leg day that
+       * laps the same runs stacks its numbers, and what survives the
+       * collision test there is gappy — 1, 2, 5, 10, 30, 35, 40, 55, 60. So
+       * strides of ten and twenty were added below.
+       *
+       * They made the band a skier actually uses worse. At five and a half
+       * kilometres across, stride five puts nine numbers on the mountain
+       * starting 1, 2, 5, 10, 20; stride twenty asks for four and gets 1, 2,
+       * 40, 60 — because widening the stride does not stop the discs
+       * colliding, it just brings fewer candidates to the collision. Fewer
+       * asked, fewer placed, same gaps.
+       *
+       * The gaps at the very bottom of the zoom are geometry: two legs a
+       * hundred metres apart are one pixel apart at that range, and no stride
+       * fixes that. Nine numbers with holes in beats four with the same holes.
+       */
       const z = labelZoom(v);
       const stride = z >= 2.0 ? 1 : z >= 1.4 ? 2 : z >= 0.8 ? 3 : 5;
       const onStride = (leg) => (leg + 1) % stride === 0;
@@ -3321,8 +3342,40 @@ export default function MountainMap({
         }
       }
 
+      /*
+       * And they fade, like every other tier on this map.
+       *
+       * Reported as the labels glitching, and the numbers were the one tier
+       * that popped: the stride comes off the zoom, so crossing a threshold
+       * turned a third of the day's numbers on between two frames while the
+       * run names either side of them were still easing. Task 74 was "give
+       * every label tier the same fade and hold" and this tier arrived after
+       * it.
+       *
+       * Same clock as the places — 420ms in, 900ms out — because the point is
+       * that a number and the name beside it move together. The emphasis
+       * alphas below multiply it rather than replace it: what is fading is
+       * whether the number is there, not how much it matters.
+       */
+      const here = new Set(drawn.map((b) => b.leg));
+      for (const b of drawn) badgeAt.set(b.leg, b);
+      // A number that has gone still has to go somewhere. Drawn from where it
+      // was, after the ones that are staying, and claiming no box — it is on
+      // its way out and must not hold a name's room while it goes.
+      for (const [leg, was] of [...badgeAt]) {
+        if (here.has(leg)) continue;
+        // A number whose leg is not in this route at all is not fading, it is
+        // a ghost of the last day. Dropped rather than eased.
+        if (!byLeg.has(leg)) { badgeAt.delete(leg); fades.delete(`s:${leg}`); continue; }
+        const out = fadeOf(`s:${leg}`, false, frameDt);
+        if (out <= 0.02) { badgeAt.delete(leg); fades.delete(`s:${leg}`); continue; }
+        drawn.push({ ...was, fade: out });
+      }
+
       for (const b of drawn) {
-        ctx.globalAlpha = b.past ? 0.4 : b.soon ? 1 : 0.82;
+        const fade = b.fade ?? fadeOf(`s:${b.leg}`, true, frameDt);
+        if (fade <= 0.02) continue;
+        ctx.globalAlpha = fade * (b.past ? 0.4 : b.soon ? 1 : 0.82);
         ctx.beginPath();
         ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
         // White ring so it holds over the route line it sits on, and over snow.
@@ -3348,8 +3401,16 @@ export default function MountainMap({
         ctx.globalAlpha = 1;
       }
       if (mapTest) {
+        /*
+         * `fade` is here so a check can tell "on the map" from "leaving it".
+         * A number easing out over nine hundred milliseconds is genuinely on
+         * screen, so it belongs in the list; a check counting what a stride
+         * chose wants the ones that are staying.
+         */
         window.__skisStepBadges = drawn.map((b) => ({
           step: b.leg + 1, x: Math.round(b.x), y: Math.round(b.y), past: b.past,
+          fade: Number((fades.get(`s:${b.leg}`) ?? 1).toFixed(2)),
+          going: b.fade !== undefined,
         }));
       }
       return placed;
@@ -3866,6 +3927,16 @@ export default function MountainMap({
     };
 
     const fades = new Map();
+    /**
+     * Where each step number was last drawn.
+     *
+     * The other tiers can recompute a departing label's position from its
+     * name, because a hut does not move. A step number's position is wherever
+     * along its leg there happened to be room this frame, so a number on its
+     * way out has nowhere to be unless the frame that had room for it wrote it
+     * down.
+     */
+    const badgeAt = new Map();
     const fadeOf = (key, want, dt) => {
       /*
        * Everything starts at nothing and fades up, including the first one.

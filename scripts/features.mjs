@@ -6169,6 +6169,92 @@ if (feature("48. The day is numbered, in the order you ski it")) {
     navving.every((b) => typeof b.past === "boolean"),
     `${navving.filter((b) => b.past).length} of ${navving.length} behind you`);
 
+  /*
+   * And they arrive the way everything else on this map arrives.
+   *
+   * Reported as the labels glitching, and the numbers were the one tier that
+   * popped: the stride comes off the zoom, so crossing a threshold turned a
+   * third of the day's numbers on between two frames while the run names
+   * either side of them were still easing.
+   *
+   * Sampled fast across a zoom out rather than compared before and after,
+   * because "it faded" and "it appeared" have the same endpoints and differ
+   * only in the middle. A tier that eases gets caught part way; a tier that
+   * pops never does.
+   */
+  await openTools(page);
+  const caught = [];
+  for (let i = 0; i < 3; i++) {
+    await page.click('.maptools .iconbtn[aria-label="Zoom out"]');
+    for (let j = 0; j < 12; j++) {
+      caught.push(await badges());
+      await page.waitForTimeout(45);
+    }
+  }
+  const middling = caught.filter((set) =>
+    set.some((b) => b.fade > 0.05 && b.fade < 0.95)).length;
+  check("the numbers fade rather than pop", middling > 0,
+    `${middling} of ${caught.length} samples caught one part way`);
+  // Both directions: a set that only fades in still pops on the way out.
+  const going = caught.some((set) => set.some((b) => b.going && b.fade < 0.95));
+  check("and they fade out as well as in", going);
+  await atRest(page, { quiet: 700, limit: 16000 });
+
+  /*
+   * Pulled back, the sequence has to read as a sequence.
+   *
+   * This is the ask in the words it arrived in: "when you are zoomed out you
+   * see one, five, ten, fifteen, twenty, twenty five, and then the more you
+   * zoom in you see the next numbers". So the check is on the SHAPE — the
+   * first number, the stride between the ones that follow, and that there are
+   * enough of them to read a direction off.
+   */
+  const shownNow = async () =>
+    (await badges()).filter((b) => !b.going).map((b) => b.step).sort((a, b) => a - b);
+  const near = await shownNow();
+  /*
+   * Pulled back until the stride is meant to be five, read off the view
+   * rather than counted in clicks. The zoom button steps by a ratio, the
+   * follow camera scales the label zoom by NAV_LABEL_ZOOM, and three clicks
+   * lands on stride three — which is a correct map and a wrong test.
+   */
+  for (let i = 0; i < 10; i++) {
+    const z = await page.evaluate(() => (window.__skisView?.zoom ?? 1) * 2.2);
+    if (z < 0.8) break;
+    await page.click('.maptools .iconbtn[aria-label="Zoom out"]');
+    await page.waitForTimeout(160);
+  }
+  await atRest(page, { quiet: 700, limit: 16000 });
+  const far = await shownNow();
+  check("zoomed out, the day still starts at 1", far[0] === 1, far.join(", "));
+  check("and the numbers thin out to a readable few", far.length >= 3 && far.length <= 14,
+    `${far.length} numbers: ${far.join(", ")}`);
+  /*
+   * Every number past the second is a multiple of five. Step 1 and the leg
+   * under your skis are there whatever the stride says, which is deliberate:
+   * one is what a person looks for and the other is what the screen is for.
+   */
+  const offStride = far.slice(2).filter((s) => s % 5 !== 0);
+  check("and past the first two they run in fives", offStride.length === 0,
+    offStride.join(", ") || far.join(", "));
+  /*
+   * And the other half of the ask: "the more you zoom in, the more you see".
+   * The gap between numbers has to close as you come in, which is the claim
+   * the two readings above can actually be compared on — counts cannot, since
+   * how many fit is geometry rather than stride.
+   */
+  const gapOf = (list) => {
+    const rest = list.slice(1);
+    if (rest.length < 2) return null;
+    const gaps = rest.slice(1).map((s, i) => s - rest[i]).filter((g) => g > 0);
+    return gaps.length ? Math.min(...gaps) : null;
+  };
+  const gapNear = gapOf(near);
+  const gapFar = gapOf(far);
+  check("and zooming in closes the gap between them",
+    gapNear === null || gapFar === null || gapNear < gapFar,
+    `${gapNear} steps apart close in, ${gapFar} far out`);
+
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 }
