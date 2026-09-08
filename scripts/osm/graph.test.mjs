@@ -9,7 +9,7 @@
  * the expected results is arithmetic rather than a guess: at 46.150 the ground
  * is 1000 m and it climbs 500 m per hundredth of a degree north.
  */
-import { build, metres, wayLength, runMinutes, liftMinutes, DIFFICULTY } from "./graph.mjs";
+import { build, metres, wayLength, runMinutes, liftMinutes, DIFFICULTY, isHire } from "./graph.mjs";
 import { BOARDING_MINUTES, LIFT_SPEED_MS } from "../../src/lib/pace.js";
 import { prune, check } from "./validate.mjs";
 import { stitch, LINK_REACH } from "./stitch.mjs";
@@ -433,6 +433,46 @@ console.log("\nA RUN THAT STOPS SHORT OF ITS LIFT IS NOT THROWN AWAY");
   is("so the run it would have rescued is still dropped",
     !prune(beyond).RUNS.some((r) => r.name === "The long one"),
     prune(beyond).RUNS.map((r) => r.name).join(", "));
+}
+
+/*
+ * What counts as ski hire.
+ *
+ * The query used to require ski=yes on a sports shop and almost none carry
+ * it: Paganella returned zero hire shops for a box containing all of Andalo.
+ * Dropping that requirement means a sports shop has to be judged some other
+ * way, and the way is its name — so the rule needs cases, because "probably
+ * hires skis, we are at a ski resort" is how a map starts saying things that
+ * are not true.
+ */
+{
+  const yes = [
+    { shop: "ski", name: "La Glisse" },
+    { amenity: "ski_rental", name: "Ski Sport Heinz" },
+    { shop: "rental", rental: "ski;snowboard", name: "Noleggio Golflift" },
+    { shop: "rental", rental: "Sci", name: "Noleggio Andalo" },
+    { "service:ski:rental": "yes", name: "Sporthaus" },
+    { shop: "sports", name: "Rent and Go Andalo" },
+    { shop: "sports", name: "Rent & Go Molveno" },
+    { shop: "sports", name: "Noleggio Sci Paganella" },
+    { shop: "sports", name: "Skiverleih Olang" },
+    { shop: "outdoor", name: "Ski Hire Obereggen" },
+    { shop: "sports", ski: "yes", name: "Sport Time" },
+  ];
+  const no = [
+    { shop: "sports", name: "Ottica Rossi" },
+    { shop: "sports", name: "Calcio Store" },
+    { shop: "outdoor", name: "Ferramenta Bruneck" },
+    { shop: "rental", rental: "bicycle", name: "Bike Point" },
+    { shop: "bakery", name: "Panificio Ski" },
+    { amenity: "restaurant", name: "Ristorante Sci Club" },
+  ];
+  for (const t of yes) {
+    is(`hire: ${t.name}`, isHire(t) === true, JSON.stringify(t));
+  }
+  for (const t of no) {
+    is(`not hire: ${t.name}`, isHire(t) !== true, JSON.stringify(t));
+  }
 }
 
 console.log("\n" + (failures ? `${failures} FAILING` : "all pipeline checks passed"));

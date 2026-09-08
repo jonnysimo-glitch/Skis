@@ -234,6 +234,37 @@ export { runMinutes };
  * @param {number} options.tolerance  metres within which two endpoints are one place
  * @param {(lat:number, lon:number) => number} options.elevation  metres above sea level
  */
+/*
+ * Is this ski hire, on the evidence?
+ *
+ * Two grades of it, because the query now asks widely enough that the
+ * answer is no longer just "which tag".
+ *
+ * Certain: the tag says so. shop=ski, amenity=ski_rental, a rental shop
+ * with ski in what it rents, or service:ski:rental=yes.
+ *
+ * Probable: a sports or outdoor shop whose NAME says so. The query used to
+ * require ski=yes on a sports shop and almost none carry it — Paganella
+ * returned zero hire shops for a box containing all of Andalo — so the
+ * requirement had to go, and something has to stand in its place or every
+ * sports shop in three valleys becomes a ski rental. The name is the
+ * evidence a person would use: noleggio, verleih, rent, hire, ski, sci,
+ * snowboard, or a chain that only does this. A sports shop at a ski resort
+ * called "Rent and Go" is ski hire; one called "Ottica Rossi" is not.
+ *
+ * Deliberately not: "it is a sports shop and we are at a ski resort, so it
+ * probably hires skis". It probably does. Probably is how a map starts
+ * telling people things that are not true.
+ */
+export const HIRE_NAME = /noleggio|verleih|rent\s?(and|&|-)?\s?go|\brent(al|s)?\b|\bhire\b|\bski\b|\bsci\b|snowboard|skiverleih|skiservice/i;
+export const isHire = (t) =>
+  t.shop === "ski" || t.amenity === "ski_rental" ||
+  t["service:ski:rental"] === "yes" ||
+  (t.shop === "rental" && /ski|sci|snowboard/i.test(t.rental ?? "")) ||
+  ((t.shop === "sports" || t.shop === "outdoor") &&
+    (t.ski === "yes" || HIRE_NAME.test(t.name ?? "")));
+
+
 export function build(osm, { tolerance = 45, elevation }) {
   const elements = osm.elements || [];
   const lifts = elements.filter(isLift);
@@ -279,7 +310,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     t.tourism === "alpine_hut" || t.tourism === "wilderness_hut" ? "hut"
       : t.amenity === "restaurant" ? "restaurant"
         : EATS.has(t.amenity) ? "cafe"
-          : t.shop === "ski" || t.shop === "rental" || t.amenity === "ski_rental" ? "rental"
+          : isHire(t) ? "rental"
             : t.amenity === "parking" ? "parking"
               : null;
   /*
