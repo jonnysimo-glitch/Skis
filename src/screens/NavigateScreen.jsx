@@ -345,7 +345,23 @@ export default function NavigateScreen({
                       how anybody writes it. */}
                   <span className="nav__farunit">{` ${distance ? distance.unit : "min"}`}</span>
                 </span>
-                {` to ${junction.name} · `}
+                {/*
+                  * Not "to <junction>" as well.
+                  *
+                  * This line is nowrap by design and the destination pushed it
+                  * past the end: "10 min to Above Campo Scuola Gardonè · 1 of
+                  * 62" wants 322px and has 213, so what a reader actually got
+                  * was "10 min to Olang I / II · 1 ..." — the leg count, the
+                  * one thing here that is not written anywhere else, cut in
+                  * half. Measured across the four resorts, 29% of these lines
+                  * truncated with GPS following and 60% without.
+                  *
+                  * Where you are going is already on the screen twice: in the
+                  * instruction above, and on the button at the bottom that
+                  * says "Reached <junction>". How long and how far through the
+                  * day are not, so they are what stays.
+                  */}
+                {` · `}
                 {/* Where you are in the day, under the same class it has in
                     the expanded panel: the information moved, so the name for
                     it moves with it. */}

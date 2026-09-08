@@ -3049,10 +3049,32 @@ export default function MountainMap({
        */
       const z = labelZoom(v);
       const stride = z >= 3.2 ? 1 : z >= 2.2 ? 2 : z >= 1.4 ? 3 : 5;
-      const inWindow = (leg) =>
-        leg === 0 ||
-        (flat && leg >= done - 1 && leg <= ahead) ||
-        (leg + 1) % stride === 0;
+      const onStride = (leg) => (leg + 1) % stride === 0;
+      /*
+       * Two things come out of the zoom, not one: how DENSE the numbers are
+       * and how FAR into the day they reach.
+       *
+       * Stride alone was not enough. Placed at the navigation framing the
+       * stride is 2, meaning "show nearly everything" — and what that showed
+       * was step 82, because at four hundred and eighty metres across the only
+       * legs whose geometry crosses the view are whichever ones happen to pass
+       * nearby, and a Kronplatz day comes back through its own base a dozen
+       * times. A lone 82 under a header reading "1 of 62" is worse than no
+       * number at all.
+       *
+       * Zoomed in you are asking "what is next", so the reach is a few legs
+       * and the stride is fine. Pulled back you are asking "where does this
+       * day go", so the reach is the whole thing and the stride does the
+       * thinning. Nothing behind you is numbered while navigating: you know
+       * where you have been, and the one leg back is kept only so the
+       * sequence has a tail to read against.
+       */
+      const inWindow = (leg) => {
+        if (!flat) return leg === 0 || onStride(leg);
+        if (leg >= done - 1 && leg <= ahead) return true;
+        const reach = z >= 2.2 ? 6 : z >= 1.4 ? 20 : Infinity;
+        return leg > done && leg <= done + reach && onStride(leg);
+      };
 
       /*
        * The point half way along the leg, by length rather than by index.
@@ -3086,9 +3108,31 @@ export default function MountainMap({
        * length goes unnumbered.
        */
       const SPOTS = [0.5, 0.38, 0.62, 0.26, 0.74];
+      /*
+       * The leg you are ON is numbered just ahead of you, not at its middle.
+       *
+       * A ten-minute gondola is two kilometres long and navigation frames
+       * four hundred and eighty metres, so the middle of the leg under your
+       * skis is a long way off the top of the screen — and the check that
+       * keeps numbers inside the frame threw it away every time. What was
+       * left was whichever far-end leg happened to cross the view: at
+       * Kronplatz, a lone "82" beside a header reading "1 of 62".
+       *
+       * Fractions rather than pixels, because the leg's length in metres and
+       * its length on screen are different questions and only one of them is
+       * known here. Four per cent of a two-kilometre lift is eighty metres,
+       * which is on screen at this framing; four per cent of a short link is
+       * a few metres, which is also on screen. Both land the number on the
+       * line, close to the puck, which is where it answers "which step is
+       * this".
+       */
+      const NEAR_SPOTS = [0.04, 0.08, 0.14, 0.22, 0.3];
 
       const order = [...byLeg.keys()].filter(inWindow).sort((a, b) => {
         if (flat) {
+          // Yours first, then what is coming, then what is behind you: the
+          // boxes are claimed in this order, so the number that matters most
+          // cannot lose its place to one from three hours later.
           const mine = (n) => (n === done ? -1 : n < done ? 1e6 + n : n);
           return mine(a) - mine(b);
         }
@@ -3110,7 +3154,7 @@ export default function MountainMap({
       const drawn = [];
       for (const leg of order) {
         const coords = byLeg.get(leg);
-        for (const frac of SPOTS) {
+        for (const frac of flat && leg === done ? NEAR_SPOTS : SPOTS) {
           const at = along(coords, frac);
           if (!at) break;
           const { x, z } = field.proj.project(at[1], at[0]);
@@ -3123,13 +3167,25 @@ export default function MountainMap({
           const box = { l: p.x - R - 2, r: p.x + R + 2, t: p.y - R - 2, b: p.y + R + 2 };
           if (placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t)) continue;
           placed.push(box);
-          drawn.push({ leg, x: p.x, y: p.y, past: leg < done || leg > ahead });
+          drawn.push({
+            leg,
+            x: p.x,
+            y: p.y,
+            // Behind you, so it can fade back. Not "outside the lookahead":
+            // the numbers further up the day are now there on purpose, as the
+            // shape of what is coming, and drawing them at four tenths made
+            // them grey smudges nobody could read a digit off.
+            past: flat && leg < done,
+            // Yours, and the next: full weight. The rest of what is coming
+            // steps back a little so the eye lands on the right one first.
+            soon: !flat || (leg >= done && leg <= ahead),
+          });
           break;
         }
       }
 
       for (const b of drawn) {
-        ctx.globalAlpha = b.past ? 0.4 : 1;
+        ctx.globalAlpha = b.past ? 0.4 : b.soon ? 1 : 0.82;
         ctx.beginPath();
         ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
         // White ring so it holds over the route line it sits on, and over snow.
@@ -3147,6 +3203,8 @@ export default function MountainMap({
          * to be legible; those are two different jobs for one hue.
          */
         ctx.fillStyle = b.past ? "rgba(0,119,163,0.45)" : ACCENT;
+        // 0.82 on the disc AND a paler fill would have taken it below the
+        // contrast the white numeral needs, so only the alpha steps back.
         ctx.fill();
         ctx.fillStyle = "#ffffff";
         ctx.fillText(String(b.leg + 1), b.x, b.y + 0.5);
