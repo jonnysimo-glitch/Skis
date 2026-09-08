@@ -114,17 +114,32 @@ npm run preflight
 ```
 
 It refuses on anything that would come back as a rejection, and warns about
-anything that is true but embarrassing — like shipping invented run names.
+anything that is true but embarrassing. It checks each live resort for a
+generated graph, so a resort promoted to live without one is caught before
+Apple sees it.
 
-## Two things that are not ready yet
+## What is not ready yet
 
-- **The resort data is invented.** Run names, lift times and queue estimates
-  in `src/resort.js` are placeholders. Preflight warns about this. Do not put
-  it in front of strangers who might ski it.
 - **Location sharing does not share anything.** There is no server. The screen
   says so, but App Review may still ask; the honest answer is that it is a
   local list and no data leaves the device, which is also why App Privacy is
-  "Data Not Collected".
+  "Data Not Collected". If that changes, App Privacy changes with it — see
+  below.
+- **Queue times and last-lift times are the app's own estimates**, not the
+  resort's. They are not in OpenStreetMap and never will be. The "what is
+  open" panel says so on every screen that shows a time. This is a disclosure
+  question rather than a blocker: the app never claims them as operator data.
+
+The resort data itself used to be on this list — "run names, lift times and
+queue estimates in `src/resort.js` are placeholders" — and is not any more.
+All four resorts are generated from OpenStreetMap into `src/resorts/`, and
+`src/resort.js` is kept only as the solver's fallback graph and as the fixture
+the unit tests are written against. Nothing a skier sees comes from it.
+
+One consequence for the listing: OSM data is ODbL and **attribution is a
+condition of using it**, not a courtesy. The app credits OpenStreetMap in the
+"what is open" panel and in the resort guide. If a screenshot in the App Store
+listing shows the map, the listing text should carry the credit too.
 
 ## Files here
 
