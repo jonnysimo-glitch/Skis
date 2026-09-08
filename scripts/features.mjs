@@ -2619,7 +2619,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
    * pattern can only reach the screen if the ground is being painted from the
    * imagery rather than from one colour a cell.
    */
-  const detail = () => page.$eval(SEL, (c) => {
+  const detail = (over = 12) => page.$eval(SEL, (c, t) => {
     const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
     let varied = 0;
     let seen = 0;
@@ -2634,10 +2634,37 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
         if (off < 40) continue; // sky
         seen++;
         if (Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1]) +
-          Math.abs(data[i + 2] - data[j + 2]) > 12) varied++;
+          Math.abs(data[i + 2] - data[j + 2]) > t) varied++;
       }
     }
     return seen ? Math.round((varied / seen) * 100) : 0;
+  }, over);
+
+  /**
+   * How wide a span of tones the ground is painted in.
+   *
+   * "One tone" is what an exhausted drape looks like, and it is a claim about
+   * the span rather than about neighbours: adjacent pixels can differ by a
+   * little right across a frame that only holds twenty levels.
+   */
+  const tonalRange = () => page.$eval(SEL, (c) => {
+    const { data, width, height } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    let min = 255;
+    let max = 0;
+    for (let y = 2; y < height - 2; y += 2) {
+      const s = (y * width) * 4;
+      const sky = [data[s], data[s + 1], data[s + 2]];
+      for (let x = 2; x < width - 3; x += 2) {
+        const i = (y * width + x) * 4;
+        const off = Math.abs(data[i] - sky[0]) + Math.abs(data[i + 1] - sky[1]) +
+          Math.abs(data[i + 2] - sky[2]);
+        if (off < 40) continue;
+        const l = data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+        if (l < min) min = l;
+        if (l > max) max = l;
+      }
+    }
+    return max > min ? Math.round(max - min) : 0;
   });
   const farDetail = await detail();
   check("standing still, the photograph resolves detail the mesh cannot",
@@ -2743,11 +2770,26 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   /*
    * And at the ceiling there is still a picture.
    *
-   * This is what set the ceiling. The reading is 47% at zoom 8, 14% at 33 and
-   * 2% at 48 — and two per cent is not softness, it is one tone: by then every
-   * screen pixel samples inside a single drape pixel. So ZOOM_MAX came back to
-   * 32, where there is still a photograph to look at, and this check is what
-   * stops it drifting out again.
+   * This is what set the ceiling: two per cent of neighbours differing is not
+   * softness, it is one tone, because by then every screen pixel samples
+   * inside a single drape pixel. ZOOM_MAX came back to 32, where there is
+   * still a photograph to look at, and this check is what stops it drifting
+   * out again.
+   *
+   * Asked at a threshold of four rather than twelve, and about the span of
+   * tones as well, because twelve stopped telling the two cases apart. At the
+   * ceiling here the frame reads 25/19/16/13/3 per cent over thresholds of
+   * 2/4/6/8/12 with a tonal range of 51: a genuinely low-contrast patch of
+   * snow magnified thirty-two times, which is what the ground looks like there
+   * and is not a fault. Twelve reads 3% on that, and 3% is also what an
+   * exhausted drape reads, so the number could not separate them.
+   *
+   * Four can, and it was checked by falsifying it rather than by picking a
+   * number that passed. With ZOOM_MAX temporarily at 160 — well past where
+   * the drape runs out — the same frame reads 4/0/0/0/0 with a tonal range of
+   * 23. So 19% against 0% at a threshold of four, and 51 against 23 on the
+   * range: two signals, both with a wide margin, both of which collapse when
+   * the ceiling drifts out and neither of which minds a flat piece of snow.
    */
   for (let n = 0; n < 6; n++) {
     await page.$eval(SEL, (c) => {
@@ -2759,7 +2801,10 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
     await page.waitForTimeout(150);
   }
   await atRest(page);
-  const atCeiling = await detail();
+  const atCeiling = await detail(4);
+  const ceilingRange = await tonalRange();
+  check("and right in at the ceiling the ground is not one tone",
+    ceilingRange >= 35, `${ceilingRange} levels of tone across the frame`);
   check("and right in at the ceiling there is still a picture", atCeiling >= 8,
     `${atCeiling}% of neighbouring pixels differ at zoom ` +
     `${(await page.evaluate(() => window.__skisView?.zoom))?.toFixed(1)}`);
@@ -4940,27 +4985,56 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
         if (run >= total * 0.2) { leaving = pts[i]; break; }
       }
       const far = window.__skisProject(leaving[0], leaving[1]);
-      // Ground across the screen at your own height, which is where the scale
-      // is specified: the zoom number is a multiplier on a per-resort framing
-      // and means nothing on its own.
+      /*
+       * Ground across the screen at your own height, which is where the scale
+       * is specified: the zoom number is a multiplier on a per-resort framing
+       * and means nothing on its own.
+       *
+       * Sampled close either side of the puck rather than at 30% and 70% of
+       * the width. Those wide points are on your own row but not necessarily
+       * on your own hillside: where the ground beside you falls away, the ray
+       * skims the drop and lands on the far side of the valley, and the answer
+       * stops being "how much ground is in shot" and becomes "how far away is
+       * the next mountain". Measured on leg 3 at Monterosa, standing above
+       * Bedemie: 8,332 m from the wide pair and 692 m from the narrow one, at
+       * the same zoom, on the same solve, in a screenshot with a 100 m scale
+       * bar on it.
+       */
       const y = Math.round(me.y);
-      const a = window.__skisGroundAt(Math.round(w * 0.3), y);
-      const b = window.__skisGroundAt(Math.round(w * 0.7), y);
-      let across = null;
-      if (a && b) {
-        const R = 6371000;
-        const rad = Math.PI / 180;
-        across =
-          Math.hypot(
-            (b.lon - a.lon) * rad * R * Math.cos(a.lat * rad),
-            (b.lat - a.lat) * rad * R
-          ) / 0.4;
-      }
+      const R = 6371000;
+      const rad = Math.PI / 180;
+      const spanAt = (half) => {
+        const a = window.__skisGroundAt(Math.round(w * (0.5 - half)), y);
+        const b = window.__skisGroundAt(Math.round(w * (0.5 + half)), y);
+        if (!a || !b) return null;
+        return Math.hypot(
+          (b.lon - a.lon) * rad * R * Math.cos(a.lat * rad),
+          (b.lat - a.lat) * rad * R
+        ) / (half * 2);
+      };
+      /*
+       * The median of four pairs, not one.
+       *
+       * A single narrow pair is on your own hillside but noisy — twelve per
+       * cent of a 393px screen is 47 pixels, and whatever the ground does
+       * across them gets multiplied by eight. A single wide pair is steady and
+       * sometimes measures the wrong hill. The median of several takes the
+       * steadiness of the wide ones and throws away the ray that flew off,
+       * which is what an 8 km reading is: an outlier, not an answer.
+       */
+      const spans = [0.06, 0.1, 0.14, 0.18].map(spanAt).filter((s) => s !== null).sort((x, z) => x - z);
+      const across = spans.length
+        ? (spans[Math.floor((spans.length - 1) / 2)] + spans[Math.ceil((spans.length - 1) / 2)]) / 2
+        : null;
+      // What the camera was actually asked for, which no terrain can distort:
+      // NAV_ACROSS metres of ground across the frame, divided by the zoom.
+      const solved = 480 / v.zoom;
       const drawn = (window.__skisRouteDrawn ?? []).filter((d) => d.leg === nav.i);
       return {
-        w, h, across,
+        w, h, across, solved,
         bearing: v.bearing,
         pitch: v.pitch,
+        cap: Number.isFinite(v.pitchCap) ? v.pitchCap : null,
         down: me.y / h,
         offCentre: Math.abs(me.x - w / 2),
         aheadUp: far.y < me.y,
@@ -4986,9 +5060,18 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
       r.down > 0.6 && r.down < 0.8, `${(r.down * 100).toFixed(0)}% down`);
     check(`and centred across it, leg ${leg + 1}`,
       r.offCentre < 8, `${r.offCentre.toFixed(0)}px off centre`);
-    // Close enough to be about the next thing you do. The old framing put
-    // seven thousand eight hundred metres across here.
-    check(`the ground in shot is the next few hundred metres, leg ${leg + 1}`,
+    /*
+     * Close enough to be about the next thing you do. The old framing put
+     * seven thousand eight hundred metres across here.
+     *
+     * Asked twice, because one of the two answers cannot be distorted by the
+     * ground: what the camera was solved for, and what a ray finds beside the
+     * puck. If those agree the framing reached the screen; if the solve alone
+     * were checked, a camera that never got applied would pass.
+     */
+    check(`the framing asks for the next few hundred metres, leg ${leg + 1}`,
+      r.solved > 200 && r.solved < 900, `${Math.round(r.solved)} m asked for`);
+    check(`and that much ground is in shot, leg ${leg + 1}`,
       r.across !== null && r.across < 900, r.across === null ? "on sky" : `${Math.round(r.across)} m across`);
     // Course up: the way you leave runs away up the screen, not sideways or
     // behind you.
@@ -5017,7 +5100,26 @@ if (feature("42. Navigating is a follow view, not a map of the day")) {
   const bearings = seen.map((r) => Math.round(r.bearing));
   check("the camera turns with the day", new Set(bearings).size > 1,
     `bearings ${bearings.join(", ")}`);
-  check("and stays leant over the ground", seen.every((r) => r.pitch > 60),
+  /*
+   * And stays leant over the ground, as far as the ground allows.
+   *
+   * Not "pitch above 60 on every leg", which is what this used to say and was
+   * true only while nothing capped the lean. Riding up anything, the hillside
+   * in front rises faster than an eighteen-degree sight line and the camera
+   * ends up inside it, so the lean now comes off to whatever the ground ahead
+   * leaves — down to a floor of 38. Measured across four legs at Monterosa:
+   * 68, 68, 68, 38, the last one a lift up Punta Jolanda.
+   *
+   * So the claim is that the lean is immersive where it can be and inside the
+   * cap where it cannot: never flatter than the floor, never past the cap, and
+   * not flat on every leg, which would mean the cap had eaten the feature.
+   */
+  const leant = seen.filter((r) => r.cap === null || r.pitch <= r.cap + 1);
+  check("and never leans past what the ground ahead allows",
+    leant.length === seen.length,
+    seen.map((r) => `${Math.round(r.pitch)}/${r.cap === null ? "-" : Math.round(r.cap)}`).join(" "));
+  check("and stays leant over the ground", seen.every((r) => r.pitch >= 38) &&
+    seen.some((r) => r.pitch > 60),
     `pitch ${seen.map((r) => r.pitch).join(", ")}`);
 
   /*
