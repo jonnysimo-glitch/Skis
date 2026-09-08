@@ -8,10 +8,11 @@
 import { useMemo, useState } from "react";
 import { RESORTS } from "../resorts/index.js";
 import { listDays, totals, dayLabel } from "../lib/history.js";
-import { Arrow, Brand, Check, Gear, Mountain, Search, Close } from "../ui/Icons.jsx";
+import { Arrow, Brand, Check, Gear, Mountain, Search, Close, Info } from "../ui/Icons.jsx";
 import Ridge from "../ui/Ridge.jsx";
 import { hours } from "../ui/RouteBits.jsx";
 import FriendsSection from "./FriendsSection.jsx";
+import ResortGuide from "./ResortGuide.jsx";
 
 /**
  * Does this resort answer what was typed?
@@ -45,6 +46,16 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
    * pipeline is that this list grows.
    */
   const [query, setQuery] = useState("");
+  /*
+   * Which resort's guide is open, by id rather than a boolean.
+   *
+   * The card the info button sits on is the whole card, and it selects the
+   * resort — so the button has to stop the tap reaching it. Reading about a
+   * mountain and choosing it are two different intentions, and the guide has
+   * its own "Ski this one" at the bottom for when they turn out to be the
+   * same one.
+   */
+  const [guideId, setGuideId] = useState(null);
   const searchable = RESORTS.length >= 6;
   const live = useMemo(() => allLive.filter((r) => matches(r, query)), [allLive, query]);
   const soon = useMemo(() => allSoon.filter((r) => matches(r, query)), [allSoon, query]);
@@ -112,6 +123,32 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
           >
             <Ridge resort={r} hero />
             <span className="hero__scrim" />
+            {/*
+              * What this mountain is, without choosing it.
+              *
+              * Top right, away from the tick that says which one is selected,
+              * and it stops the tap: the card underneath selects the resort,
+              * and somebody reaching for information has not decided yet. A
+              * span rather than a button, because a button inside a button is
+              * not valid HTML and browsers resolve it by dropping one of them
+              * — so this is a span with a role, which is what the platform
+              * gives you for a control inside a control.
+              */}
+            <span
+              className="hero__info"
+              role="button"
+              tabIndex={0}
+              aria-label={`About ${r.name}`}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); setGuideId(r.id); }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.stopPropagation();
+                e.preventDefault();
+                setGuideId(r.id);
+              }}
+            >
+              <Info width="19" height="19" />
+            </span>
             {selected === r.id && (
               <span className="hero__tick">
                 <Check width="17" height="17" />
@@ -191,11 +228,38 @@ export default function HomeScreen({ selected, onSelect, onGoSkiing, onSettings,
                 <span className="resortcard__nm">{r.name}</span>
                 <span className="resortcard__loc">{r.region}, {r.country}</span>
               </span>
+              {/* A real button here: this row is not itself a control, so
+                  there is nothing to nest inside. */}
+              <button
+                className="iconbtn iconbtn--flat"
+                aria-label={`About ${r.name}`}
+                onClick={() => setGuideId(r.id)}
+              >
+                <Info width="18" height="18" />
+              </button>
               <span className="resortcard__soon">Soon</span>
             </div>
           ))}
         </div>
       </div>
+
+      {/*
+        * Outside the scrolling body, and after the footer.
+        *
+        * Inside `.page__body` it was a modal whose stacking context is that
+        * body, so `.page__foot` — a later sibling — painted its disabled
+        * "Choose a resort" straight over the guide's own footer, z-index 30 or
+        * not. Same place the other two modals live, for the same reason.
+        */}
+      {guideId && (
+        <ResortGuide
+          resort={RESORTS.find((r) => r.id === guideId)}
+          onClose={() => setGuideId(null)}
+          // Only offered for a resort you can actually ski. The ones still on
+          // the way have a guide worth reading and nothing to plan on.
+          onChoose={RESORTS.find((r) => r.id === guideId)?.available ? onSelect : null}
+        />
+      )}
 
       <div className="page__foot">
         <button className="btn" disabled={!selected} onClick={onGoSkiing}>

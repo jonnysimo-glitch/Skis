@@ -6784,6 +6784,158 @@ if (feature("50. The lean the ground allows, and the way back")) {
 }
 
 
+// ============== 51. WHAT THIS MOUNTAIN IS, FROM THE CARD ==
+/*
+ * An info button on each resort card, opening a guide to the resort.
+ *
+ * The point of it is the slopes: grouped by grade, longest first inside each
+ * group. Which means the checks that matter are about a reader being able to
+ * add the numbers up and about the button not doing the one thing it must not
+ * — choosing the resort. Reading about a mountain and deciding to ski it are
+ * two intentions, and the card underneath is a control, so a tap that reaches
+ * it has committed somebody to a decision they were still making.
+ *
+ * The arithmetic is checked in src/lib/guide.test.js against all four graphs,
+ * where it costs milliseconds. This is the part only a browser can answer.
+ */
+if (feature("51. What this mountain is, from the card")) {
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+
+  const infos = await page.$$(".hero__info");
+  check("every resort card offers one", infos.length >= 1, `${infos.length} buttons`);
+  check("and it is named for a screen reader",
+    (await page.$eval(".hero__info", (n) => n.getAttribute("aria-label")))?.startsWith("About"),
+    await page.$eval(".hero__info", (n) => n.getAttribute("aria-label")));
+  /*
+   * The tap target, because this sits on a photograph and a 30px disc on a
+   * card that is itself a button is a tap somebody will miss into the card.
+   */
+  const box = await (await page.$(".hero__info")).boundingBox();
+  check("and it is big enough to hit with a glove",
+    box.width >= 44 && box.height >= 44, `${Math.round(box.width)}x${Math.round(box.height)}`);
+
+  const chosenBefore = await page.$$eval(".hero", (ns) =>
+    ns.filter((n) => n.getAttribute("aria-pressed") === "true").length);
+  await touchTap(page, ".hero__info");
+  await page.waitForSelector(".modal__panel", { timeout: 8000 });
+  await page.waitForTimeout(600);
+  check("tapping it opens the guide", Boolean(await page.$(".modal__panel")));
+  /*
+   * And has not chosen the resort. The card underneath is the control that
+   * does that, and this button has to stop the tap reaching it.
+   */
+  const chosenAfter = await page.$$eval(".hero", (ns) =>
+    ns.filter((n) => n.getAttribute("aria-pressed") === "true").length);
+  check("without choosing the resort", chosenAfter === chosenBefore,
+    `${chosenBefore} selected before, ${chosenAfter} after`);
+
+  // ---- the slopes, which are what it is for -------------------------------
+  const slopes = await page.evaluate(() => ({
+    grades: [...document.querySelectorAll(".gradeblock")].map((b) => ({
+      name: b.querySelector(".gradeblock__nm")?.textContent.trim(),
+      sum: b.querySelector(".gradeblock__sum")?.textContent.trim(),
+      km: [...b.querySelectorAll(".piste__km")].map((n) => parseFloat(n.textContent)),
+      more: b.querySelector(".btn")?.textContent.trim() ?? null,
+    })),
+    stats: [...document.querySelectorAll(".stat__v")].map((n) => n.textContent.trim()),
+  }));
+  check("the slopes are grouped by grade", slopes.grades.length >= 2,
+    slopes.grades.map((g) => g.name).join(", "));
+  check("in the European order, easiest first",
+    slopes.grades.map((g) => g.name).join(",") ===
+      ["Blue", "Red", "Black"].filter((n) => slopes.grades.some((g) => g.name === n)).join(","),
+    slopes.grades.map((g) => g.name).join(", "));
+  const unsorted = slopes.grades.filter((g) => g.km.some((k, i) => i > 0 && k > g.km[i - 1] + 1e-9));
+  check("and longest first inside each group", unsorted.length === 0,
+    unsorted.map((g) => `${g.name}: ${g.km.join(", ")}`).join(" | "));
+  check("each group says how many and how far", slopes.grades.every((g) => /\d+ piste/.test(g.sum) && /km/.test(g.sum)),
+    slopes.grades.map((g) => g.sum).join(" | "));
+  /*
+   * A long group offers the rest rather than showing it. Kronplatz has
+   * twenty-nine blues and all of them at once pushes the red and black
+   * headings off the bottom, which loses the shape of the mountain — mostly
+   * blue, a few long blacks — that a reader came for.
+   */
+  const long = slopes.grades.find((g) => Number(g.sum.match(/(\d+) piste/)?.[1]) > 6);
+  check("a long group offers the rest instead of listing it",
+    !long || (long.km.length <= 6 && /^All \d+/.test(long.more ?? "")),
+    long ? `${long.name}: ${long.km.length} shown, button "${long.more}"` : "no group over six");
+  if (long) {
+    /*
+     * Scrolled to first. The panel is a long read and the button belonging to
+     * the first oversized group is below the fold, so a tap at its box centre
+     * lands off the viewport and hits nothing — which reads as the button
+     * being dead rather than as the check aiming at a place the finger cannot
+     * reach.
+     */
+    const opener = await page.$(".gradeblock .btn");
+    await opener.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(250);
+    check("and the button can be reached", await touchTap(page, ".gradeblock .btn"));
+    await page.waitForTimeout(400);
+    const opened = await page.evaluate(() =>
+      [...document.querySelectorAll(".gradeblock")]
+        .map((b) => b.querySelectorAll(".piste").length));
+    check("and asking for them shows them", Math.max(...opened) > 6, opened.join(", "));
+  }
+
+  // ---- the rest of the panel ---------------------------------------------
+  const body = await page.$eval(".modal__body", (n) => n.innerText);
+  check("it says something about the resort itself", /km/.test(body) && body.length > 400,
+    `${body.length} characters`);
+  check("somewhere to eat is listed", /Somewhere to eat/i.test(body));
+  /*
+   * OSM data is ODbL and attribution is a condition of using it, not a nicety.
+   * Every panel that shows this data has to say where it came from.
+   */
+  check("and the data says where it came from", /OpenStreetMap/.test(body));
+  check("nothing reads as broken",
+    !/NaN|undefined|Infinity|\[object/.test(body),
+    (body.match(/NaN|undefined|Infinity|\[object/g) || []).join(", "));
+  check("and the panel does not scroll sideways",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+
+  /*
+   * The one way out that is not the close button. Read about a mountain,
+   * decide to ski it — and the choice is made here rather than by having
+   * opened the panel at all.
+   */
+  const go = await page.$(".modal__foot .btn");
+  check("the guide offers to take you there", Boolean(go));
+  if (go) {
+    await touchTap(page, ".modal__foot .btn");
+    await page.waitForTimeout(600);
+    check("and that closes it", (await page.$(".modal__panel")) === null);
+    check("and chooses the resort", await page.$$eval(".hero", (ns) =>
+      ns.some((n) => n.getAttribute("aria-pressed") === "true")));
+  }
+
+  /*
+   * And a resort still on the way. There is a guide worth reading for one of
+   * those and nothing to plan on, so it must open and must not offer to take
+   * you skiing on a mountain with no graph.
+   */
+  const soon = await page.$('.resortcard [aria-label^="About"]');
+  if (soon) {
+    await soon.click();
+    await page.waitForSelector(".modal__panel", { timeout: 8000 });
+    await page.waitForTimeout(400);
+    const text = await page.$eval(".modal__body", (n) => n.innerText);
+    check("a resort still on the way opens too", text.length > 20);
+    check("and says plainly that there is nothing mapped yet",
+      /no mapped terrain/i.test(text), text.split("\n").slice(0, 3).join(" / "));
+    check("and does not offer to take you skiing on it",
+      (await page.$(".modal__foot .btn")) === null);
+    await page.click('.modal__bar [aria-label="Close"]');
+  }
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+
 } catch (err) {
   /*
    * A check that throws is a failing check, not a run that produced nothing.
