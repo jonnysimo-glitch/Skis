@@ -13,7 +13,7 @@
  * them, whether anything on screen is broken text, whether every image
  * actually loaded, and whether the page threw. Run with npm run personas.
  */
-import { serve, launch, newPage, toForm, solve, routeCount, openRoute, openLegs, reachNext, atRest, multiTouch } from "./harness.mjs";
+import { serve, launch, newPage, toForm, solve, routeCount, openRoute, openLegs, reachNext, atRest, multiTouch, openTools } from "./harness.mjs";
 import { RESORTS } from "../src/resorts/index.js";
 
 const LIVE = RESORTS.filter((r) => r.available);
@@ -103,7 +103,7 @@ const plan = async (page, { t0, t1, ability, also, start, finish }) => {
  * know the markup of a disclosure row is a persona that breaks when the row
  * is restyled, which is not what these journeys are for.
  */
-async function swingBy(page, { key, withFood } = {}) {
+async function swingBy(page, { key, withFood, eat } = {}) {
   await toForm(page);
   const row = await page.$(".disclose");
   if (!row) return null;
@@ -114,11 +114,21 @@ async function swingBy(page, { key, withFood } = {}) {
   if (!options.length) return null;
   const pick =
     (key && options.find((o) => o.v === key)) ||
+    (eat && options.find((o) => o.v.startsWith("eat:"))) ||
     (withFood && options.find((o) => o.t.includes(" — "))) ||
     options[0];
   await page.selectOption("#p-via", pick.v);
   await page.waitForSelector(".viachip", { timeout: 8000 });
   return pick;
+}
+
+/** Turn the sit-down lunch chip on, if this mode offers one. */
+async function withLunch(page) {
+  await toForm(page);
+  const chip = await page.$('.chip:text-is("Sit-down lunch")');
+  if (!chip) return false;
+  if ((await chip.getAttribute("aria-pressed")) !== "true") await chip.click();
+  return true;
 }
 
 /** Take the first offered fix, if there is one. Returns what it led to. */
@@ -620,6 +630,363 @@ const PEOPLE = [
       check(`${resort.id}: ${this.who} can hit the link with a glove on`,
         gbox && gbox.height >= 44, gbox ? `${Math.round(gbox.width)}x${Math.round(gbox.height)}` : "no box");
       await screen(page, this.who, "place card");
+    },
+  },
+  /* ---- the ten who use what was built this round -------------------- */
+  {
+    id: "lunchnamed",
+    who: "asks for lunch and expects to be told where",
+    at: [9, 15],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      const has = await withLunch(page);
+      check(`${resort.id}: ${this.who} finds the lunch option`, has === true);
+      if (!has) return;
+      await solve(page);
+      if (!(await routeCount(page))) await takeAFix(page);
+      if (!(await routeCount(page))) { check(`${resort.id}: ${this.who} has a day`, false, "no routes"); return; }
+      await openRoute(page);
+      await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+      await openLegs(page);
+      const stop = await page.$(".leg--stop");
+      check(`${resort.id}: ${this.who} sees the stop in the itinerary`, Boolean(stop),
+        stop ? (await stop.innerText()).replace(/\n/g, " | ") : "no lunch row");
+      if (stop) {
+        const said = (await stop.innerText()).replace(/\n/g, " ");
+        // A stop with no name is the thing this replaced.
+        check(`${resort.id}: ${this.who} is told which place`,
+          /Lunch at \S/.test(said) && !/NaN|undefined/.test(said), said.slice(0, 70));
+      }
+      const notes = await page.$$eval(".info", (ns) => ns.map((n) => n.innerText.replace(/\n/g, " ")));
+      const line = notes.find((n) => /Lunch at/.test(n));
+      check(`${resort.id}: ${this.who} reads it under the route too`, Boolean(line),
+        line ? line.slice(0, 90) : notes.join(" / ").slice(0, 90));
+      /*
+       * And the clocks take the sit-down.
+       *
+       * They did not: backAt added the forty-five minutes at the end, so the
+       * finish was right and every leg after lunch was three-quarters of an
+       * hour early — which showed up as a lunch row and the next leg both
+       * reading 12:21.
+       */
+      const rows = await page.$$eval(".leg", (ns) => ns.map((n) => ({
+        stop: n.classList.contains("leg--stop"),
+        t: n.querySelector(".leg__t")?.textContent?.trim() ?? "",
+      })));
+      const at = rows.findIndex((r) => r.stop);
+      if (at > 0 && at < rows.length - 1) {
+        const mins = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+        const gap = mins(rows[at + 1].t) - mins(rows[at].t);
+        check(`${resort.id}: ${this.who} is not asked to eat in no time at all`,
+          gap >= 40, `${gap} minutes between the stop and the next leg`);
+      }
+      await screen(page, this.who, "legs with lunch");
+    },
+  },
+  {
+    id: "byname",
+    who: "picks the rifugio by name",
+    at: [9, 30],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      const pick = await swingBy(page, { eat: true });
+      check(`${resort.id}: ${this.who} can choose a place to eat by name`,
+        Boolean(pick) && pick.v.startsWith("eat:"), pick ? pick.t : "nothing offered");
+      if (!pick) return;
+      const chip = await page.$eval(".viachip", (n) => n.innerText.replace(/\n/g, " | "));
+      check(`${resort.id}: ${this.who} sees which station it is at`, chip.includes("|"), chip);
+      await solve(page);
+      let n = await routeCount(page);
+      if (!n) {
+        const said = (await page.$(".empty"))
+          ? await page.$eval(".empty", (e) => e.innerText.replace(/\n+/g, " "))
+          : "";
+        // Named, not "nothing fits" — and the name has to be the one she chose.
+        check(`${resort.id}: ${this.who} is told which place is the problem`,
+          said.includes(pick.t.split(" — ")[0]), said.slice(0, 100));
+        n = (await takeAFix(page))?.routes ?? 0;
+        check(`${resort.id}: ${this.who} is offered a way on`, n > 0);
+        return;
+      }
+      check(`${resort.id}: ${this.who} gets a day through it`, n > 0, `${n} routes`);
+      await screen(page, this.who, "chosen by name");
+    },
+  },
+  {
+    id: "twoandlunch",
+    who: "wants two stops and lunch as well",
+    at: [9, 0],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      await swingBy(page, { eat: true });
+      await swingBy(page);
+      await withLunch(page);
+      const chips = (await page.$$(".viachip")).length;
+      check(`${resort.id}: ${this.who} can hold both`, chips >= 1, `${chips} stops`);
+      await screen(page, this.who, "plan with two stops and lunch");
+      await solve(page);
+      let n = await routeCount(page);
+      if (!n) {
+        const f = await takeAFix(page);
+        n = f?.routes ?? 0;
+        check(`${resort.id}: ${this.who} is never left at a dead end`, n > 0,
+          f ? f.label : "no fix offered");
+        return;
+      }
+      check(`${resort.id}: ${this.who} gets a day`, n > 0, `${n} routes`);
+    },
+  },
+  {
+    id: "nodrags",
+    who: "goes looking for the drag-lift switch",
+    at: [10, 0],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      await toForm(page);
+      const body = await page.$eval("body", (n) => n.innerText);
+      check(`${resort.id}: ${this.who} does not find it on the form`,
+        !/drag lift/i.test(body), (body.match(/.{0,24}drag lift.{0,24}/i) || ["gone"])[0]);
+      await solve(page);
+      if (!(await routeCount(page))) await takeAFix(page);
+      const chips = await page.$$eval(".chips .chip, .chip", (ns) => ns.map((n) => n.textContent.trim()));
+      check(`${resort.id}: ${this.who} does not find it among the refine chips`,
+        !chips.some((c) => /drag/i.test(c)), chips.join(", ").slice(0, 90));
+      check(`${resort.id}: ${this.who} still has the chips that matter`,
+        chips.some((c) => /Shorter/i.test(c)) && chips.some((c) => /Lunch/i.test(c)),
+        chips.join(", ").slice(0, 90));
+    },
+  },
+  {
+    id: "readsform",
+    who: "reads the plan form top to bottom",
+    at: [9, 30],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      await toForm(page);
+      /*
+       * The order is the order a day is decided in: where and when, then what
+       * you are happy on, then anywhere you want to go past, then the extras.
+       * Places to swing by used to sit below the extras, which read as an
+       * afterthought.
+       */
+      const order = await page.evaluate(() =>
+        [...document.querySelectorAll(".flabel, .disclose__t")]
+          .filter((n) => n.offsetParent !== null)
+          .map((n) => n.textContent.trim()));
+      const at = (re) => order.findIndex((t) => re.test(t));
+      check(`${resort.id}: ${this.who} is asked where before what`,
+        at(/^Start$|You are at/) < at(/Comfortable on/), order.join(" → ").slice(0, 110));
+      check(`${resort.id}: ${this.who} finds the stops under Comfortable on`,
+        at(/Comfortable on/) >= 0 && at(/Places to swing by/) > at(/Comfortable on/),
+        order.join(" → ").slice(0, 130));
+      check(`${resort.id}: ${this.who} finds the extras last`,
+        at(/^Also$/) === -1 || at(/^Also$/) > at(/Places to swing by/),
+        order.join(" → ").slice(0, 130));
+      await screen(page, this.who, "plan form");
+    },
+  },
+  {
+    id: "pullsback",
+    who: "pulls back while navigating to see the whole day",
+    at: [9, 30],
+    async run(page, url, index, resort) {
+      await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".hero", { timeout: 20000 });
+      (await page.$$(".hero"))[index].click();
+      await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 20000 });
+      await plan(page, { ability: "Blue and red" });
+      if (!(await routeCount(page))) await takeAFix(page);
+      if (!(await routeCount(page))) { check(`${resort.id}: ${this.who} has a day`, false, "no routes"); return; }
+      await openRoute(page);
+      await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+      await page.click("text=/Save and start/");
+      await page.waitForSelector(".nav__head", { timeout: 25000 });
+      await atRest(page, { quiet: 700, limit: 16000 });
+      const read = () => page.evaluate(() => ({
+        steps: (window.__skisStepBadges ?? []).map((b) => b.step),
+        nodes: (window.__skisLabels ?? []).length,
+        places: (window.__skisPlaces ?? []).length,
+        runs: (window.__skisRunNames ?? []).length,
+      }));
+      const near = await read();
+      check(`${resort.id}: ${this.who} sees the leg she is on`, near.steps.includes(1),
+        near.steps.join(", ") || "no numbers");
+      await openTools(page);
+      const out = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
+      for (let i = 0; i < 5 && out; i++) { await out.click(); await page.waitForTimeout(320); }
+      await atRest(page, { quiet: 700, limit: 16000 });
+      const far = await read();
+      /*
+       * Pulled back at Kronplatz this used to show fourteen station names and
+       * seven restaurant pins at a five-kilometre scale — the far view of a
+       * piste map with the close-up's labelling, because labelZoom returned a
+       * constant while following.
+       */
+      check(`${resort.id}: ${this.who} is not shown the restaurants from five kilometres up`,
+        far.places === 0, `${far.places} place markers`);
+      check(`${resort.id}: ${this.who} is not shown run names either`,
+        far.runs <= near.runs, `${far.runs} against ${near.runs} close in`);
+      check(`${resort.id}: ${this.who} still sees where the day goes`,
+        far.steps.length >= near.steps.length, `${far.steps.length} numbers against ${near.steps.length}`);
+      // Every fifth, which is the point: 1, 5, 10, 15 says which way round it runs.
+      const beyond = far.steps.filter((n) => n > 2);
+      check(`${resort.id}: ${this.who} reads them as a sequence, not a crowd`,
+        beyond.length === 0 || beyond.every((n) => n % 5 === 0), far.steps.join(", "));
+      await screen(page, this.who, "navigating, pulled back");
+    },
+  },
+  {
+    id: "pointer",
+    who: "follows the pointer rather than the words",
+    at: [9, 30],
+    async run(page, url, index, resort) {
+      await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".hero", { timeout: 20000 });
+      (await page.$$(".hero"))[index].click();
+      await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 20000 });
+      await plan(page, { ability: "Blue and red" });
+      if (!(await routeCount(page))) await takeAFix(page);
+      if (!(await routeCount(page))) { check(`${resort.id}: ${this.who} has a day`, false, "no routes"); return; }
+      await openRoute(page);
+      await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+      await page.click("text=/Save and start/");
+      await page.waitForSelector(".nav__head", { timeout: 25000 });
+      await atRest(page, { quiet: 700, limit: 16000 });
+      /*
+       * Where the puck is on screen, from the same hooks section 17 uses:
+       * the leg's own start, projected. There is no DOM element to measure —
+       * the marker is painted on a canvas.
+       */
+      const here = await page.evaluate(() => {
+        const l = window.__skisNavLeg;
+        if (!l || !window.__skisProject) return null;
+        const at = l.at ?? l.coords?.[0];
+        if (!at) return null;
+        const p = window.__skisProject(at[0], at[1]);
+        return p && Number.isFinite(p.x) ? { x: p.x, y: p.y } : null;
+      });
+      check(`${resort.id}: ${this.who} is on the map`, Boolean(await page.$("canvas")));
+      /*
+       * One silhouette, not a disc with an arrowhead standing off it.
+       *
+       * Measured the way section 17 measures the heading: accent-coloured
+       * pixels are counted in a ring just outside the disc. Back to back
+       * there was a gap of clear pixels between the two shapes; joined, the
+       * ring is continuous from the disc out to the tip.
+       */
+      if (here && Number.isFinite(here.x)) {
+        const solid = await page.evaluate(({ at }) => {
+          const c = document.querySelector("canvas[aria-label*='Terrain view']");
+          if (!c) return null;
+          const dpr = c.width / c.getBoundingClientRect().width;
+          const ctx = c.getContext("2d");
+          const hit = (r) => {
+            for (let a = 0; a < 360; a += 4) {
+              const x = Math.round((at.x + Math.cos((a * Math.PI) / 180) * r) * dpr);
+              const y = Math.round((at.y + Math.sin((a * Math.PI) / 180) * r) * dpr);
+              if (x < 0 || y < 0 || x >= c.width || y >= c.height) continue;
+              const d = ctx.getImageData(x, y, 1, 1).data;
+              if (Math.abs(d[0]) < 30 && Math.abs(d[1] - 0x77) < 30 && Math.abs(d[2] - 0xa3) < 30) return true;
+            }
+            return false;
+          };
+          // Just outside the disc (r=9) and again further out along the point.
+          return { justOut: hit(11), further: hit(15) };
+        }, { at: here });
+        if (solid) {
+          check(`${resort.id}: ${this.who} sees one shape, joined at the disc`,
+            solid.justOut === true, JSON.stringify(solid));
+          check(`${resort.id}: ${this.who} and it comes to a point`,
+            solid.further === true, JSON.stringify(solid));
+        }
+      }
+      await screen(page, this.who, "navigating");
+    },
+  },
+  {
+    id: "parks",
+    who: "leaves the car somewhere she is allowed to",
+    at: [8, 30],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      // The resort's own list of what is on the mountain.
+      const bar = await page.$(".resortbar__main");
+      if (bar) { await bar.click(); await page.waitForTimeout(700); }
+      const rows = await page.$$eval(".rows .row", (ns) => ns.map((n) => n.innerText.replace(/\n/g, " · ")));
+      const cars = rows.filter((r) => /Parking/i.test(r));
+      /*
+       * Nothing that belongs to a hotel, and no motorhome bays.
+       *
+       * "Parcheggio Hotel La Rouja" and "Parcheggio Riservato Klein Finnland"
+       * were both access=private, which is a barrier at the end of a drive in
+       * ski boots — and a car park is the one place on this map you commit to
+       * before you can check it.
+       */
+      const forbidden = cars.filter((r) =>
+        /hotel|albergo|garni|residence|camper|camping|riservato|privat/i.test(r));
+      check(`${resort.id}: ${this.who} is not sent to somebody's hotel car park`,
+        forbidden.length === 0, forbidden.join(" / ").slice(0, 110) || `${cars.length} car parks, all public`);
+      await screen(page, this.who, "what is on the mountain");
+    },
+  },
+  {
+    id: "hires",
+    who: "needs to hire skis before she starts",
+    at: [8, 45],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      const bar = await page.$(".resortbar__main");
+      if (bar) { await bar.click(); await page.waitForTimeout(700); }
+      const body = await page.$eval("body", (n) => n.innerText);
+      const rows = await page.$$eval(".rows .row", (ns) => ns.map((n) => n.innerText.replace(/\n/g, " · ")));
+      const hire = rows.filter((r) => /Ski hire/i.test(r));
+      /*
+       * Either there is hire listed, or the app says whose gap it is. Silence
+       * reads as "there is none here", which is a claim about the mountain
+       * that the data cannot support.
+       */
+      check(`${resort.id}: ${this.who} either finds hire or is told why not`,
+        hire.length > 0 || /No ski hire here yet/i.test(body),
+        hire.length ? `${hire.length} listed` : "no hire and no explanation");
+      if (!hire.length) {
+        check(`${resort.id}: ${this.who} is told it is the map and not the mountain`,
+          /not that there is none/i.test(body), body.match(/No ski hire[^.]*\./)?.[0] ?? "");
+      }
+    },
+  },
+  {
+    id: "changesmind",
+    who: "changes her mind twice before setting off",
+    at: [9, 30],
+    async run(page, url, index, resort) {
+      await arrive(page, url, index);
+      await swingBy(page, { eat: true });
+      await swingBy(page);
+      const before = (await page.$$(".viachip")).length;
+      for (const x of await page.$$(".viachip__x")) { await x.click(); await page.waitForTimeout(150); }
+      check(`${resort.id}: ${this.who} can take them all off again`,
+        (await page.$$(".viachip")).length === 0, `${before} on, then none`);
+      // And switching to a transfer must not leave a stop stranded on it.
+      const modes = await page.$$(".segmented__opt");
+      if (modes.length > 1) {
+        await modes[1].click();
+        await page.waitForTimeout(300);
+        const body = await page.$eval("body", (n) => n.innerText);
+        check(`${resort.id}: ${this.who} is not offered stops on a transfer`,
+          !/Places to swing by/i.test(body));
+        await modes[0].click();
+        await page.waitForTimeout(300);
+        check(`${resort.id}: ${this.who} gets them back on a day`,
+          Boolean(await page.$(".disclose")));
+      }
+      await swingBy(page);
+      await solve(page);
+      let n = await routeCount(page);
+      if (!n) { const f = await takeAFix(page); n = f?.routes ?? 0; }
+      check(`${resort.id}: ${this.who} still ends up with a day`, n > 0, `${n} routes`);
+      await screen(page, this.who, "after changing her mind");
     },
   },
 ];
