@@ -36,9 +36,14 @@ on:
       - '**.md'
       - 'ios-setup/**'
       - 'data/**'
+      # The report this workflow writes about itself. Without this, publishing
+      # it would trigger another deploy, which would publish another report.
+      - '.github/live.txt'
 
 permissions:
-  contents: read
+  # write, only so the deploy job can commit what it saw at the live URL. See
+  # "Write down what the live site actually says" at the end.
+  contents: write
   pages: write
   id-token: write
 
@@ -129,6 +134,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Only so the last step in this job has a repository to write its report
+      # into. The deploy itself needs nothing from the tree.
+      - uses: actions/checkout@v4
+
       - id: deployment
         uses: actions/deploy-pages@v4
 
@@ -181,4 +190,42 @@ jobs:
             echo 'must be **GitHub Actions**, not "Deploy from a branch". While it is set to a'
             echo 'branch, every run here succeeds and every result is discarded.'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "STALE" > /tmp/verdict
           exit 1
+
+      # Write down what the live site actually says, on the branch.
+      #
+      # Because the run log is not readable from everywhere this project is
+      # worked on, and a scraped "green tick" has now twice been taken as proof
+      # that a deploy reached a person when it had not. A tick means the API
+      # accepted a deployment. This is the only thing that means the site
+      # changed, and putting it in the repository means it can be read with
+      # `git fetch` by anyone, from anywhere, without a browser or a login.
+      #
+      # `if: always()`, because the case worth recording is the failure.
+      - name: Write down what the live site actually says
+        if: always()
+        env:
+          PAGE: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -u
+          live=$(curl -fsS --max-time 20 "${PAGE:-}version.txt?r=${GITHUB_RUN_ID}" 2>/dev/null | tr -d '[:space:]' || true)
+          title=$(curl -fsS --max-time 20 "${PAGE:-}?r=${GITHUB_RUN_ID}" 2>/dev/null | grep -o '<title>[^<]*</title>' | head -1 || true)
+          mkdir -p .github
+          {
+            echo "checked   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "run       ${GITHUB_RUN_ID}"
+            echo "url       ${PAGE:-none}"
+            echo "expected  ${GITHUB_SHA}"
+            echo "live says ${live:-nothing, or no such file}"
+            echo "title     ${title:-none}"
+            echo "verdict   $([ "$live" = "$GITHUB_SHA" ] && echo CURRENT || echo STALE)"
+          } > .github/live.txt
+          cat .github/live.txt
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/live.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m "What the live site says after ${GITHUB_SHA:0:7} [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}" || echo "could not push the report; it is above"
+
