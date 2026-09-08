@@ -7,7 +7,7 @@
  * options that are actually the same day. Keep them passing.
  */
 
-import { solve, altitudeSeries, minutesToClock } from "./solver.js";
+import { solve, altitudeSeries, minutesToClock, viaTrouble } from "./solver.js";
 import { NODES } from "./resort.js";
 
 let failures = 0;
@@ -140,6 +140,76 @@ check("highest point is at or above the start altitude",
 check("altitude series is one longer than the segment list",
   altitudeSeries(day[0]).length === day[0].segments.length + 1);
 check("clock formatting", minutesToClock(555) === "09:15" && minutesToClock(960) === "16:00");
+
+console.log("\nPLACES TO SWING BY");
+{
+  const wentTo = (route, keys) => {
+    const seen = new Set([route.segments[0].from, ...route.segments.map((e) => e.to)]);
+    return keys.some((k) => seen.has(k));
+  };
+
+  // Asking for nothing must not change anything. The guard, the pull and the
+  // filter all have to be no-ops on an empty set, or every day in the app
+  // shifts the moment the feature exists.
+  check("no waypoints is the same day as before",
+    JSON.stringify(solve({ ...base, via: [] }).map((r) => r.title)) ===
+      JSON.stringify(day.map((r) => r.title)));
+  check("an unknown key is ignored rather than making the day impossible",
+    solve({ ...base, via: ["nowhere-at-all"] }).length === day.length);
+  // Where you already are is not somewhere to swing by, and asking for it
+  // must not put the sampler into a state where nothing is ever owed off.
+  check("the start as a waypoint is dropped, not satisfied",
+    solve({ ...base, via: ["staffal"] }).length === day.length);
+
+  const one = solve({ ...base, via: ["champoluc"] });
+  check("a reachable waypoint still returns routes", one.length > 0, `${one.length}`);
+  check("and every one of them goes there",
+    one.length > 0 && one.every((r) => wentTo(r, ["champoluc"])));
+  check("and they still fit the budget",
+    one.every((r) => r.minutes <= base.budget && r.minutes >= base.budget * 0.72));
+
+  const two = solve({ ...base, via: ["champoluc", "pianalunga"] });
+  check("two waypoints, both visited", two.length > 0 && two.every((r) => wentTo(r, ["champoluc"]) && wentTo(r, ["pianalunga"])),
+    `${two.length} routes`);
+
+  // A group stands for one place under one name — a lift is two stations and
+  // OSM gives both of them the lift's name. Either end answers it.
+  const grouped = solve({ ...base, via: [["champoluc", "frachey"]] });
+  check("a group of keys is satisfied by any one of them",
+    grouped.length > 0 && grouped.every((r) => wentTo(r, ["champoluc", "frachey"])),
+    `${grouped.length} routes`);
+
+  // Order in, order out: the pull reads the whole set every step, so tap
+  // order must not reach the weights.
+  check("the order they were asked for does not change the answer",
+    JSON.stringify(solve({ ...base, via: ["champoluc", "pianalunga"] }).map((r) => r.title)) ===
+      JSON.stringify(solve({ ...base, via: ["pianalunga", "champoluc"] }).map((r) => r.title)));
+  check("asking twice for the same place is asking once",
+    JSON.stringify(solve({ ...base, via: ["champoluc", "champoluc"] }).map((r) => r.title)) ===
+      JSON.stringify(one.map((r) => r.title)));
+
+  // Still deterministic, which is the rule the refine chips depend on.
+  check("the same waypoint gives the same routes twice",
+    JSON.stringify(solve({ ...base, via: ["champoluc"] }).map((r) => r.title)) ===
+      JSON.stringify(one.map((r) => r.title)));
+
+  console.log("\nWHY A PLACE CANNOT BE FITTED IN");
+  check("nothing to report when there are no waypoints",
+    viaTrouble({ ...base, via: [] }).length === 0);
+  check("nor for one the day can reach",
+    viaTrouble({ ...base, via: ["champoluc"] }).length === 0);
+  // Half an hour is not enough to cross Monterosa and come back, and the
+  // answer says so with the number rather than "that will not fit".
+  const tight = viaTrouble({ ...base, budget: 30, via: ["champoluc"] });
+  check("a window too short to get there and back says so",
+    tight.length === 1 && tight[0].reason === "clock",
+    JSON.stringify(tight));
+  check("and says how many minutes it would take",
+    tight[0]?.need > 30, `${tight[0]?.need}`);
+  check("a waypoint off the grade is reported as the grade, not the clock",
+    viaTrouble({ ...base, ability: "blue", via: ["indren"] })[0]?.reason === "grade",
+    JSON.stringify(viaTrouble({ ...base, ability: "blue", via: ["indren"] })));
+}
 
 console.log("\n" + (failures ? `${failures} FAILING` : "all checks passed"));
 for (const r of day) {

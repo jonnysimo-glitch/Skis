@@ -9,10 +9,12 @@
  * screen you see. Ability comes from the profile and appears as an overridable
  * chip; it is not asked for every session.
  */
+import { useMemo, useState } from "react";
 import { Back } from "../ui/Icons.jsx";
-import { NODES } from "../active-resort.js";
-import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES } from "../lib/plan.js";
-import { Clock, Arrow, Locate, Info } from "../ui/Icons.jsx";
+import { NODES, PLACES } from "../active-resort.js";
+import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES, viaOf, VIA_MAX } from "../lib/plan.js";
+import { viaChoices, viaGroups } from "../lib/via.js";
+import { Clock, Arrow, Locate, Info, Close, ChevronDown, ChevronUp, Pin } from "../ui/Icons.jsx";
 import { hours } from "../ui/RouteBits.jsx";
 
 /**
@@ -58,6 +60,28 @@ export default function PlanScreen({
 }) {
   const copy = CONTEXT_COPY[context];
   const span = plan.t1 - plan.t0;
+
+  /*
+   * Places to swing by. Optional, collapsed, and never in the way.
+   *
+   * CLAUDE.md is explicit that waypoints must not become a required step the
+   * way pin-dropping is in Komoot, so this is one closed row until somebody
+   * opens it — and it opens itself when a plan already carries some, because
+   * a constraint you cannot see is worse than one you have to tap for.
+   */
+  const stops = viaOf(plan);
+  const [viaOpen, setViaOpen] = useState(stops.length > 0);
+  // Rebuilt when the start moves, because the start is not somewhere to swing
+  // by and neither is the other station of the same name. resort.id because
+  // this reads the whole node and place set.
+  const choices = useMemo(
+    () => viaChoices(NODES, PLACES, { exclude: [plan.start] }),
+    [plan.start, resort.id]
+  );
+  const chosen = stops
+    .map((id) => choices.find((c) => c.id === id) ?? null)
+    .filter(Boolean);
+  const full = chosen.length >= VIA_MAX;
   const bases = resort.bases;
   // A transfer to where you already are is not a question. Say so rather than
   // greying the button and leaving the user to guess which end is wrong.
@@ -83,7 +107,28 @@ export default function PlanScreen({
     { label: "On the mountain", keys: mountain },
   ];
 
-  const set = (patch) => setPlan({ ...plan, ...patch });
+  /*
+   * Moving the start drops any waypoint that has become the start.
+   *
+   * A plan outlives the form. Choose Champoluc as a place to swing by, then
+   * change the start to Champoluc, and the day carries a stop it begins at —
+   * satisfied before it starts, drawn as a second pin under the first, and
+   * for one of Monterosa's two-node names it came back as "you cannot get to
+   * Alagna on red" to a reader standing in Alagna.
+   */
+  const set = (patch) => {
+    const next = { ...plan, ...patch };
+    if (patch.start && patch.start !== plan.start) {
+      const gone = new Set(
+        viaChoices(NODES, PLACES, { exclude: [patch.start] }).map((c) => c.id)
+      );
+      next.via = viaOf(next).filter((id) => gone.has(id));
+    }
+    setPlan(next);
+  };
+
+  const addStop = (id) => set({ via: [...viaOf(plan), id].slice(0, VIA_MAX) });
+  const dropStop = (id) => set({ via: viaOf(plan).filter((k) => k !== id) });
 
   return (
     <div className="page">
@@ -271,6 +316,97 @@ export default function PlanScreen({
             )}
           </div>
         </div>
+
+        {plan.mode !== "direct" && (
+          <div className="field">
+            <button
+              className="disclose"
+              aria-expanded={viaOpen}
+              onClick={() => setViaOpen((v) => !v)}
+            >
+              <Pin className="disclose__i" width="16" height="16" />
+              <span className="disclose__t">Places to swing by</span>
+              {/* Says how many even when closed. The count is the whole point
+                  of a collapsed row: a plan with two stops in it must not
+                  look like a plan with none. */}
+              <span className="disclose__n">
+                {chosen.length ? `${chosen.length} of ${VIA_MAX}` : "Optional"}
+              </span>
+              {viaOpen
+                ? <ChevronUp className="disclose__c" width="18" height="18" />
+                : <ChevronDown className="disclose__c" width="18" height="18" />}
+            </button>
+
+            {viaOpen && (
+              <div className="via">
+                {chosen.length > 0 && (
+                  <ul className="viachips">
+                    {chosen.map((c) => (
+                      <li key={c.id} className="viachip">
+                        <span className="viachip__t">
+                          <b>{c.name}</b>
+                          {/* What is actually there, where OSM knows. The
+                              point of swinging by Gabiet is usually the
+                              rifugio at Gabiet, and the node is named after
+                              the lift station. */}
+                          {c.at.length > 0 && <span>{c.at.slice(0, 2).join(", ")}</span>}
+                        </span>
+                        <button
+                          className="viachip__x"
+                          onClick={() => dropStop(c.id)}
+                          aria-label={`Don't go via ${c.name}`}
+                        >
+                          <Close width="14" height="14" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* A native select, like both ends of the day above it. It
+                    gets the platform's own picker, its own search on iOS, and
+                    a keyboard on desktop — none of which a hand-rolled list
+                    would have. Value is always empty: this is an action, not
+                    a field, and leaving the last choice showing in it reads
+                    as though that one is still pending. */}
+                <label className="flabel" htmlFor="p-via">
+                  {chosen.length ? "Add another" : "Somewhere to go past"}
+                </label>
+                <select
+                  id="p-via"
+                  className="control"
+                  value=""
+                  disabled={full || choices.length === 0}
+                  onChange={(e) => e.target.value && addStop(e.target.value)}
+                >
+                  <option value="">
+                    {choices.length === 0
+                      ? "Nothing to add here"
+                      : full
+                        ? `${VIA_MAX} is the most`
+                        : "Pick a place…"}
+                  </option>
+                  {viaGroups(choices).map((g) => (
+                    <optgroup key={g.area || "all"} label={g.area || "On the mountain"}>
+                      {g.items.map((c) => (
+                        <option key={c.id} value={c.id} disabled={stops.includes(c.id)}>
+                          {c.name}
+                          {c.at.length ? ` — ${c.at[0]}` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+
+                <p className="note" style={{ marginTop: 8 }}>
+                  {full
+                    ? "Three is the most. Past that the day is mostly the route between them."
+                    : "The day will go past these. Leave it empty and the whole mountain is fair game."}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {!blocked && (
           <div className="info">

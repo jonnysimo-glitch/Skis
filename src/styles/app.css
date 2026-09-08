@@ -321,6 +321,81 @@ input, select { font: inherit; color: inherit; }
 .lede { font-size: var(--t-callout); line-height: 1.4; color: var(--ink-2); margin-top: var(--s-2); }
 .note { font-size: var(--t-footnote); line-height: 1.4; color: var(--ink-3); }
 
+/* ------------------------------------------------- places to swing by -- */
+
+/*
+ * A row that opens. Optional means closed by default and visible either way.
+ *
+ * Sized and coloured like a `.control`, because that is what it is standing
+ * in for: another row of the form, which happens to have more form inside it.
+ * A hairline-bordered "advanced" panel would announce itself as advanced, and
+ * "we'll stop at the Gabiet for lunch" is the most ordinary thing a group of
+ * skiers says all day.
+ */
+.disclose {
+  width: 100%;
+  min-height: var(--tap);
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  color: var(--ink);
+  text-align: left;
+}
+.disclose:active { background: var(--n-10); }
+.disclose__i { flex: none; color: var(--accent-ink); }
+.disclose__t { font-size: var(--t-body); font-weight: 500; }
+/* The count, and it holds the right-hand end so the chevron never moves
+   between "Optional" and "2 of 3". */
+.disclose__n {
+  margin-left: auto;
+  font-size: var(--t-footnote);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.disclose__c { flex: none; color: var(--ink-3); }
+
+.via { margin-top: var(--s-3); }
+.viachips { list-style: none; margin-bottom: var(--s-3); }
+/*
+ * One per row, not a wrapping pill cloud.
+ *
+ * A stop carries a name and what is at it — "Gabiet / Rifugio Gabiet, Bar
+ * Gabiet" — and two lines of that do not go in a pill. Rows also give the
+ * remove button a 44px target of its own, which a chip's little × does not
+ * have and this app is used in gloves.
+ */
+.viachip {
+  display: flex; align-items: center; gap: var(--s-3);
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+  background: var(--accent-tint);
+  border-radius: var(--r-md);
+  margin-bottom: var(--s-2);
+}
+.viachip:last-child { margin-bottom: 0; }
+.viachip__t { min-width: 0; }
+.viachip__t b {
+  display: block;
+  font-size: var(--t-subhead); font-weight: 600; color: var(--accent-ink);
+}
+/* One line, ellipsised. Three restaurants at one lift station is normal and
+   the name above is what identifies the stop. */
+.viachip__t span {
+  display: block;
+  font-size: var(--t-footnote); color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.viachip__x {
+  margin-left: auto; flex: none;
+  width: var(--tap); height: var(--tap);
+  display: grid; place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--accent-ink);
+}
+.viachip__x:active { background: rgba(0, 119, 163, 0.16); }
+
 /* --------------------------------------------------------------- fields -- */
 
 .field { margin-bottom: var(--s-5); }
@@ -1306,16 +1381,33 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .nav--min .nav__badge { width: 36px; height: 36px; }
 .nav--min .nav__badge svg { width: 20px; height: 20px; }
 /*
- * One line each, whatever the name is.
+ * Two lines for the instruction, one for how far.
  *
- * "Ride Stafal - Sant'Anna" wrapped to two lines and the line under it to two
- * more, so the compact bar was four lines tall — which is not compact, and
- * the point of it is the mountain underneath. Long lift names are the norm at
- * these resorts, not the exception.
+ * Both were nowrap, because letting both wrap made the compact bar four lines
+ * tall — which is not compact, and the point of it is the mountain
+ * underneath. That fixed the height and paid for it in the wrong place:
+ * measured across all four resorts, 47% of leg titles ran past the 173px the
+ * row leaves them, and 25% still do on the 213px they get once GPS is
+ * following and the warning is gone. "Ride Stafal - Gabiet" needed 180 and
+ * came out "Ride Stafal - Gabie…" — a quarter to a half of the day's
+ * instructions cut off, on the one screen read at arm's length in flat light.
+ *
+ * Two lines is enough for every one of them: the longest across the four is
+ * "Ride Above Campo Scuola Gardonè" at 326px against 346 of capacity. So the
+ * title gets its second line and the line under it keeps one, which is three
+ * lines in the worst case rather than four, and only for the long names. How
+ * far is a number and a place — it has never needed two.
  */
 .nav--min .nav__do {
   font-size: var(--t-headline);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* Long lift names are hyphenated place pairs, and a break inside a word
+     reads as a spelling mistake on a name you are matching against a sign. */
+  overflow-wrap: break-word;
 }
 .nav--min .nav__then {
   font-size: var(--t-footnote);

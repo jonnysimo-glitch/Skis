@@ -121,14 +121,21 @@ function buildAdjacency(g, opts) {
 /**
  * Dijkstra over reversed edges: minutes from every node back to `finish`,
  * plus the latest clock you can still be standing there and get home.
+ *
+ * `finish` may be several nodes, in which case the answer is the time to the
+ * nearest of them. That is for the places to swing by: one lift is two
+ * stations and OSM gives both the lift's name, so "Punta Jolanda" is two
+ * nodes and reaching either satisfies it. Seeding the queue with all of them
+ * at zero is the standard multi-source trick and costs nothing.
  */
 function timesHome(g, adj, finish) {
+  const targets = Array.isArray(finish) ? finish : [finish];
   const dist = {}, via = {}, reversed = {};
   for (const key in g.NODES) { dist[key] = Infinity; reversed[key] = []; }
-  dist[finish] = 0;
+  for (const key of targets) dist[key] = 0;
   for (const key in adj) for (const edge of adj[key]) reversed[edge.to].push(edge);
 
-  const queue = [[0, finish]];
+  const queue = targets.map((key) => [0, key]);
   while (queue.length) {
     queue.sort((a, b) => a[0] - b[0]);
     const [d, node] = queue.shift();
@@ -162,9 +169,10 @@ function timesHome(g, adj, finish) {
    */
   const latest = {};
   for (const key in g.NODES) latest[key] = -Infinity;
-  latest[finish] = Infinity;
+  for (const key of targets) latest[key] = Infinity;
+  const reached = new Set(targets);
   const byDistance = Object.keys(g.NODES)
-    .filter((key) => key !== finish && dist[key] < Infinity)
+    .filter((key) => !reached.has(key) && dist[key] < Infinity)
     .sort((a, b) => dist[a] - dist[b]);
   for (const key of byDistance) {
     const edge = via[key];
@@ -213,14 +221,41 @@ const reverses = (prev, edge) =>
   Boolean(prev) && prev.kind === "lift" && edge.kind === "lift" &&
   prev.from === edge.to && prev.to === edge.from;
 
+/**
+ * How much harder a walk tries for a place it has been asked to swing by.
+ *
+ * The guard below can only refuse an edge that makes a waypoint unreachable;
+ * it cannot make the walk go there. Without a pull the sampler finds a
+ * specific node by luck, which on a big graph with a short window is not
+ * often enough to offer three different days. Weight rather than rule,
+ * because a forced march to the waypoint and back is not a ski day either —
+ * this bends the wander, it does not replace it.
+ *
+ * Applied to the edges that reduce the distance to the nearest place still
+ * owed, so it fades out as each is collected and stops mattering entirely
+ * once they all are.
+ */
+const VIA_PULL = 2.6;
+
 /** One randomised walk. Returns null if it cannot be made legal. */
-function sampleWalk(g, opts, adj, home, rng, caps) {
+function sampleWalk(g, opts, adj, home, rng, caps, wants = []) {
   const repeatCap = edge => (edge.kind === "run" ? caps.run : caps.lift);
   const { dist, via, latest } = home;
   if (dist[opts.start] === Infinity) return null;
 
   let node = opts.start, elapsed = 0;
   const segments = [], uses = {};
+  /*
+   * The places still owed, which shrinks as the walk collects them.
+   *
+   * Each carries a tree of its own — minutes to it from everywhere, and the
+   * latest clock you can be somewhere and still catch the lifts that get you
+   * there — so the guard is the same shape as the ride-home guard beside it,
+   * and for the same reason. Discovering at the end of a walk that the
+   * rifugio was on the wrong side of a lift that shut at three throws the
+   * whole walk away; refusing the edge that strands you keeps it.
+   */
+  let owed = wants.filter((t) => !t.keys.has(node));
 
   for (let step = 0; step < WALK_LIMIT; step++) {
     const prev = segments[segments.length - 1];
@@ -230,15 +265,40 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
       // Would taking this leave you somewhere the ride home has already shut?
       if (opts.startClock + elapsed + edge.min > latest[edge.to]) return false;
       if (reverses(prev, edge)) return false;
+      // Or somewhere a place you still owe can no longer be fitted in before
+      // it, and the finish after it.
+      for (let j = 0; j < owed.length; j++) {
+        const t = owed[j];
+        if (elapsed + edge.min + t.dist[edge.to] + t.home > opts.budget) return false;
+        if (opts.startClock + elapsed + edge.min > t.latest[edge.to]) return false;
+      }
       return (uses[useKey(edge)] || 0) < repeatCap(edge);
     });
     if (!candidates.length) break;
 
+    /*
+     * A plain loop, not `Math.min(...owed.map(...))`.
+     *
+     * This runs once per candidate edge per step: two hundred steps, a few
+     * candidates each, thirty-five hundred walks. The spread version built
+     * two throwaway arrays every time and cost 135ms of a 350ms solve, on
+     * a set that is never longer than three.
+     */
+    const toOwed = (key) => {
+      let best = Infinity;
+      for (let j = 0; j < owed.length; j++) {
+        const d = owed[j].dist[key];
+        if (d < best) best = d;
+      }
+      return best;
+    };
+    const nearest = owed.length ? toOwed(node) : 0;
     const weights = candidates.map(edge => {
       let w = edge.kind === "run" ? 1.6 : 1;
       const seen = uses[useKey(edge)] || 0;
       w *= seen === 0 ? 3.2 : seen === 1 ? 0.4 : 0.1;
       if (edge.kind === "lift" && prev && prev.kind === "lift") w *= 0.35;
+      if (owed.length && toOwed(edge.to) < nearest) w *= VIA_PULL;
       return w;
     });
 
@@ -251,8 +311,11 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
     uses[useKey(edge)] = (uses[useKey(edge)] || 0) + 1;
     elapsed += edge.min;
     node = edge.to;
+    if (owed.length) owed = owed.filter((t) => !t.keys.has(node));
 
-    if (node === opts.finish && elapsed > opts.budget * 0.82 && rng() < 0.6) break;
+    // Not while something is still owed: stopping at the finish with the
+    // rifugio unvisited throws the walk away two lines later.
+    if (!owed.length && node === opts.finish && elapsed > opts.budget * 0.82 && rng() < 0.6) break;
   }
 
   const tail = pathHome(via, node, opts.finish);
@@ -290,6 +353,18 @@ function sampleWalk(g, opts, adj, home, rng, caps) {
   if (!segments.length) return null;
   if (elapsed > opts.budget || elapsed < opts.budget * MIN_BUDGET_FILL) return null;
   if (opts.lunch && !segments.some(e => g.NODES[e.to].rifugio)) return null;
+  /*
+   * Every place asked for, actually passed.
+   *
+   * The guard above prunes; this decides. It is checked over the whole day
+   * including the tail, because the shortest way home routinely goes through
+   * the place a skier asked to swing by, and throwing that walk away for
+   * collecting it on the way back would be absurd.
+   */
+  if (wants.length) {
+    const seen = new Set([opts.start, ...segments.map((e) => e.to)]);
+    for (const t of wants) if (![...t.keys].some((key) => seen.has(key))) return null;
+  }
 
   /*
    * A day cannot spend longer riding down than skiing down.
@@ -510,6 +585,106 @@ function overlap(a, b) {
 }
 
 /**
+ * The requested waypoints, de-duplicated, filtered to real nodes and sorted.
+ *
+ * Sorted so the answer cannot depend on the order they were tapped in: the
+ * pull below reads the whole set every step, and a sampler whose weights
+ * depend on tap order is a sampler that returns different days for the same
+ * question. Deterministic by design is the rule this file is held to.
+ *
+ * `home` is minutes from the waypoint onward to the finish, which is what
+ * makes "can this still be fitted in" answerable in one addition.
+ */
+function wantTrees(g, adj, opts, home) {
+  return viaGroups(g, opts).map((keys) => {
+    const tree = timesHome(g, adj, keys);
+    return {
+      keys: new Set(keys),
+      dist: tree.dist,
+      latest: tree.latest,
+      home: Math.min(...keys.map((key) => home.dist[key])),
+    };
+  });
+}
+
+/**
+ * The waypoints as groups of node keys, cleaned and in a fixed order.
+ *
+ * An entry may be one key or several: one lift is two stations under one
+ * name, and "swing by Punta Jolanda" is answered by either. Sorted so the
+ * answer cannot depend on the order they were tapped in — the pull below
+ * reads the whole set every step, and a sampler whose weights depend on tap
+ * order returns different days for the same question. Deterministic by design
+ * is the rule this file is held to.
+ *
+ * A group the day already starts in is dropped rather than satisfied, so the
+ * pull never fires for somewhere you are standing.
+ */
+function viaGroups(g, opts) {
+  const groups = (opts.via ?? [])
+    .map((entry) => [...new Set(Array.isArray(entry) ? entry : [entry])].filter((k) => g.NODES[k]).sort())
+    .filter((keys) => keys.length && !keys.includes(opts.start));
+  const seen = new Set();
+  return groups
+    .filter((keys) => !seen.has(keys.join(",")) && seen.add(keys.join(",")))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+/**
+ * Which requested places a day cannot include, and what is in the way.
+ *
+ * Called by the UI when a solve comes back empty, so the empty state can name
+ * the place rather than saying "nothing fits" about a day that fits perfectly
+ * well without it. Each answer is a different fix — a longer window, a harder
+ * grade, or dropping the place — and offering the wrong one sends a reader to
+ * change the thing that was never the problem.
+ *
+ * Returns [] when every waypoint is individually reachable, which is not the
+ * same as "a day exists that takes in all of them at once": that is what the
+ * solve itself answers, and `all` is the reason the caller falls back to it.
+ *
+ * @returns {Array<{key: string, reason: 'unreachable'|'grade'|'clock'|'lastlift', need?: number}>}
+ */
+export function viaTrouble(opts) {
+  const g = opts.graph ?? MONTEROSA;
+  const adj = buildAdjacency(g, opts);
+  const home = timesHome(g, adj, opts.finish);
+  // The same mountain with nothing ruled out, so "you cannot get there on
+  // blue" can be told apart from "you cannot get there at all".
+  const open = buildAdjacency(g, { ...opts, ability: "black", noDrags: false });
+  const openHome = timesHome(g, open, opts.finish);
+
+  const out = [];
+  for (const keys of viaGroups(g, opts)) {
+    const key = keys[0];
+    const there = timesHome(g, adj, keys);
+    const out_ = there.dist[opts.start];
+    const back = Math.min(...keys.map((k) => home.dist[k]));
+    if (out_ === Infinity || back === Infinity) {
+      const wide = timesHome(g, open, keys);
+      const reason =
+        wide.dist[opts.start] === Infinity ||
+        Math.min(...keys.map((k) => openHome.dist[k])) === Infinity
+          ? "unreachable"
+          : "grade";
+      out.push({ key, reason });
+      continue;
+    }
+    // In the window at all? The shortest way there and the shortest way back
+    // is the floor under any day that includes it.
+    if (out_ + back > opts.budget) {
+      out.push({ key, reason: "clock", need: Math.ceil(out_ + back) });
+      continue;
+    }
+    // Reachable in minutes, but not before the lifts that get you there stop.
+    if (opts.startClock > there.latest[opts.start]) {
+      out.push({ key, reason: "lastlift" });
+    }
+  }
+  return out;
+}
+
+/**
  * @param {object} opts
  * @param {string} opts.start      node key
  * @param {string} opts.finish     node key
@@ -518,6 +693,7 @@ function overlap(a, b) {
  * @param {number} opts.startClock minute-of-day of first lift, e.g. 555 = 09:15
  * @param {boolean} [opts.noDrags]
  * @param {boolean} [opts.lunch]   require passing a rifugio
+ * @param {string[]} [opts.via]    node keys the day must pass through
  * @param {'vertical'|null} [opts.emphasis]
  * @param {number} [opts.count=3]  how many routes to offer
  * @param {number} [opts.maxOverlap=0.7] reject a route sharing more than this
@@ -532,6 +708,7 @@ export function solve(opts) {
   const g = opts.graph ?? MONTEROSA;
   const adj = buildAdjacency(g, opts);
   const home = timesHome(g, adj, opts.finish);
+  const wants = wantTrees(g, adj, opts, home);
 
   /*
    * Try for the least repetitive day the mountain can give, and take a more
@@ -561,7 +738,7 @@ export function solve(opts) {
     };
     const found = new Map();
     for (let i = 0; i < SAMPLES; i++) {
-      const walk = sampleWalk(g, opts, adj, home, rng, caps);
+      const walk = sampleWalk(g, opts, adj, home, rng, caps, wants);
       if (!walk) continue;
       const key = walk.segments.map(e => e.id).join(">");
       if (!found.has(key)) found.set(key, measure(walk, g));

@@ -3008,6 +3008,22 @@ export default function MountainMap({
       const flat = isFollowing(propsRef.current);
       const done = propsRef.current.camera?.doneThrough ?? 0;
       const ahead = flat ? done + NAV_LOOKAHEAD : Infinity;
+      /*
+       * While following, only the legs either side of you get a number.
+       *
+       * A ski day loops through its own base, so navigating the first leg out
+       * of Stafal put seventeen numbers on the screen — 27 through 59, from
+       * three hours later — because that is where their geometry lands. They
+       * were dimmed rather than drawn, which makes them quieter noise and
+       * still noise: a faint 43 beside the gondola you are riding answers a
+       * question nobody is asking on a lift.
+       *
+       * So the window is the leg behind, the leg you are on, and the leg
+       * ahead. Everything else is dropped outright rather than faded, which
+       * also gives the labels back the room. Off the navigate screen the
+       * whole route is the subject and every leg keeps its number.
+       */
+      const inWindow = (leg) => !flat || (leg >= done - 1 && leg <= ahead);
 
       /*
        * The point half way along the leg, by length rather than by index.
@@ -3042,7 +3058,7 @@ export default function MountainMap({
        */
       const SPOTS = [0.5, 0.38, 0.62, 0.26, 0.74];
 
-      const order = [...byLeg.keys()].sort((a, b) => {
+      const order = [...byLeg.keys()].filter(inWindow).sort((a, b) => {
         if (flat) {
           const mine = (n) => (n === done ? -1 : n < done ? 1e6 + n : n);
           return mine(a) - mine(b);
@@ -4026,7 +4042,9 @@ export default function MountainMap({
         const { x, z } = field.proj.project(lat, lon);
         const s = project(x, field.sample(x, z), z, v, cam);
         const role = feature.properties.role;
-        const r = role === "now" ? 8 : 6;
+        // A place to swing by is smaller than either end of the day: it is
+        // something the route passes, not something it is for.
+        const r = role === "now" ? 8 : role === "via" ? 5 : 6;
         const name = feature.properties.name;
         const w = ctx.measureText(name).width;
         // The dot stays where the place is; only the words move inside the
@@ -4073,7 +4091,16 @@ export default function MountainMap({
         ctx.fillStyle = role === "now" ? ACCENT : role === "finish" ? INK : "#ffffff";
         ctx.fill();
         ctx.lineWidth = 2.5;
-        ctx.strokeStyle = role === "start" ? "#0b1a24" : "#ffffff";
+        /*
+         * A ring in the accent for a place to swing by.
+         *
+         * White fill like the start, so it reads as the same family of
+         * marker, and the brand ring rather than the near-black one so the
+         * two are not the same dot at two sizes. Not an accent FILL, which is
+         * where you are while navigating and the one thing on the map that
+         * should never have a twin.
+         */
+        ctx.strokeStyle = role === "via" ? ACCENT : role === "start" ? "#0b1a24" : "#ffffff";
         ctx.stroke();
 
         // Which way to go next. It points at the end of the current leg: the

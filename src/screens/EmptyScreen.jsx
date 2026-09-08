@@ -29,6 +29,26 @@ const FIXES = {
     title: "Ski through lunch",
     sub: "Buys back 45 minutes.",
   }),
+  /*
+   * Names the places rather than saying "drop the waypoints".
+   *
+   * The reader chose them one at a time and a fix that refers to them
+   * collectively reads as though the app has lost track of which. With one it
+   * is the whole answer in three words; with three the sub-line carries them
+   * so the button stays one line.
+   */
+  dropVia: (plan) => {
+    const names = (plan.via ?? [])
+      .filter((key) => key !== plan.start)
+      .map((key) => NODES[key]?.name ?? key);
+    if (!names.length) return null;
+    return names.length === 1
+      ? { title: `Plan a day without ${names[0]}`, sub: "Everything else stays as it is." }
+      : {
+          title: "Drop the places to swing by",
+          sub: `${names.join(", ")}. Everything else stays as it is.`,
+        };
+  },
   finishHere: (plan) => ({
     title: `Finish at ${NODES[plan.start].name} instead`,
     sub: "Ends where you started, no cross-valley crossing.",

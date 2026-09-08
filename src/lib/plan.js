@@ -101,6 +101,7 @@ export function defaultPlan(resort, context, at, here) {
       noDrags: false,
       lunch: false,
       mode: "day",
+      via: [],
     };
   }
   if (context === "firstlift") {
@@ -112,6 +113,7 @@ export function defaultPlan(resort, context, at, here) {
       noDrags: false,
       lunch: false,
       mode: "day",
+      via: [],
     };
   }
   return {
@@ -122,6 +124,7 @@ export function defaultPlan(resort, context, at, here) {
     noDrags: false,
     lunch: false,
     mode: "day",
+    via: [],
   };
 }
 
@@ -202,6 +205,16 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
       lunch: false,
       emphasis: null,
       count: 1,
+      /*
+       * No waypoints on a transfer, and not because they are hard.
+       *
+       * "Straight there" answers one question — the way to a place by a time
+       * — with one path. A place to swing by turns that into a day with a
+       * shape, which is the other mode. Carrying a stale waypoint into a
+       * transfer would silently lengthen a route somebody asked to be direct,
+       * which is the same failure as carrying "Shorter" into it.
+       */
+      via: [],
     };
   }
 
@@ -228,8 +241,25 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
     lunch,
     emphasis,
     count,
+    // Places to swing by survive every refinement. "Shorter" means a shorter
+    // day that still goes past the rifugio; dropping the waypoint to satisfy
+    // the chip would answer a question nobody asked.
+    via: viaOf(plan),
   };
 }
+
+/**
+ * The waypoints on a plan, cleaned.
+ *
+ * De-duplicated, capped, and never the start: a plan can outlive the form it
+ * was filled in on. Change the start to Champoluc with Champoluc already
+ * chosen as a place to swing by and the waypoint is satisfied before the day
+ * begins, which is not wrong so much as meaningless — and it would show as a
+ * second pin on top of the first.
+ */
+export const VIA_MAX = 3;
+export const viaOf = (plan) =>
+  [...new Set(plan.via ?? [])].filter((key) => key && key !== plan.start).slice(0, VIA_MAX);
 
 /** Wall-clock time you are back down, lunch included. */
 export const backAt = (route, opts) =>
@@ -253,8 +283,68 @@ export function legClocks(route, startClock) {
  * Why nothing fits, in plain language, plus the changes that would actually
  * unblock it. Never invent a route that strands someone; do say what to change.
  */
-export function diagnose(plan, ability, opts, resort, capacity = null) {
+export function diagnose(plan, ability, opts, resort, capacity = null, trouble = []) {
   const window = plan.t1 - plan.t0;
+  const via = viaOf(plan);
+  const named = (keys) => keys.map((k) => NODES[k]?.name ?? k);
+  const list = (names) =>
+    names.length < 2
+      ? names[0] ?? ""
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+  /*
+   * A place you asked to swing by, before anything else.
+   *
+   * This branch runs ahead of the clock and grade branches on purpose. A day
+   * that does not fit BECAUSE of one waypoint would otherwise be reported as
+   * "nothing gets you back in time" — true of the day as asked, and it sends
+   * the reader to move their finish time when what is in the way is one
+   * rifugio on the wrong side of a shut lift. Name the place, and the fix
+   * list leads with dropping it.
+   */
+  if (via.length && trouble.length) {
+    const first = trouble[0];
+    const name = NODES[first.key]?.name ?? "that place";
+    const grade = ability === "blue" ? "blue" : `${ability} or below`;
+    if (first.reason === "grade") {
+      return {
+        eyebrow: "Not on your grade",
+        title: `No way to ${name}`,
+        headline: `You can't get to ${name} on ${grade} runs.`,
+        body: `Every way in and out of it needs something harder. The rest of the day is fine — it is that one place.`,
+        fixes: ["dropVia", ...(ability === "black" ? [] : ["harder"])],
+      };
+    }
+    if (first.reason === "unreachable") {
+      return {
+        eyebrow: "Not linked up",
+        title: `No way to ${name}`,
+        headline: `Nothing on the mountain reaches ${name}.`,
+        // Honest about whose fault it is. This is almost always a gap in the
+        // map data rather than a real dead end, and saying so is the
+        // difference between "the app is broken" and "the map is missing a
+        // join here".
+        body: "OpenStreetMap has it as a piece of piste that does not join the rest, so no route can be built through it.",
+        fixes: ["dropVia"],
+      };
+    }
+    if (first.reason === "clock") {
+      return {
+        eyebrow: "Too far for the window",
+        title: `${name} and back won't fit`,
+        headline: `Getting to ${name} and back takes about ${first.need} minutes.`,
+        body: `You have ${opts.budget} minutes of skiing between ${minutesToClock(plan.t0)} and ${minutesToClock(plan.t1)}, and that is before you have skied anything else.`,
+        fixes: ["dropVia", "laterFinish", ...(plan.lunch ? ["dropLunch"] : [])],
+      };
+    }
+    return {
+      eyebrow: "Lifts have stopped",
+      title: `Too late for ${name}`,
+      headline: `The lifts that get you to ${name} have already stopped for the day.`,
+      body: `Setting off at ${minutesToClock(plan.t0)} is too late for them. Nothing later will help; an earlier start would, tomorrow.`,
+      fixes: ["dropVia"],
+    };
+  }
   const sameBase = plan.start === plan.finish;
   // Whether there is any later finish to offer, or whether the mountain itself
   // is the thing in the way.
@@ -281,6 +371,38 @@ export function diagnose(plan, ability, opts, resort, capacity = null) {
       headline: "A sit-down lunch doesn't leave enough of the day.",
       body: `Lunch takes ${LUNCH_MINUTES} minutes off a ${window}-minute window, which leaves ${opts.budget} minutes of skiing.`,
       fixes: ["dropLunch", "laterFinish"],
+    };
+  }
+
+  /*
+   * Every waypoint reachable on its own, and still no day.
+   *
+   * The one case the cheap check above cannot see: each place is fine, and
+   * there is no walk that takes in all of them, fills the window and gets
+   * home. Kronplatz has a clean example — Piculin sits at the bottom of a
+   * gondola whose only other way out is a black run, so on red the day would
+   * have to ride the same wire straight back up, which a ski day does not do.
+   *
+   * Said as what it is rather than as a clock failure, because the reader has
+   * asked for something specific and the honest answer is that it does not
+   * combine, not that they were half an hour short.
+   */
+  if (via.length) {
+    const names = named(via);
+    return {
+      eyebrow: "No day fits",
+      title: names.length > 1 ? "Not all of those together" : `Nothing goes via ${names[0]}`,
+      headline: `No day from ${NODES[plan.start].name} takes in ${list(names)} and gets back by ${minutesToClock(plan.t1)}.`,
+      // What is actually known, and no more. `viaTrouble` proved the way
+      // there and the way back exist as separate shortest paths; the solver
+      // proved no legal day strings them together with skiing in between. The
+      // reason varies — a wire a day may not ride straight back up, a last
+      // lift, no room left — and guessing at which would be writing fiction
+      // in an error message.
+      body: names.length > 1
+        ? "Each of them is reachable on its own. There is no day that takes in all of them and still gets you home in time."
+        : "Getting there is fine on its own. It is the round trip, with a day's skiing in it, that does not come together.",
+      fixes: ["dropVia", "laterFinish", ...(ability === "blue" ? ["harder"] : []), ...(plan.lunch ? ["dropLunch"] : [])],
     };
   }
 

@@ -44,7 +44,7 @@ import { recordDay } from "./lib/history.js";
 import { NODES, buildEdges, activeGraph, setActiveResort, ensureActive, activeProjector } from "./active-resort.js";
 import { graphFor } from "./resorts/graphs.js";
 import { useSolver } from "./lib/useSolver.js";
-import { legsOf } from "./solver.js";
+import { legsOf, viaTrouble } from "./solver.js";
 import { directRoute } from "./lib/direct.js";
 import { load, save } from "./lib/persist.js";
 import {
@@ -53,6 +53,7 @@ import {
   toSolverOpts,
   toggleRefinement,
   diagnose,
+  viaOf,
   LUNCH_MINUTES,
 } from "./lib/plan.js";
 import {
@@ -570,9 +571,25 @@ export default function App() {
       // Start wins when a node is both. Most days are a loop, so start and
       // finish are the same place, and asking "is this the finish" first
       // painted the one pin as a destination.
-      return nodesToGeoJSON([plan.start, plan.finish].filter((v, i, a) => a.indexOf(v) === i), (key) => ({
-        role: key === plan.start ? "start" : "finish",
-      }));
+      /*
+       * And the places to swing by, while they are being chosen.
+       *
+       * A waypoint picked from a list is a name until it is somewhere on the
+       * mountain. Three taps in the form can put a day across two valleys
+       * without the reader ever seeing that, and the map is right there
+       * behind the sheet.
+       *
+       * Ends first, so a waypoint that is also an end keeps the end's marker
+       * rather than being overdrawn by a smaller dot.
+       */
+      const ends = [plan.start, plan.finish];
+      const stops = viaOf(plan).filter((key) => !ends.includes(key));
+      return nodesToGeoJSON(
+        [...ends, ...stops].filter((v, i, a) => a.indexOf(v) === i),
+        (key) => ({
+          role: stops.includes(key) ? "via" : key === plan.start ? "start" : "finish",
+        })
+      );
     }
     const startKey = shownRoute.segments[0].from;
     const finishKey = shownRoute.segments[shownRoute.segments.length - 1].to;
@@ -600,7 +617,10 @@ export default function App() {
     // resort.id because this reads the node set: it happened to recompute on a
     // switch only because plan.start changes too, which is a coincidence to
     // depend on rather than a reason.
-  }, [screen, shownRoute, step, plan.start, plan.finish, resort.id]);
+    // plan.via is a fresh array on every change, so it is joined rather than
+    // handed in as-is: React compares dependencies by identity and a new empty
+    // array every render would recompute this on every render.
+  }, [screen, shownRoute, step, plan.start, plan.finish, (plan.via ?? []).join(","), resort.id]);
 
   // Test hook, same opt-in as the map's. The heading arrow is painted on a
   // canvas in the dot's own colour, so a check needs the leg it should be
@@ -819,6 +839,39 @@ export default function App() {
         return;
       }
 
+      /*
+       * A place to swing by that cannot be reached, answered before solving.
+       *
+       * viaTrouble is four Dijkstras and about a millisecond; the solve it
+       * would replace is a second and a bit, because a waypoint nothing can
+       * reach fails every one of the thirty-five hundred walks and then does
+       * it again for each repeat-cap pass. It also answers a better question:
+       * it says which place and what is in the way, where an empty result set
+       * only says nothing fits.
+       *
+       * Only when there are waypoints, so the ordinary path is untouched.
+       */
+      const trouble = solverOpts.via?.length
+        ? viaTrouble({ ...solverOpts, graph: solverGraph })
+        : [];
+      if (trouble.length) {
+        if (showSolving) {
+          const held = performance.now() - started;
+          if (held < 900) await new Promise((r) => setTimeout(r, 900 - held));
+        }
+        setRoutes([]);
+        setPickIndex(0);
+        setPreviewIndex(0);
+        setCapacity(null);
+        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts, resort, null, trouble));
+        // A refine chip that makes a waypoint unreachable is the one case
+        // where staying on the list would be wrong: there is no list. The
+        // chips come back with the plan, and the empty state names the chip's
+        // consequence rather than leaving three cards that no longer apply.
+        setScreen("empty");
+        return;
+      }
+
       const result = await solve({ ...solverOpts, graph: solverGraph });
       if (!result) return; // superseded by a newer request
 
@@ -856,10 +909,26 @@ export default function App() {
         // opposite reason — routes exist, there is just not enough terrain to
         // fill the hours — and saying "everything overruns" there is simply
         // untrue. One extra solve, on a path that already has nothing to show.
-        const capacityNow = await longestDay(solverOpts);
+        /*
+         * Not when there are places to swing by. Capacity would be a lie.
+         *
+         * longestDay re-solves with shorter budgets to find the longest day
+         * this mountain supports — and it re-solves with the SAME options,
+         * waypoints included. Ask for a day from Stafal via Alagna on red and
+         * every probe comes back empty, so capacity reads zero and the empty
+         * state announced "there is no day on red or below runs at Monterosa,
+         * however long you give it" about a mountain that plans a red day
+         * from Stafal in three hundred milliseconds. The constraint was one
+         * village on the wrong side of a black run.
+         *
+         * With no capacity figure the diagnosis falls through to the
+         * waypoints, which is what actually failed. It also saves three
+         * solves on a path that is already slow.
+         */
+        const capacityNow = solverOpts.via?.length ? null : await longestDay(solverOpts);
         setCapacity(capacityNow);
         // The refined ability is what actually constrained the search.
-        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts, resort, capacityNow));
+        setDiagnosis(diagnose(nextPlan, solverOpts.ability, solverOpts, resort, capacityNow, []));
         setScreen("empty");
       } else {
         setScreen("choose");
@@ -901,6 +970,10 @@ export default function App() {
       // Finish when the mountain runs out rather than when you asked to.
       const t1 = plan.t0 + (capacity.budget || capacity.minutes) + (plan.lunch ? LUNCH_MINUTES : 0);
       const nextPlan = { ...plan, t1 };
+      setPlan(nextPlan);
+      runSolve(nextPlan, ability, refine, { showSolving: true });
+    } else if (id === "dropVia") {
+      const nextPlan = { ...plan, via: [] };
       setPlan(nextPlan);
       runSolve(nextPlan, ability, refine, { showSolving: true });
     } else if (id === "harder") {
