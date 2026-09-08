@@ -1960,12 +1960,36 @@ if (feature("32. The places arrive as you get closer")) {
   const SEL = "canvas[aria-label*='Terrain view']";
   const places = () => page.evaluate(() => window.__skisPlaces ?? []);
 
+  /*
+   * None at all at the framing it opens on, which is a reversal.
+   *
+   * This used to assert a few — "a few places at the framing it opens on",
+   * with a companion check that never none, because none looked like a broken
+   * hierarchy. Reported from use, and it is the better rule: a restaurant
+   * should not be readable from the height at which you read village names.
+   * Up there a marker is a dot over ground too small to place it on, it says
+   * only that there is lunch somewhere in this valley, and five of them
+   * competed with the four names that actually orient you.
+   *
+   * So the tier is empty until the runs get their names, and then it fills.
+   * What makes that a hierarchy rather than an absence is the next check.
+   */
   const far = await places();
-  check("a few places at the framing it opens on", far.length > 0 && far.length <= 6,
-    `${far.length} on the mountain`);
-  // The regression that would look like a working hierarchy: none at all.
-  check("but never none, or the mountain has nothing on it", far.length >= 1,
-    `${far.length}`);
+  check("nothing to eat at the framing it opens on, where village names are",
+    far.length === 0, `${far.length} on the mountain`);
+
+  // And they arrive with the run names, which is the level they belong to.
+  await openTools(page);
+  const zoomIn32 = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  for (let i = 0; i < 2; i++) { await zoomIn32.click(); await page.waitForTimeout(420); }
+  await atRest(page, { quiet: 500, limit: 12000 });
+  const withRuns = await page.evaluate(() => ({
+    eat: (window.__skisPlaces ?? []).length,
+    runs: (window.__skisRunNames ?? []).length,
+  }));
+  check("and they arrive once the runs have their names",
+    withRuns.eat > 0 && withRuns.runs > 0,
+    `${withRuns.eat} to eat beside ${withRuns.runs} run names`);
 
   /*
    * And they hold still while the mountain turns.
@@ -2004,7 +2028,9 @@ if (feature("32. The places arrive as you get closer")) {
   check("and they hold still while the mountain turns",
     churn.flips <= churn.frames / 3,
     `${churn.flips} appearances or disappearances over ${churn.frames} frames`);
-  // Holding still by showing nothing would satisfy that perfectly.
+  // Holding still by showing nothing would satisfy that perfectly, so the
+  // turn happens at the zoom where the tier is populated, not at the opening
+  // framing where it is now deliberately empty.
   check("without holding still by showing nothing", churn.avg >= 2,
     `${churn.avg.toFixed(1)} on the mountain on average`);
   /*
@@ -2172,16 +2198,27 @@ if (feature("32. The places arrive as you get closer")) {
    * that filled itself from whatever came first in the file would pass every
    * count check above while showing the village bars.
    */
-  const alts = far.map((p) => p.alt).filter((n) => typeof n === "number");
+  /*
+   * Asked at the zoom they arrive at, which is where this moved to.
+   *
+   * It used to look at the far view. The far view has none of them now, on
+   * purpose, so the question follows the tier: of the handful that come on
+   * first, how many are below the mountain's median height. A third is the
+   * allowance, because the first few in are chosen by altitude and then
+   * filtered by what the terrain hides, and a high place behind a ridge
+   * rightly loses its slot to a lower one in front.
+   */
+  const alts = (await places()).map((p) => p.alt).filter((n) => typeof n === "number");
   const every = await page.evaluate(() =>
     (window.__skisAllPlaces ?? []).map((p) => p[4]).filter((n) => typeof n === "number"));
   if (alts.length && every.length > alts.length) {
     const median = [...every].sort((a, b) => a - b)[Math.floor(every.length / 2)];
     const low = alts.filter((a) => a < median).length;
-    check("and the far view shows the high places, not the village",
-      low <= 1, `${low} of ${alts.length} below the ${median}m median`);
+    check("and the first to arrive are the high places, not the village",
+      low <= Math.ceil(alts.length / 3),
+      `${low} of ${alts.length} below the ${median}m median`);
   } else {
-    check("and the far view shows the high places, not the village", false,
+    check("and the first to arrive are the high places, not the village", false,
       `no altitudes to compare — ${alts.length} shown, ${every.length} known`);
   }
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
@@ -5478,7 +5515,7 @@ if (feature("45. Somewhere to eat, and how to look it up")) {
    * have skied anywhere, and it was never the one under the tap. This asks the
    * same question of every place in every resort, from the data.
    */
-  const { describe: say, facts: parkFacts } = await import("../src/lib/places.js");
+  const { describe: say } = await import("../src/lib/places.js");
   const link = (p) =>
     `https://www.google.com/maps/search/${encodeURIComponent(p[0])}/@${p[2]},${p[3]},16z`;
   for (const id of Object.keys(FLOOR)) {
@@ -5495,29 +5532,6 @@ if (feature("45. Somewhere to eat, and how to look it up")) {
     check(`${id} says what every place is`, mute.length === 0,
       mute.length ? mute.slice(0, 3).map((p) => p[0]).join(", ") : "all described");
   }
-
-  /*
-   * And what a car park says, which no resort file can demonstrate yet.
-   *
-   * The query asks OSM for car parks and the filter keeps them, but every
-   * export on disk was fetched before the query asked, so there are none to
-   * tap. Rather than let the line go untested until the next fetch, the
-   * formatter is asked directly — including the case that matters most, which
-   * is a car park OSM recorded nothing about. "Free" is a claim, and an
-   * untagged alpine car park is as likely to be paid as not.
-   */
-  check("a car park says its size, its price and its cover",
-    parkFacts("parking", { spaces: 400, fee: "no", covered: true }) === "400 spaces · free · covered",
-    String(parkFacts("parking", { spaces: 400, fee: "no", covered: true })));
-  check("and says only what OSM recorded",
-    parkFacts("parking", { spaces: 220 }) === "220 spaces",
-    String(parkFacts("parking", { spaces: 220 })));
-  check("and says nothing rather than guessing",
-    parkFacts("parking", {}) === null && parkFacts("parking", undefined) === null,
-    `${parkFacts("parking", {})} / ${parkFacts("parking", undefined)}`);
-  check("and a restaurant is not given a car park's line",
-    parkFacts("restaurant", { spaces: 9 }) === null,
-    String(parkFacts("restaurant", { spaces: 9 })));
 
   const page = await newPage(browser, { at: [9, 30], touch: true });
   await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
@@ -5561,6 +5575,46 @@ if (feature("45. Somewhere to eat, and how to look it up")) {
         (await page.$eval(".placecard__go", (n) => n.getAttribute("rel") ?? "")).includes("noopener"));
       const box = await (await page.$(".placecard__go")).boundingBox();
       check("the link is a proper tap target", box.height >= 44, `${Math.round(box.width)}x${Math.round(box.height)}`);
+
+      /*
+       * And the whole card stays two lines, on the narrowest phone.
+       *
+       * It floats over the map, so every line it grows is a line of mountain
+       * it covers. Car parks are what made this worth asserting: the second
+       * line is "Parking, 1,288 m" plus whatever OSM recorded about it, and
+       * "Parking, 1,288 m · 400 spaces · free · covered" is comfortably wider
+       * than a 320 pixel screen. Measured rather than eyeballed, because the
+       * text that overflows is the text nobody happened to tap.
+       */
+      await page.setViewportSize({ width: 320, height: 640 });
+      await page.waitForTimeout(400);
+      const card = await page.evaluate(() => {
+        const el = document.querySelector(".placecard");
+        if (!el) return null;
+        const line = (sel) => {
+          const n = el.querySelector(sel);
+          if (!n) return null;
+          const cs = getComputedStyle(n);
+          return Math.round(n.getBoundingClientRect().height / parseFloat(cs.lineHeight));
+        };
+        const go = el.querySelector(".placecard__go");
+        return {
+          h: Math.round(el.getBoundingClientRect().height),
+          name: line(".placecard__n"),
+          kind: line(".placecard__k"),
+          goH: go ? Math.round(go.getBoundingClientRect().height) : null,
+          goW: go ? Math.round(go.getBoundingClientRect().width) : null,
+        };
+      });
+      check("at 320px the name is still one line", card?.name === 1, `${card?.name} lines`);
+      check("and so is the line under it", card?.kind === 1, `${card?.kind} lines`);
+      check("and the link is still one unbroken button",
+        card && card.goH >= 44 && card.goH <= 52 && card.goW >= 90,
+        card ? `${card.goW}x${card.goH}` : "?");
+      check("and the card is not taller than two lines and its padding",
+        card && card.h <= 76, card ? `${card.h}px tall` : "?");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForTimeout(400);
     }
     // Bare mountain puts it away, the way every map does.
     await multiTouch(page, [[[Math.round(m.x + 160), Math.round(m.y + 170)]]], { settle: 30 });
@@ -5598,8 +5652,6 @@ if (feature("39. The map settles, and is not crowded")) {
     place: "__skisLabelLit", run: "__skisRunLit",
     hut: "__skisPlaceLit", hutName: "__skisPlaceNameLit",
   };
-  await openTools(page);
-  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   const survey = async () => page.evaluate(async (hooks) => {
     const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     for (let i = 0; i < 10; i++) await wait();
@@ -5620,12 +5672,25 @@ if (feature("39. The map settles, and is not crowded")) {
   const allStalled = [];
   for (const clicks of [0, 3, 5]) {
     if (clicks) {
-      for (let i = 0; i < clicks - (worst.clicks ?? 0); i++) { await zoomIn.click(); await page.waitForTimeout(420); }
+      /*
+       * Re-opened and re-found each time, not held.
+       *
+       * The handle was grabbed once, and the map tools collapse on their own,
+       * so by the third round of clicks the button was detached and the whole
+       * section died on "Element is not attached to the DOM" — taking its
+       * results and, before the suite learned to report a crash, the results
+       * of everything after it.
+       */
+      for (let i = 0; i < clicks - (worst.clicks ?? 0); i++) {
+        await openTools(page);
+        await page.click('.maptools .iconbtn[aria-label="Zoom in"]');
+        await page.waitForTimeout(420);
+      }
     }
     /*
      * Long enough for the whole tail, on a machine of any speed.
      *
-     * A label that loses its place holds it for RUN_NAME_OCCLUSION_MS — 1.1s,
+     * A label that loses its place holds it for RUN_NAME_OCCLUSION_MS — 1.8s,
      * so that a name grazing an edge or a ridge does not blink — and only then
      * starts a 460 ms fade, which is exponential and takes about 1.5s to reach
      * two per cent. Two and a half seconds caught the last of them still at
@@ -5638,8 +5703,8 @@ if (feature("39. The map settles, and is not crowded")) {
      * on the renderer — `atRest` returns once nothing has been redrawn for a
      * beat, which is the definition of the tail being over.
      */
-    await page.waitForTimeout(1600);
-    await atRest(page, { quiet: 700, limit: 15000 });
+    await page.waitForTimeout(2400);
+    await atRest(page, { quiet: 900, limit: 20000 });
     const r = await survey();
     allStalled.push(...r.stalled);
     if (r.total > worst.total) worst = { ...r, clicks };

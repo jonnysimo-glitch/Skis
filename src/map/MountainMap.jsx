@@ -205,6 +205,39 @@ const MESH_SETTLE_MS = 140;
  * answer.
  */
 const NAME_ZOOM = 1.5;
+/**
+ * And when the places on the mountain are drawn at all.
+ *
+ * A tier per zoom, stated rather than emerging from a budget curve, because
+ * "when does this appear" is the question that decides whether a map reads as
+ * deliberate or as busy.
+ *
+ *   below NAME_ZOOM   the bases, the peaks, the passes. Where you are, where
+ *                     the mountain's corners are, and nothing else. At this
+ *                     height a restaurant is a dot over ground too small to
+ *                     place it on, and reading its name tells you it is
+ *                     somewhere in this valley, which you knew.
+ *   HUT_ZOOM          the runs get their names and the places to eat get
+ *                     their markers, together. Reported exactly this way: the
+ *                     restaurants should come in at the same level as the
+ *                     slopes themselves. Before this they had no gate at all
+ *                     and five of them were on screen at the whole-resort
+ *                     view, competing with the four village names.
+ *   HUT_NAME_ZOOM     and then the names under those markers, a step later.
+ *                     A marker says there is lunch here; the word costs three
+ *                     times the room and is only worth it once you are close
+ *                     enough to be choosing between two of them.
+ */
+/**
+ * How much of a label survives being behind the mountain.
+ *
+ * Only bases get to be drawn there at all — everything else fades out — and
+ * this is what they are drawn at. Low enough to read as "through the
+ * mountain" rather than "on it", high enough to still be legible over snow.
+ */
+const BEHIND_DIM = 0.45;
+const HUT_ZOOM = NAME_ZOOM;
+const HUT_NAME_ZOOM = 2.1;
 
 const SUBDIVIDE_PX = 4;
 const SUBDIVIDE_MAX = 24;
@@ -220,8 +253,21 @@ const OVERLAP = 0.06;
  * glitch, short enough that it is never in the way of an answer. A marker that
  * flickers across a silhouette for two frames now changes by a tenth and comes
  * straight back, which is invisible.
+ *
+ * Every number in this block was raised together, and the reason is one
+ * sentence of feedback after a lot of individually correct tuning: there is
+ * still too much moving around. Each of these had been set to the smallest
+ * value that fixed the fault in front of it, and the sum of six such values is
+ * a map that is technically never popping and never quite still either.
+ *
+ * So: fades slower in and slower out, incumbency held for two and a half
+ * seconds rather than one and a half, the budget's dead band widened, patience
+ * about being behind a ridge nearly doubled, and two fewer labels in each of
+ * the busiest tiers. Nothing here is a new mechanism. It is the same machinery
+ * asked to be less eager, which is what "be more conservative" means when the
+ * thing being conserved is the reader's attention.
  */
-const PLACE_FADE_MS = 260;
+const PLACE_FADE_MS = 420;
 /**
  * Longer on the way out than on the way in.
  *
@@ -231,7 +277,7 @@ const PLACE_FADE_MS = 260;
  * the hold below, a small nudge of the camera cannot take anything off the
  * mountain.
  */
-const PLACE_FADE_OUT_MS = 460;
+const PLACE_FADE_OUT_MS = 900;
 /**
  * How long a place keeps its place after it stops qualifying.
  *
@@ -241,7 +287,7 @@ const PLACE_FADE_OUT_MS = 460;
  * a marker that grazed a silhouette for a single frame lost its incumbency,
  * a newcomer took the slot, and the two then swapped back and forth.
  */
-const PLACE_HOLD_MS = 1400;
+const PLACE_HOLD_MS = 2600;
 /**
  * How far the budget may stretch to keep incumbents, before it starts evicting.
  *
@@ -250,7 +296,7 @@ const PLACE_HOLD_MS = 1400;
  * lets what is already showing stay showing while the budget passes under it,
  * and only trims once the gap is real.
  */
-const PLACE_BUDGET_SLACK = 1.35;
+const PLACE_BUDGET_SLACK = 1.6;
 
 /**
  * How long a place must be behind the mountain before it goes.
@@ -272,7 +318,7 @@ const OCCLUSION_HOLD_MS = 520;
  * same 520 ms took names off the mountain while most of the run they belong to
  * was still in plain sight.
  */
-const RUN_NAME_OCCLUSION_MS = 1100;
+const RUN_NAME_OCCLUSION_MS = 1800;
 /**
  * How many pixels of overlap a label already on the mountain will tolerate
  * before it gives up its spot, where a newcomer would tolerate none.
@@ -360,7 +406,7 @@ const CULL_PAD = TERRAIN_MARGIN + 240;
  * the thirty-seven things written on the mountain, and the stated intent two
  * paragraphs up said ten.
  */
-const HUT_BASE_COUNT = 5;
+const HUT_BASE_COUNT = 4;
 const HUT_ZOOM_POWER = 1.0;
 
 /**
@@ -372,7 +418,7 @@ const HUT_ZOOM_POWER = 1.0;
  * zoomed. Eight at the framing the app opens on, about fifteen once you are
  * looking at one bowl.
  */
-const PLACE_BASE_COUNT = 8;
+const PLACE_BASE_COUNT = 6;
 const PLACE_ZOOM_POWER = 0.35;
 
 /**
@@ -3120,12 +3166,28 @@ export default function MountainMap({
          * a name is only really behind the mountain once it has been behind it
          * for a while.
          */
-        .map((c) => ({
-          ...c,
-          behind: c.n.base
-            ? false
-            : steady(`lo:${c.key}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS),
-        }))
+        .map((c) => {
+          const hidden = steady(`lo:${c.key}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS);
+          /*
+           * A base behind the mountain is dimmed, not dropped and not ignored.
+           *
+           * Exempting bases outright was the fix for taking all three off the
+           * map at once, and it bought a different fault: Stafal and Champoluc
+           * sit in deep valleys, so from the opening view they are usually
+           * behind the massif, and their names were painted at full strength
+           * onto whatever ridge happened to be in front of them. Reported as
+           * the names being "on the mountain, at a certain point where it is
+           * not", which is exactly right — the label claimed a position on a
+           * slope kilometres from the village.
+           *
+           * Neither hiding it nor asserting it is the answer. Half strength
+           * says what is true: the village is over there, and there is
+           * mountain between you and it. It stays findable, which is the whole
+           * reason for the exemption, and stops pretending to be somewhere it
+           * is not, which is what the exemption cost.
+           */
+          return { ...c, behind: c.n.base ? false : hidden, occluded: hidden };
+        })
         /*
          * Only the ones this zoom has room for, and always the same ones.
          *
@@ -3165,7 +3227,7 @@ export default function MountainMap({
       // top-ranked name with nowhere to go would otherwise take its slot with
       // it. Same reasoning as the run names above.
       let up = 0;
-      for (const { key, n, s, behind, onScreen, taken } of candidates) {
+      for (const { key, n, s, behind, occluded, onScreen, taken } of candidates) {
         const w = ctx.measureText(n.name).width;
         // Four places to put it, in order of preference. Dropping a name on the
         // first collision cost Champoluc every time, because the zoom buttons
@@ -3225,7 +3287,10 @@ export default function MountainMap({
          */
         if (keep) placed.push(box);
         if (solid <= 0.02) continue;
-        ctx.globalAlpha = solid;
+        // See `occluded` above: a base you cannot actually see from here reads
+        // at half strength, so it locates the village without claiming the
+        // ridge in front of it.
+        ctx.globalAlpha = solid * (occluded ? BEHIND_DIM : 1);
 
         ctx.beginPath();
         ctx.arc(s.x, s.y, 3.4, 0, Math.PI * 2);
@@ -3274,10 +3339,22 @@ export default function MountainMap({
      * A map pin with a glyph in it, rather than a coloured blob.
      *
      * A square meant food and a circle meant hire, which is a legend nobody
-     * has. These are the shapes every map uses for the same things: cutlery
-     * for somewhere to eat, a cup for a bar, a roof for a hut, a pair of skis
-     * for hire. Thirteen pixels across with a white disc behind them, because
-     * a glyph drawn straight onto snow disappears into it.
+     * has. These are the shapes every map uses for the same things. Thirteen
+     * pixels across with a white disc behind them, because a glyph drawn
+     * straight onto snow disappears into it.
+     *
+     * Three of them, and there were five. A cup for a bar, a roof for a hut
+     * and cutlery for a restaurant are three drawings of one fact — there is
+     * food here — and at thirteen pixels the difference between them is not
+     * legible anyway, so what they actually produced was a mountain covered in
+     * shapes a person had to squint at and then still tap to identify. The
+     * card says what it is in words, which is where a distinction that fine
+     * belongs. A rifugio on the mountain and a restaurant in the village get
+     * the same mark and different sentences.
+     *
+     * What stays separate is what is genuinely a different errand: leaving the
+     * car, and hiring skis. Those are things you do once, at the bottom, on
+     * purpose, and mistaking one for lunch wastes a chairlift.
      */
     const pin = (x, y, r, kind) => {
       ctx.beginPath();
@@ -3311,22 +3388,8 @@ export default function MountainMap({
         ctx.moveTo(-2.1, 2.6); ctx.lineTo(-1.1, -2.8);
         ctx.moveTo(1.1, 2.6); ctx.lineTo(2.1, -2.8);
         ctx.moveTo(-2.9, 2.6); ctx.lineTo(2.9, 2.6);
-      } else if (kind === "hut") {
-        // A roof and a wall: the shape of every mountain hut sign there is.
-        ctx.moveTo(-2.9, 0.2); ctx.lineTo(0, -2.9); ctx.lineTo(2.9, 0.2);
-        ctx.moveTo(-2.1, 0.2); ctx.lineTo(-2.1, 2.8);
-        ctx.lineTo(2.1, 2.8); ctx.lineTo(2.1, 0.2);
-      } else if (kind === "cafe") {
-        // A cup with a handle.
-        ctx.moveTo(-2.2, -1.8); ctx.lineTo(-2.2, 1.1);
-        ctx.quadraticCurveTo(-2.2, 2.7, -0.6, 2.7);
-        ctx.quadraticCurveTo(1.0, 2.7, 1.0, 1.1);
-        ctx.lineTo(1.0, -1.8);
-        ctx.moveTo(1.0, -0.9);
-        ctx.quadraticCurveTo(2.9, -0.9, 2.9, 0.3);
-        ctx.quadraticCurveTo(2.9, 1.5, 1.0, 1.5);
       } else {
-        // Fork and knife.
+        // Fork and knife: somewhere to eat, whatever OSM called it.
         ctx.moveTo(-1.9, -2.9); ctx.lineTo(-1.9, -0.6);
         ctx.moveTo(-0.6, -2.9); ctx.lineTo(-0.6, -0.6);
         ctx.moveTo(-1.25, -0.6); ctx.lineTo(-1.25, 2.9);
@@ -3453,7 +3516,8 @@ export default function MountainMap({
        * Below the threshold the pass keeps running while anything is still on
        * screen, and stops once the last one has gone.
        */
-      const namesOn = labelZoom(v) >= NAME_ZOOM;
+      // Their own gate, a step past the markers. See HUT_NAME_ZOOM.
+      const namesOn = labelZoom(v) >= HUT_NAME_ZOOM;
       if (labelsOnly && !namesOn && !anyFading("n:")) return placed;
       const named = [];
       const nameLit = mapTest ? [] : null;
@@ -3481,7 +3545,18 @@ export default function MountainMap({
        * one is what left the far view crowded, because at that distance the
        * markers are small and a great many of them fit.
        */
-      const wanted = Math.round(HUT_BASE_COUNT * labelZoom(v) ** HUT_ZOOM_POWER);
+      /*
+       * Counted up from the gate, not from zero zoom.
+       *
+       * `HUT_BASE_COUNT * zoom ** power` has no floor: at the whole-resort
+       * view it still asked for five. Measuring from HUT_ZOOM instead means
+       * the tier is empty until the runs are named and then grows from there,
+       * which is the hierarchy rather than a side effect of a curve.
+       */
+      const over = labelZoom(v) - HUT_ZOOM;
+      const wanted = over < 0
+        ? 0
+        : Math.round(HUT_BASE_COUNT * (over + 1) ** HUT_ZOOM_POWER);
       /*
        * With a dead band, so a hair of zoom does not add and remove one.
        *
@@ -3496,7 +3571,17 @@ export default function MountainMap({
         wanted,
         Math.min(lastShownCount, Math.round(wanted * PLACE_BUDGET_SLACK))
       );
-      if (budget <= 0) { if (!labelsOnly) hutsDrawn.clear(); return placed; }
+      /*
+       * A budget of nothing still runs the loop.
+       *
+       * Returning early here was right while the budget could never reach
+       * zero. With a gate it reaches zero every time you pull back past it,
+       * and returning left every marker's fade frozen at whatever it last
+       * was — so crossing the gate outward made five markers vanish between
+       * one frame and the next, which is the pop this tier's whole fade
+       * machinery exists to prevent. Fall through with nothing affordable and
+       * they fade out the way they faded in.
+       */
       if (!labelsOnly) hutsDrawn.clear();
       // Sorted, not sliced. The budget is spent on places that actually get
       // drawn, and whether one does depends on the mountain being in the way
