@@ -43,6 +43,38 @@ const toSegment = (p, a, b) => {
   return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
 };
 
+/*
+ * The same business, spelled twice, written out again here.
+ *
+ * The pipeline merges these. This file's job is to notice when the pipeline
+ * is wrong, so it reimplements the rule rather than importing it — the same
+ * reason `metres` and `KIND` above are its own. Two of them are real, both at
+ * Monterosa: "Chäisscheri"/"Chaisscheri" 45 m apart at one house number, and
+ * "Rifugio Belvedere"/"Baita Rifugio Belvedere" 8 m apart.
+ */
+const plain = (name) =>
+  String(name ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+const NEAR_SAME = 60;
+const NEAR_SAME_PARTIAL = 30;
+/** Whether these two are one place under two spellings. */
+const oneAndTheSame = (a, b) => {
+  const x = plain(a.name);
+  const y = plain(b.name);
+  if (!x || !y) return false;
+  const d = metres(a, b);
+  if (x === y) return d <= NEAR_SAME;
+  return (
+    d <= NEAR_SAME_PARTIAL &&
+    x.length >= 5 && y.length >= 5 &&
+    (x.includes(y) || y.includes(x))
+  );
+};
+
 const KIND = (t) =>
   t.tourism === "alpine_hut" || t.tourism === "wilderness_hut" ? "hut"
     : t.amenity === "restaurant" ? "restaurant"
@@ -116,6 +148,22 @@ for (const meta of RESORTS.filter((r) => r.available)) {
     .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon));
 
   const inFile = new Map(mod.PLACES.map((p) => [p[0], p]));
+  /*
+   * Or represented by something the file already has under another spelling.
+   *
+   * Without this the merge reads as a loss: the two Monterosa duplicates came
+   * back as "nothing to eat within 200 m of a piste is missing: Baita Rifugio
+   * Belvedere, Chaisscheri" — both of which are on the mountain, under the
+   * other name, eight and forty-five metres away.
+   */
+  const filePoints = mod.PLACES.map(([name, kind, lat, lon]) => ({ name, kind, lat, lon }));
+  const merged = [];
+  const covered = (c) => {
+    if (c.aka.some((n) => inFile.has(n))) return true;
+    const twin = filePoints.find((p) => oneAndTheSame(c, p));
+    if (twin) { merged.push(`${c.name} → ${twin.name}`); return true; }
+    return false;
+  };
   const eats = mod.PLACES.filter((p) => ["restaurant", "cafe", "hut"].includes(p[1]));
   const hire = mod.PLACES.filter((p) => p[1] === "rental");
   const cars = mod.PLACES.filter((p) => p[1] === "parking");
@@ -124,7 +172,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
 
   // 1. Anything the file should have and does not.
   const missedEats = candidates
-    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !c.aka.some((n) => inFile.has(n)))
+    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !covered(c))
     .map((c) => ({ ...c, d: toPistes(c) }))
     .filter((c) => c.d <= NEAR_PISTE)
     .sort((a, b) => a.d - b.d);
@@ -133,7 +181,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
     (missedEats.length ? `: ${missedEats.slice(0, 6).map((c) => `${c.name} (${Math.round(c.d)} m)`).join(", ")}` : ""));
 
   const missedHire = candidates
-    .filter((c) => c.kind === "rental" && !c.aka.some((n) => inFile.has(n)))
+    .filter((c) => c.kind === "rental" && !covered(c))
     .map((c) => ({ ...c, d: toBases(c) }))
     .filter((c) => c.d <= NEAR_BASE)
     .sort((a, b) => a.d - b.d);
@@ -149,7 +197,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
    */
   const hireInExport = candidates.filter((c) => c.kind === "rental");
   const hireFar = hireInExport
-    .filter((c) => !c.aka.some((n) => inFile.has(n)))
+    .filter((c) => !covered(c))
     .map((c) => Math.round(toBases(c)))
     .sort((a, b) => a - b);
   console.log(`        (ski hire in the export: ${hireInExport.length}` +
@@ -158,12 +206,35 @@ for (const meta of RESORTS.filter((r) => r.available)) {
   // What was excluded, and how far away it was: the number that shows the
   // rule is doing work rather than the export simply being small.
   const farEats = candidates
-    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !c.aka.some((n) => inFile.has(n)))
+    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !covered(c))
     .map((c) => Math.round(toPistes(c)))
     .sort((a, b) => a - b);
   if (farEats.length) {
     console.log(`        (${farEats.length} excluded, nearest ${farEats[0]} m from a piste)`);
   }
+
+  if (merged.length) {
+    console.log(`        (${merged.length} merged as one place: ${[...new Set(merged)].slice(0, 4).join("; ")})`);
+  }
+
+  /*
+   * And the file must not carry one twice itself.
+   *
+   * The check above says nothing was lost. This says nothing was doubled,
+   * which is the failure a skier actually sees: two pins on one building, and
+   * a count of the places on a mountain that is wrong.
+   */
+  const doubledPlaces = [];
+  for (let i = 0; i < filePoints.length; i++) {
+    for (let j = i + 1; j < filePoints.length; j++) {
+      if (oneAndTheSame(filePoints[i], filePoints[j])) {
+        doubledPlaces.push(`${filePoints[i].name} / ${filePoints[j].name}`);
+      }
+    }
+  }
+  note(doubledPlaces.length === 0,
+    "no place is on the mountain twice under two spellings" +
+    (doubledPlaces.length ? `: ${doubledPlaces.slice(0, 4).join(", ")}` : ""));
 
   // 2. Nothing invented, nothing doubled.
   const known = new Set(candidates.flatMap((c) => c.aka));

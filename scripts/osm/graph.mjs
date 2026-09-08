@@ -374,7 +374,7 @@ export function build(osm, { tolerance = 45, elevation }) {
    * than being thrown away. The naming happens at emit, where the bases are
    * known.
    */
-  const places = elements
+  const placesRaw = elements
     .filter((el) => el.tags && KIND(el.tags) &&
       (el.tags.name || KIND(el.tags) === "parking"))
     .map((el) => ({
@@ -404,6 +404,10 @@ export function build(osm, { tolerance = 45, elevation }) {
       // Where the facts came from, so a merge with another source can say
       // which one won and the app can attribute it.
       source: "osm",
+      // Only for the dedupe below, and stripped before anything is written:
+      // how well mapped this element is, and a stable tie-break.
+      _id: el.id,
+      _tags: Object.keys(el.tags).length,
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
     }))
@@ -417,6 +421,8 @@ export function build(osm, { tolerance = 45, elevation }) {
         alt: sampled === null || !Number.isFinite(sampled) ? null : Math.round(sampled),
       };
     });
+
+  const places = dedupePlaces(placesRaw);
 
   const report = {
     lifts: lifts.length,
@@ -729,4 +735,87 @@ export function build(osm, { tolerance = 45, elevation }) {
   }
 
   return { NODES, LIFTS, RUNS, PLACES: places, report };
+}
+
+/**
+ * The same business, mapped twice, is one place.
+ *
+ * OSM is edited by whoever turns up, and the same building gets added again
+ * by somebody who did not see the first pin. Two real ones from Monterosa:
+ *
+ *   "Chäisscheri" (amenity=cafe) and "Chaisscheri" (amenity=restaurant),
+ *   45 m apart, both at 17 Bonda, Alagna Valsesia — one café, spelled twice.
+ *
+ *   "Rifugio Belvedere" (tourism=alpine_hut, with a website, a capacity and
+ *   a check_date) and "Baita Rifugio Belvedere" (amenity=restaurant,
+ *   outdoor_seating), 8 m apart. The hut's own note reads "ristorante e posto
+ *   tappa, malgrado il nome non è un rifugio" — it is the restaurant.
+ *
+ * Two pins on one building is a fault a skier can see, and worse than that
+ * it makes the count of places on a mountain wrong.
+ *
+ * Names are compared with the accents taken off, because half the reason the
+ * duplicate exists is that somebody could not type ä. Two tests, because
+ * "the same name" and "the same name plus a category word" are different
+ * mistakes and the second needs a tighter radius to be safe: "Bar Gabiet"
+ * and "Rifugio Gabiet" are two real places at one station and neither
+ * contains the other, but a rule that matched loosely would eventually eat a
+ * pair like them.
+ *
+ * Car parks are left alone. Their duplicates look nothing like this — mostly
+ * unnamed polygons overlapping a node — and the naming pass already gives
+ * them a base to belong to.
+ */
+const EATS_OR_HIRE = new Set(["hut", "restaurant", "cafe", "rental"]);
+
+/** A name with the accents, case and punctuation taken out of the comparison. */
+export const plainName = (name) =>
+  String(name ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** Metres within which two of the same name are the same place. */
+export const SAME_PLACE = 60;
+/** And within which one name containing the other is. */
+export const SAME_PLACE_PARTIAL = 30;
+
+export function dedupePlaces(places) {
+  const strip = ({ _id, _tags, ...rest }) => rest;
+  const rows = places.map((pl, i) => ({ pl, i, key: plainName(pl.name) }));
+  const dropped = new Set();
+
+  for (let a = 0; a < rows.length; a++) {
+    if (dropped.has(a)) continue;
+    for (let b = a + 1; b < rows.length; b++) {
+      if (dropped.has(b)) continue;
+      const x = rows[a];
+      const y = rows[b];
+      if (!EATS_OR_HIRE.has(x.pl.kind) || !EATS_OR_HIRE.has(y.pl.kind)) continue;
+      if (!x.key || !y.key) continue;
+      const d = metres(x.pl.lat, x.pl.lon, y.pl.lat, y.pl.lon);
+      const same = x.key === y.key && d <= SAME_PLACE;
+      const partial =
+        x.key !== y.key &&
+        d <= SAME_PLACE_PARTIAL &&
+        x.key.length >= 5 && y.key.length >= 5 &&
+        (x.key.includes(y.key) || y.key.includes(x.key));
+      if (!same && !partial) continue;
+      /*
+       * Whichever is better mapped, and then whichever name is the place
+       * rather than the place plus a category word — "Rifugio Belvedere"
+       * over "Baita Rifugio Belvedere". The id is the last resort so the
+       * answer cannot depend on the order Overpass returned them in.
+       */
+      const better =
+        (y.pl._tags ?? 0) - (x.pl._tags ?? 0) ||
+        String(x.pl.name).length - String(y.pl.name).length ||
+        String(x.pl._id ?? "").localeCompare(String(y.pl._id ?? ""));
+      dropped.add(better > 0 ? a : b);
+      if (better > 0) break;
+    }
+  }
+  return rows.filter((r) => !dropped.has(r.i)).map((r) => strip(r.pl));
 }
