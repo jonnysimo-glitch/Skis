@@ -106,10 +106,26 @@ export function viaChoices(nodes, places = [], opts = {}) {
       if (once.has(short)) twice.add(short);
       once.add(short);
     }
-    const at = near.map((p) => {
-      const short = shortOf.get(p.name);
-      return twice.has(short) ? p.name : short;
-    });
+    /*
+     * What is at the station, minus the station.
+     *
+     * `at` reads out as "— Edelweiss, Novez Cafè" under the name, and a
+     * rifugio named after the lift it stands at made that "Belvedere —
+     * Belvedere". Eleven of these across the four resorts: Albi de Mez, Passo
+     * Feudo, Marchner, Absam, Oberholz. The eat entries have suppressed this
+     * since Albi de Mez was found; the stations never did, and it reads worse
+     * on them because the repeat is the first thing after the dash rather
+     * than an absent subtitle.
+     *
+     * Compared after shortening, since that is the word that gets shown: the
+     * place is "Rifugio Belvedere" in OSM and "Belvedere" on the row.
+     */
+    const at = near
+      .map((p) => {
+        const short = shortOf.get(p.name);
+        return twice.has(short) ? p.name : short;
+      })
+      .filter((label) => label !== name);
     const areas = [...new Set(group.map((k) => nodes[k].area).filter(Boolean))];
     return {
       // The lowest key, so the same choice has the same id between renders
@@ -152,6 +168,29 @@ export function viaChoices(nodes, places = [], opts = {}) {
   for (const c of junctions) {
     for (const name of c.at) {
       if (seenEat.has(name)) continue;
+      /*
+       * And not when the place and the station are the same name.
+       *
+       * Monterosa's Belvedere is a rifugio at a lift station called
+       * Belvedere, and Crest is a restaurant at Crest. Adding those as
+       * choices of their own put "Belvedere" in the picker twice — once under
+       * "Somewhere to eat" and once under Ayas — resolving to the same node
+       * group and the same constraint. Two identical rows is the exact fault
+       * this file exists to prevent, and it is worse in a picker than
+       * anywhere else because a reader assumes two rows mean two places and
+       * spends the tap finding out they do not.
+       *
+       * The station entry is that place: same name, same keys, and its own
+       * `at` list already says what is there. So nothing is lost by not
+       * repeating it — the name is still in the list, once, under the valley
+       * it is in.
+       *
+       * This case was half-handled already: the subtitle was suppressed,
+       * because "Albi de Mez — Albi de Mez" is not a subtitle. Suppressing
+       * the subtitle only made the two rows identical rather than merely
+       * confusing.
+       */
+      if (name === c.name) continue;
       seenEat.add(name);
       eats.push({
         id: `eat:${c.id}:${name}`,
@@ -160,10 +199,8 @@ export function viaChoices(nodes, places = [], opts = {}) {
         keys: c.keys,
         areas: c.areas,
         alt: c.alt,
-        // Where it is, for the line under the name — unless that is the same
-        // word. Paganella's Albi de Mez is a restaurant at a lift station of
-        // the same name, and "Albi de Mez — Albi de Mez" is not a subtitle.
-        at: name === c.name ? [] : [c.name],
+        // Where it is, for the line under the name.
+        at: [c.name],
       });
     }
   }

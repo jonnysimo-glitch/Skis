@@ -6325,10 +6325,25 @@ if (feature("49. Somewhere to swing by, and what it says when it cannot")) {
   check("and none of them is a junction the export named for itself",
     options.every((o) => !/junction$|^(Above|Below) |^Point \d/.test(o.t.split(" — ")[0])),
     options.filter((o) => /junction|^(Above|Below) /.test(o.t)).slice(0, 3).map((o) => o.t).join(", ") || "all real names");
-  // A name twice in a picker is a picker you cannot use. One lift is two
-  // stations under one name and either end answers it.
-  const names = options.map((o) => o.t.split(" — ")[0]);
-  check("no name appears twice", new Set(names).size === names.length,
+  /*
+   * A row twice in a picker is a picker you cannot use.
+   *
+   * Compared on the whole row rather than on the name before the dash, which
+   * is what this used to do and what made it wrong twice over. It missed a
+   * real duplicate — Monterosa's Belvedere is a rifugio at a lift station
+   * called Belvedere, and both were offered, same name, same node, same
+   * constraint — because it only ran on the first resort. And it would now
+   * fail on Latemar, where a restaurant called Latemar stands at Campanil and
+   * a different node is also called Latemar: two distinct places that share a
+   * name and are told apart by the station under them, which is the row a
+   * reader reads.
+   *
+   * The name-level rule that does hold — one lift is two stations under one
+   * name and either end answers it — is asserted across all four resorts in
+   * src/lib/via.test.js, where a loop over real data costs nothing.
+   */
+  const names = options.map((o) => o.t.replace(/\s+/g, " ").trim());
+  check("no row appears twice", new Set(names).size === names.length,
     names.filter((n, i) => names.indexOf(n) !== i).join(", ") || `${names.length} distinct`);
   check("somewhere to eat is named under the station it stands at",
     options.some((o) => o.t.includes(" — ")),

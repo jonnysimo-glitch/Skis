@@ -120,11 +120,27 @@ is("they come before the junctions, so the list opens on names",
   every.findIndex((c) => c.kind === "eat") < every.findIndex((c) => c.kind === "junction"));
 is("and in their own group", viaGroups(every)[0].area === "Somewhere to eat",
   viaGroups(every)[0].area);
-is("a place whose name is its station's does not say so twice",
-  viaChoices(
-    { s: { name: "Absam", lat: 46, lon: 11, alt: 1500 } },
-    [["Absam", "restaurant", 46, 11.0002, 1500]]
-  ).find((c) => c.kind === "eat")?.at.length === 0);
+/*
+ * A place whose name is its station's is one row, not two.
+ *
+ * This used to check that such an eat entry carried no subtitle, on the
+ * grounds that "Absam — Absam" is not a subtitle. True, and not enough: with
+ * the subtitle gone the two rows read identically — "Absam" under Somewhere
+ * to eat and "Absam" under the valley — and both put the same constraint on
+ * the same node. Monterosa shipped that as Belvedere and Crest.
+ *
+ * So the eat entry is not made at all. The station is that place: same name,
+ * same keys, and what it offers is said once.
+ */
+const sameName = viaChoices(
+  { s: { name: "Absam", lat: 46, lon: 11, alt: 1500 } },
+  [["Absam", "restaurant", 46, 11.0002, 1500]]
+);
+is("a place whose name is its station's is not offered twice",
+  sameName.length === 1 && sameName[0].kind === "junction",
+  sameName.map((c) => `${c.kind}:${c.name}`).join(", "));
+is("and the one row does not say the name twice", sameName[0].at.length === 0,
+  JSON.stringify(sameName[0].at));
 // A stop that has become the start goes, whichever shape it was stored in.
 is("excluding a station drops what is at it too",
   !viaChoices(NODES, PLACES, { exclude: ["jolanda1"] }).some((c) => c.kind === "eat"),
@@ -151,6 +167,75 @@ is("and a bare key nothing knows about comes back as itself",
 is("a place name with a colon in it comes back whole",
   viaLabel("eat:col:Bar 12:30", NODES) === "Bar 12:30",
   viaLabel("eat:col:Bar 12:30", NODES));
+
+/*
+ * ---- and the same rules against the real four ---------------------------
+ *
+ * The toy resort above has every shape that had caused trouble on a real one,
+ * which is the point of it and is also its limit: it cannot have a restaurant
+ * that shares its name with a lift station on the other side of the mountain,
+ * because nobody thought to put one there. Latemar has three.
+ *
+ * So the rules that are about the list rather than about a shape get asserted
+ * against the generated graphs too. This is where two faults were found that
+ * had been shipping: Monterosa offered "Belvedere" twice, once as the rifugio
+ * and once as the station it stands at, resolving to the same node either way;
+ * and eleven stations across the four resorts read "Belvedere — Belvedere",
+ * "Albi de Mez — Albi de Mez", "Passo Feudo — Passo Feudo", because `at` says
+ * what is at a station and a rifugio named after its own lift is not news.
+ *
+ * The feature suite only ever ran the picker on the first resort, which is how
+ * both got past it. A loop over four graphs in Node costs milliseconds.
+ */
+console.log("\nTHE REAL FOUR");
+const { RESORTS } = await import("../resorts/index.js");
+const { graphFor } = await import("../resorts/graphs.js");
+/** The row as the form draws it: name, then what is at it. See PlanScreen. */
+const rowOf = (c) => c.name + (c.at.length ? ` — ${c.at.slice(0, 2).join(", ")}` : "");
+for (const resort of RESORTS.filter((r) => r.available)) {
+  const m = graphFor(resort.id);
+  const choices = viaChoices(m.NODES, m.PLACES ?? [], {});
+  const rows = choices.map(rowOf);
+  const twiceOver = [...new Set(rows.filter((r, i) => rows.indexOf(r) !== i))];
+  is(`${resort.id}: no row is offered twice`, twiceOver.length === 0,
+    twiceOver.join(" | ") || `${rows.length} rows`);
+  // A station's own name is not one of the things at it.
+  const selfAt = choices.filter((c) => c.at.includes(c.name));
+  is(`${resort.id}: nothing says "X — X"`, selfAt.length === 0,
+    selfAt.map(rowOf).join(" | "));
+  /*
+   * Two entries under one name are allowed only when they are two places. A
+   * pair that shares a name AND the nodes it resolves to is one place offered
+   * twice, which is the Belvedere fault, and no subtitle can rescue it: both
+   * rows put the same constraint on the same solve.
+   */
+  const sameThing = [];
+  for (let i = 0; i < choices.length; i++) {
+    for (let j = i + 1; j < choices.length; j++) {
+      if (choices[i].name !== choices[j].name) continue;
+      if (choices[i].keys.join() !== choices[j].keys.join()) continue;
+      sameThing.push(`${choices[i].id} / ${choices[j].id}`);
+    }
+  }
+  is(`${resort.id}: no place is offered twice under one name`, sameThing.length === 0,
+    sameThing.join(" | "));
+  // Nobody swings by a junction the export named for itself.
+  const madeUp = choices.filter((c) => /junction$|^(Above|Below) |^Point \d/.test(c.name));
+  is(`${resort.id}: nothing the pipeline named for itself`, madeUp.length === 0,
+    madeUp.map((c) => c.name).slice(0, 3).join(", "));
+  // And every id still leads back to the nodes it came from.
+  const lost = choices.filter(
+    (c) => viaResolve(c.id, m.NODES).join() !== c.keys.join()
+  );
+  is(`${resort.id}: every id resolves to its own nodes`, lost.length === 0,
+    lost.map((c) => c.id).slice(0, 3).join(", "));
+  // The groups the form draws must account for every choice exactly once.
+  const grouped = viaGroups(choices).flatMap((g) => g.items);
+  is(`${resort.id}: the groups hold every choice once`,
+    grouped.length === choices.length &&
+      new Set(grouped.map((c) => c.id)).size === choices.length,
+    `${grouped.length} grouped of ${choices.length}`);
+}
 
 console.log("\nA RESORT WITH NOTHING TO OFFER");
 is("no places is not a crash", viaChoices(NODES).every((c) => c.at.length === 0 && c.kind === "junction"));
