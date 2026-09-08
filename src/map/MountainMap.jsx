@@ -1158,6 +1158,18 @@ export default function MountainMap({
     // The mountain's own nodes, so a test can pick whatever is under a finger
     // and follow it through a gesture.
     window.__skisNodes = propsRef.current.nodes ?? nodes;
+    /*
+     * Which way the leg you are on actually points.
+     *
+     * Course-up is the whole framing claim of the navigate screen, and it is
+     * the half of it a skier reads without thinking: forward is up the
+     * screen. There is no way to check that from outside — the aim comes off
+     * the camera prop and the bearing off the view — so the same function the
+     * recentre button uses is exposed rather than reimplemented, because a
+     * check against a second copy of the arithmetic would agree with itself
+     * and not with the map.
+     */
+    window.__skisCourseUp = () => courseUpRef.current?.() ?? null;
     return () => clearInterval(tick);
   }, []);
 
@@ -1195,6 +1207,10 @@ export default function MountainMap({
     if (!fx && !fz) return null;
     return (Math.atan2(fx, fz) * 180) / Math.PI;
   };
+  // Reassigned every render, for the reason given above the block: the
+  // maptest effect runs once and must not hold last week's closure.
+  const courseUpRef = useRef(null);
+  courseUpRef.current = courseUp;
 
   /**
    * The recentre button: back to the framing this screen means, bearing and

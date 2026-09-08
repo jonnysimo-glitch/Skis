@@ -6326,6 +6326,138 @@ if (feature("49. Somewhere to swing by, and what it says when it cannot")) {
   await two.context_.close();
 }
 
+// ============== 50. THE LEAN THE GROUND ALLOWS, AND THE WAY BACK ==
+/*
+ * Navigation must never put the camera inside the hill, and there must be a
+ * way back from whatever you have done to the view.
+ *
+ * Reported as the Google-Maps-style close-up "getting inside the mountain",
+ * and it was arithmetic rather than luck: pitch is measured from straight
+ * down, so at the immersive 72 the sight line is eighteen degrees above the
+ * horizontal, and the height field is exaggerated 2.4x. A real slope of about
+ * seven and a half degrees already rises faster than that line. Every alpine
+ * slope is steeper. Riding up anything, the hillside filled the frame and the
+ * route was behind it.
+ *
+ * Two things are checked, because a cap alone is not enough. The lean has to
+ * come off where the ground rises, AND the recentre button has to be a real
+ * way out — a skier who has dragged the view somewhere useless while gloved
+ * needs one tap that gives them the screen back, not a trip through the form.
+ */
+if (feature("50. The lean the ground allows, and the way back")) {
+  const page = await newPage(browser, { at: [9, 30], touch: true });
+  await toPlan(page, `${url}?maptest=1`);
+  await solve(page);
+  await openRoute(page);
+  await page.waitForSelector(".sheet__foot .btn");
+  await page.click("text=/Save and start|Save offline and start|^Start$/");
+  await page.waitForSelector(".nav", { timeout: 15000 });
+  await atRest(page);
+
+  const view = () => page.evaluate(() => ({ ...window.__skisView }));
+
+  /*
+   * The cap, walked over the whole day.
+   *
+   * One leg proves nothing — the interesting legs are the lifts, and which
+   * legs are lifts depends on the route. So this rides the day and records the
+   * lean at every junction, then asks two questions of the set: that the lean
+   * never exceeds what the ground ahead allows, and that it is not simply
+   * pinned flat everywhere, which would be a cap that had eaten the feature
+   * it was protecting.
+   */
+  const leans = [];
+  const caps = [];
+  for (let i = 0; i < 14; i++) {
+    await atRest(page);
+    const v = await view();
+    leans.push(v.pitch);
+    caps.push(Number.isFinite(v.pitchCap) ? v.pitchCap : null);
+    const moved = await reachNext(page).then(() => true).catch(() => false);
+    if (!moved) break;
+  }
+  check("the day was ridden", leans.length >= 6, `${leans.length} legs`);
+  /*
+   * A degree of slack. The cap is eased into and settles inside
+   * PITCH_SETTLE, and the value read here is whatever the last solved frame
+   * left, so an exact <= is a race rather than a fault.
+   */
+  const over = leans
+    .map((p, i) => (caps[i] !== null && p > caps[i] + 1 ? `${Math.round(p)}>${Math.round(caps[i])}` : null))
+    .filter(Boolean);
+  check("the lean never goes past what the ground ahead allows",
+    over.length === 0, over.join(", "));
+  // Not flattened into a plan view either: the point of this screen is the
+  // close-up lean, and the floor is 38.
+  const worst = Math.min(...leans);
+  const best = Math.max(...leans);
+  check("and it is still a leaning camera, not a plan view", worst >= 30,
+    `${Math.round(worst)} to ${Math.round(best)} degrees`);
+  check("and the lean varies with the ground rather than sitting on one value",
+    best - worst > 1, `${Math.round(worst)} to ${Math.round(best)}`);
+
+  /*
+   * The way back.
+   *
+   * Wreck the view deliberately — drag it a long way off, zoom right in, pull
+   * the lean over — and then press the one button that is meant to fix it.
+   */
+  const hand = await fingers(page);
+  await hand.down([[215, 300]]);
+  for (let i = 1; i <= 12; i++) {
+    await hand.move([[215 + i * 12, 300 + i * 34]]);
+    await page.waitForTimeout(18);
+  }
+  await hand.release();
+  await openTools(page);
+  for (let i = 0; i < 4; i++) await page.click('.maptools .iconbtn[aria-label="Zoom in"]');
+  await atRest(page);
+  const wrecked = await view();
+  check("the view can be pushed somewhere useless",
+    Math.hypot(wrecked.panX, wrecked.panY) > 60 || wrecked.zoom > 1.6,
+    `zoom ${wrecked.zoom.toFixed(2)}, pan ${Math.round(wrecked.panX)},${Math.round(wrecked.panY)}`);
+
+  await openTools(page);
+  await page.click('.maptools .iconbtn[aria-label="Recentre the view"]');
+  await atRest(page);
+  const fixed = await view();
+  check("and one tap of recentre puts the pan back", Math.hypot(fixed.panX, fixed.panY) < 12,
+    `pan ${Math.round(fixed.panX)},${Math.round(fixed.panY)}`);
+  check("and the zoom back to the follow framing", Math.abs(fixed.zoom - 1) < 0.12,
+    fixed.zoom.toFixed(2));
+  /*
+   * And the lean back to the follow lean — which is the capped one, not a
+   * blind 72. Recentre asks for 72 and the ceiling takes it back down on the
+   * next solved frame, so what this asserts is that it lands somewhere usable
+   * and inside the cap, not on a fixed number.
+   */
+  check("and the lean back to what this screen means",
+    fixed.pitch >= 30 && (!Number.isFinite(fixed.pitchCap) || fixed.pitch <= fixed.pitchCap + 1),
+    `pitch ${Math.round(fixed.pitch)}, cap ${Number.isFinite(fixed.pitchCap) ? Math.round(fixed.pitchCap) : "none"}`);
+  // Course-up is the other half of the framing, and it is the half a skier
+  // reads without thinking: forward must be up the screen.
+  const course = await page.evaluate(() => window.__skisCourseUp?.() ?? null);
+  check("and the map is pointing where you are going",
+    course === null || Math.abs(((fixed.bearing - course + 540) % 360) - 180) < 4,
+    course === null ? "no course" : `bearing ${Math.round(fixed.bearing)} vs course ${Math.round(course)}`);
+
+  /*
+   * The route is drawn after all of that.
+   *
+   * The failure this guards is subtler than a bad angle: a camera solve that
+   * has been pushed and reset can land somewhere the route projects off
+   * screen, and a navigation screen with no route on it is useless however
+   * good the terrain looks.
+   */
+  const drawn = await page.evaluate(() =>
+    (window.__skisRouteDrawn ?? []).reduce((n, l) => n + l.pts, 0));
+  check("and the route is on the screen", drawn > 200, `${drawn} points drawn`);
+
+  check("no page errors", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+}
+
+
 } catch (err) {
   /*
    * A check that throws is a failing check, not a run that produced nothing.
