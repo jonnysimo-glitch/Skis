@@ -816,6 +816,28 @@ const NAV_PAN = 1.5;
  * running away up the screen the way it does out of your own goggles.
  */
 const NAV_PITCH = 72;
+/**
+ * How far ahead the lean looks before it decides, and by how much it clears.
+ *
+ * Four hundred metres is about the frame: NAV_ACROSS is 480, so this is the
+ * ground actually in shot rather than the next valley. Twenty-metre steps
+ * because the height field is sampled from a 160x160 grid over tens of
+ * kilometres — finer than about a hundred metres is interpolation rather than
+ * data, and the running maximum below does not care about the fine structure.
+ *
+ * Six degrees of margin so the ridge in front sits a little below the sight
+ * line rather than exactly on it, and a floor of 38 so a genuinely vertical
+ * face gives a steep look-down rather than a plan view: at 0 the map stops
+ * reading as a mountain at all, which is a worse answer than a hard climb.
+ */
+const NAV_CLEAR_AHEAD_M = 400;
+const NAV_CLEAR_STEP_M = 20;
+const NAV_CLEAR_MARGIN = 6;
+const NAV_PITCH_FLOOR = 38;
+/** Degrees within which the lean stops easing and simply arrives. */
+const PITCH_SETTLE = 0.15;
+/** And how far the ground's answer has to move before the lean follows it. */
+const PITCH_HYSTERESIS = 2;
 
 /** How far past the frame the subject may be pushed, as a share of the frame. */
 /**
@@ -1535,6 +1557,43 @@ export default function MountainMap({
      * Returns null when this is not the navigation screen, and the caller
      * falls through to the framing camera.
      */
+    /**
+     * The most lean the ground in front of you will take.
+     *
+     * Walks forward along the bearing in short steps and asks the height
+     * field how much it has risen. What matters is the steepest rise from
+     * where you stand to anywhere ahead — not the local gradient, because a
+     * dip followed by a wall is still a wall — so it is the running maximum of
+     * (rise / distance) that sets the answer.
+     *
+     * Returns Infinity when nothing ahead is higher than you, which is most
+     * of a ski day and is why the lean is not usually touched at all.
+     */
+    const pitchCeiling = (v, at) => {
+      if (!field) return Infinity;
+      const b = ((v.bearing ?? 0) * Math.PI) / 180;
+      // Forward, in field coordinates. The bearing rotation in toUnit is
+      // rx = px·cos b − pz·sin b, rz = px·sin b + pz·cos b, and the direction
+      // the camera looks along is +rz, so forward is (sin b, cos b).
+      const fx = Math.sin(b);
+      const fz = Math.cos(b);
+      const y0 = field.sample(at.x, at.z);
+      if (!Number.isFinite(y0)) return Infinity;
+      let worst = 0;
+      // Out to NAV_LOOK_AHEAD_M, which is a few frames of skiing rather than
+      // the whole valley: a peak five kilometres off is scenery, and capping
+      // the lean for it would flatten the view for no gain.
+      for (let d = NAV_CLEAR_STEP_M; d <= NAV_CLEAR_AHEAD_M; d += NAV_CLEAR_STEP_M) {
+        const y = field.sample(at.x + fx * d, at.z + fz * d);
+        if (!Number.isFinite(y)) continue;
+        const rise = (y - y0) / d;
+        if (rise > worst) worst = rise;
+      }
+      if (worst <= 0) return Infinity;
+      const above = (Math.atan(worst * VERT_EXAGGERATION) * 180) / Math.PI;
+      return Math.max(NAV_PITCH_FLOOR, 90 - above - NAV_CLEAR_MARGIN);
+    };
+
     const navWindow = (v) => {
       if (!isFollowing(propsRef.current)) return null;
       const cam = propsRef.current.camera;
@@ -1542,6 +1601,64 @@ export default function MountainMap({
       const here = field.proj.project(cam.center[1], cam.center[0]);
       const p = unit(here.x, field.sample(here.x, here.z), here.z, v);
       if (!Number.isFinite(p.u) || !Number.isFinite(p.v)) return null;
+
+      /*
+       * Do not lean further over than the ground ahead allows.
+       *
+       * Reported as the view getting inside the mountain, and it is worse than
+       * a rare glitch: at NAV_PITCH the camera looks down at eighteen degrees
+       * from the horizontal, and the height field is exaggerated 2.4x, so a
+       * real slope of about seven and a half degrees already rises faster than
+       * the line of sight. Every alpine slope is steeper than that. Riding up
+       * anything, the hillside in front fills the frame and the route you are
+       * following is behind it.
+       *
+       * Pitch here is measured from straight down, so the angle above the
+       * ground is 90 - pitch, and the terrain ahead subtends
+       * atan(rise * EXAGGERATION). Sample forward along the bearing, take the
+       * steepest sustained rise, and cap the lean so the sight line stays
+       * above it with a few degrees to spare. Skiing downhill nothing rises,
+       * no cap applies, and the immersive 72 stands.
+       *
+       * Eased rather than clamped, because the cap moves with the ground: a
+       * hard set would jerk the horizon every time a roll passed under you.
+       */
+      /*
+       * Eased, and then SETTLED.
+       *
+       * An asymptotic approach never arrives, and this runs inside the camera
+       * solve — which runs every frame. Left to converge on its own it would
+       * mark the view dirty forever: a redraw loop that never goes quiet,
+       * which is a flat battery on a chairlift and, because the label fades
+       * advance on drawn frames, names that never stop moving. So the last
+       * fraction of a degree is taken in one step and the easing stops.
+       */
+      /*
+       * And it only moves when the ground has actually changed its mind.
+       *
+       * The cap is a function of the terrain in front of `cam.center`, and
+       * following a GPS fix that centre moves every second or two — so a cap
+       * recomputed and applied every frame would nudge the pitch
+       * continuously, which reprojects every label, which changes what
+       * collides with what. That is a name blinking on a screen somebody is
+       * skiing past, and no amount of fade smoothing hides a projection that
+       * will not sit still.
+       *
+       * So the applied cap is held until the computed one has moved by more
+       * than PITCH_HYSTERESIS. Two degrees is under the margin the ceiling
+       * already leaves, so holding never puts the sight line into the hill.
+       */
+      const cap = pitchCeiling(v, here);
+      if (Number.isFinite(cap)) {
+        const held = v.pitchCap;
+        if (!Number.isFinite(held) || Math.abs(cap - held) > PITCH_HYSTERESIS) v.pitchCap = cap;
+      } else {
+        v.pitchCap = Infinity;
+      }
+      if (Number.isFinite(v.pitchCap) && v.pitch > v.pitchCap) {
+        const gap = v.pitchCap - v.pitch;
+        v.pitch = v.dragging || Math.abs(gap) < PITCH_SETTLE ? v.pitchCap : v.pitch + gap * 0.18;
+      }
 
       const { padX, top, padTop, availW, availH } = band();
       const metresPerUnit = field.span * 1.45 + p.depth;
@@ -3047,33 +3164,37 @@ export default function MountainMap({
        * Counted on the STEP, not the leg index, so the sequence a reader sees
        * is 1, 5, 10, 15 and not 1, 6, 11, 16.
        */
-      const z = labelZoom(v);
-      const stride = z >= 3.2 ? 1 : z >= 2.2 ? 2 : z >= 1.4 ? 3 : 5;
-      const onStride = (leg) => (leg + 1) % stride === 0;
       /*
-       * Two things come out of the zoom, not one: how DENSE the numbers are
-       * and how FAR into the day they reach.
+       * Every stop close in, every fifth far out, and nothing else deciding.
        *
-       * Stride alone was not enough. Placed at the navigation framing the
-       * stride is 2, meaning "show nearly everything" — and what that showed
-       * was step 82, because at four hundred and eighty metres across the only
-       * legs whose geometry crosses the view are whichever ones happen to pass
-       * nearby, and a Kronplatz day comes back through its own base a dozen
-       * times. A lone 82 under a header reading "1 of 62" is worse than no
-       * number at all.
+       * The stride is the whole rule now. It had a companion — a reach, in
+       * legs of the day — and that reach was the thing that made a reader
+       * count two numbers on a screen and stop: at the placed navigation
+       * framing it allowed six legs ahead while the stride skipped every
+       * other one, and only one or two legs of a day fit in four hundred and
+       * eighty metres of ground anyway. So what arrived was 1 and 2, on a
+       * day of sixty-two.
        *
-       * Zoomed in you are asking "what is next", so the reach is a few legs
-       * and the stride is fine. Pulled back you are asking "where does this
-       * day go", so the reach is the whole thing and the stride does the
-       * thinning. Nothing behind you is numbered while navigating: you know
-       * where you have been, and the one leg back is kept only so the
-       * sequence has a tail to read against.
+       * Geometry is the honest limit here and it is already applied further
+       * down: a number is drawn only where its leg is actually on the screen
+       * and there is room for it. Zoomed right in that is the leg under your
+       * skis and the next; pulled back it is the whole mountain, and the
+       * stride thins it to a sequence you can read — 1, 5, 10, 15, which is
+       * what says which way round the day runs.
+       *
+       * Thresholds set so the framing navigation PLACES you at shows every
+       * stop. That is the view a skier spends the day in, and "some of the
+       * stops" is not a thing anybody asked for.
        */
+      const z = labelZoom(v);
+      const stride = z >= 2.0 ? 1 : z >= 1.4 ? 2 : z >= 0.8 ? 3 : 5;
+      const onStride = (leg) => (leg + 1) % stride === 0;
       const inWindow = (leg) => {
         if (!flat) return leg === 0 || onStride(leg);
-        if (leg >= done - 1 && leg <= ahead) return true;
-        const reach = z >= 2.2 ? 6 : z >= 1.4 ? 20 : Infinity;
-        return leg > done && leg <= done + reach && onStride(leg);
+        // Yours and the next, whatever the stride says. Behind you is not
+        // numbered: you know where you have been.
+        if (leg >= done && leg <= ahead) return true;
+        return leg > done && onStride(leg);
       };
 
       /*
@@ -4203,8 +4324,35 @@ export default function MountainMap({
            * thing and filled last, so the casing reads as a rim rather than
            * as a seam across the middle.
            */
-          const SPREAD = 1.05;
-          const TIP = r * 2.6;
+          /*
+           * A disc with a small point on it, not a teardrop.
+           *
+           * The first version ran the tip out to 2.6 radii on a wide base and
+           * came out as a raindrop — reported as wanting "a little arrow
+           * coming out" instead. A narrower base and a shorter point leave
+           * the disc reading as the disc, with just enough in front of it to
+           * say which way you are facing.
+           */
+          /*
+           * A circle with a small tip on it. Not a teardrop.
+           *
+           * Two goes at this. Running the point out to 2.6 radii on a wide
+           * base made a raindrop; shortening it alone did not help, because
+           * what makes a teardrop is the WIDE base tapering — the tangents
+           * leave the disc so far apart that the whole silhouette becomes one
+           * smooth drop. A narrow base is what reads as an arrowhead: the
+           * disc stays a disc and there is a little point in front of it.
+           *
+           * Sixteen degrees of base either side of the heading, out to twice
+           * the radius: the disc stays plainly a disc and there is a small
+           * spike in front of it. Rendered side by side at three and a half
+           * times life size, this is the first of five tries that stops
+           * reading as a drop. The casing drops to 2.5 with it, because three
+           * pixels of white on a wedge this narrow closes the accent up and
+           * leaves a white spike.
+           */
+          const SPREAD = 0.28;
+          const TIP = r * 2.02;
           const puck = () => {
             ctx.beginPath();
             ctx.arc(s.x, s.y, r, ang + SPREAD, ang - SPREAD + Math.PI * 2);
@@ -4219,7 +4367,7 @@ export default function MountainMap({
           ctx.strokeStyle = "rgba(11,26,36,0.20)";
           ctx.stroke();
           puck();
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 2.5;
           ctx.strokeStyle = "#ffffff";
           ctx.stroke();
           puck();

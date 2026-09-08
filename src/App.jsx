@@ -557,8 +557,27 @@ export default function App() {
     framedFor.current = chosen.id;
     mapControl.current?.resetView();
   }, [chosen, screen]);
+  /*
+   * The mountain is the mountain again once you leave a day behind.
+   *
+   * `chosen` is `routes[pickIndex]`, and going back to the map did not clear
+   * `routes` — so the explore screen went on drawing the last day: its line,
+   * its numbered steps, and every other piste dimmed behind it. Reported as
+   * "it should reset when you go back to the main map, it should not have the
+   * same stuff."
+   *
+   * Derived here rather than cleared in each of the four transitions that
+   * reach explore, because a fifth will be added one day and this cannot be
+   * forgotten. It also gives the labels their room back: fifteen step discs
+   * claim fifteen boxes the place names were trying to use, which is a
+   * quieter version of the same bug.
+   */
   const shownRoute =
-    screen === "choose" ? routes[previewIndex] || routes[0] || null : chosen;
+    screen === "explore"
+      ? null
+      : screen === "choose"
+        ? routes[previewIndex] || routes[0] || null
+        : chosen;
 
   const routeGeo = useMemo(() => routeToGeoJSON(shownRoute), [shownRoute]);
 
@@ -1492,7 +1511,13 @@ export default function App() {
             opts={opts}
             plan={plan}
             onAgain={() => {
+              // A new day, not a re-run of the last one: the options, the
+              // refinements and the day that was skied all go. The plan
+              // itself stays, because retyping where you are and when you
+              // need to be down is not what "plan another day" means.
               setRefine(new Set());
+              setRoutes([]);
+              setStep(0);
               setScreen("explore");
             }}
             onDone={() => setTab("stats")}
@@ -1525,7 +1550,13 @@ export default function App() {
         tab={tab}
         onChange={(next) => {
           setTab(next);
-          if (next === "skiing" && screen === "summary") setScreen("explore");
+          if (next === "skiing" && screen === "summary") {
+            // Same as Plan another day: a finished day is not still on.
+            setRefine(new Set());
+            setRoutes([]);
+            setStep(0);
+            setScreen("explore");
+          }
         }}
         hidden={!tabBarShown}
       />

@@ -429,7 +429,17 @@ const PEOPLE = [
     async run(page, url, index, resort) {
       await arrive(page, url, index);
       let last = null;
-      for (let i = 0; i < 4; i++) last = (await swingBy(page)) ?? last;
+      /*
+       * Four taps, and the fourth has to be refused. `selectOption` on a
+       * disabled select waits for it to become enabled and then times out
+       * after thirty seconds, which is the check passing and the harness
+       * failing — so the loop asks whether the picker is still open first.
+       */
+      for (let i = 0; i < 4; i++) {
+        const shut = await page.$eval("#p-via", (n) => n.disabled).catch(() => false);
+        if (shut) break;
+        last = (await swingBy(page)) ?? last;
+      }
       const chips = (await page.$$(".viachip")).length;
       // Three is the cap, and the fourth tap must be refused visibly rather
       // than silently dropped: a select that swallows a choice reads as broken.
@@ -469,7 +479,15 @@ const PEOPLE = [
     at: [10, 0],
     async run(page, url, index, resort) {
       await arrive(page, url, index);
-      const pick = await swingBy(page);
+      /*
+       * A junction, not a place to eat.
+       *
+       * The point of this journey is setting the START to the stop she picked,
+       * and the start picker offers node keys. An `eat:` id is not one — it
+       * resolves to one — so asking for it there is asking the wrong question.
+       */
+      const pick = await swingBy(page, { key: await page.$eval("#p-via", (n) =>
+        [...n.querySelectorAll("option")].map((o) => o.value).find((v) => v && !v.startsWith("eat:")) ?? "") });
       if (!pick) { check(`${resort.id}: ${this.who} has somewhere to swing by`, false, "nothing offered"); return; }
       /*
        * Then she sets the start TO that place.
@@ -576,11 +594,19 @@ const PEOPLE = [
       (await page.$$(".hero"))[index].click();
       await page.click("text=Go skiing");
       await page.waitForSelector(".planbtn", { timeout: 20000 });
-      // In close, which is where the car parks and the huts are.
+      /*
+       * In close, which is where the car parks and the huts are — and the
+       * tools have to be opened first or the zoom button is not rendered at
+       * all. Without that this broke out of the loop on the first pass, read
+       * the place tier at the opening framing where it is deliberately empty,
+       * and reported "0 markers" as though the pins had gone.
+       */
+      await openTools(page);
       for (let i = 0; i < 8; i++) {
         const zoom = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
         if (!zoom) break;
         await zoom.click();
+        await page.waitForTimeout(220);
       }
       await atRest(page, { quiet: 600, limit: 16000 });
       const marks = await page.evaluate(() =>
@@ -877,29 +903,48 @@ const PEOPLE = [
        * ring is continuous from the disc out to the tip.
        */
       if (here && Number.isFinite(here.x)) {
-        const solid = await page.evaluate(({ at }) => {
+        /*
+         * Along the heading, not around a ring.
+         *
+         * The point is a narrow nub now — a few pixels wide where it leaves
+         * the disc — so walking a circle at four degree steps can step
+         * straight over it. Looking down the direction of travel asks the
+         * question the shape is actually for, and looking sideways at the
+         * same radius proves it is a nub rather than a bigger disc.
+         */
+        const aim = await page.evaluate(() => {
+          const l = window.__skisNavLeg;
+          if (!l || !window.__skisProject) return null;
+          const a = l.at ?? l.coords?.[0];
+          const b = l.coords?.[Math.min(3, (l.coords?.length ?? 1) - 1)];
+          if (!a || !b) return null;
+          const pa = window.__skisProject(a[0], a[1]);
+          const pb = window.__skisProject(b[0], b[1]);
+          if (!pa || !pb) return null;
+          return Math.atan2(pb.y - pa.y, pb.x - pa.x);
+        });
+        const solid = aim === null ? null : await page.evaluate(({ at, ang }) => {
           const c = document.querySelector("canvas[aria-label*='Terrain view']");
           if (!c) return null;
           const dpr = c.width / c.getBoundingClientRect().width;
           const ctx = c.getContext("2d");
-          const hit = (r) => {
-            for (let a = 0; a < 360; a += 4) {
-              const x = Math.round((at.x + Math.cos((a * Math.PI) / 180) * r) * dpr);
-              const y = Math.round((at.y + Math.sin((a * Math.PI) / 180) * r) * dpr);
-              if (x < 0 || y < 0 || x >= c.width || y >= c.height) continue;
-              const d = ctx.getImageData(x, y, 1, 1).data;
-              if (Math.abs(d[0]) < 30 && Math.abs(d[1] - 0x77) < 30 && Math.abs(d[2] - 0xa3) < 30) return true;
-            }
-            return false;
+          const accentAt = (r, a) => {
+            const x = Math.round((at.x + Math.cos(a) * r) * dpr);
+            const y = Math.round((at.y + Math.sin(a) * r) * dpr);
+            if (x < 0 || y < 0 || x >= c.width || y >= c.height) return false;
+            const d = ctx.getImageData(x, y, 1, 1).data;
+            return Math.abs(d[0]) < 30 && Math.abs(d[1] - 0x77) < 30 && Math.abs(d[2] - 0xa3) < 30;
           };
-          // Just outside the disc (r=9) and again further out along the point.
-          return { justOut: hit(11), further: hit(15) };
-        }, { at: here });
+          const ahead = [11, 13, 15, 17].filter((r) => accentAt(r, ang)).length;
+          // Ninety degrees off the heading, at the same radius: outside the disc.
+          const beside = [11, 13].filter((r) => accentAt(r, ang + Math.PI / 2)).length;
+          return { ahead, beside };
+        }, { at: here, ang: aim });
         if (solid) {
-          check(`${resort.id}: ${this.who} sees one shape, joined at the disc`,
-            solid.justOut === true, JSON.stringify(solid));
-          check(`${resort.id}: ${this.who} and it comes to a point`,
-            solid.further === true, JSON.stringify(solid));
+          check(`${resort.id}: ${this.who} has a point in front of her`,
+            solid.ahead >= 2, JSON.stringify(solid));
+          check(`${resort.id}: ${this.who} and it is a point, not a bigger circle`,
+            solid.beside === 0, JSON.stringify(solid));
         }
       }
       await screen(page, this.who, "navigating");
