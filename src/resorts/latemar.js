@@ -4,7 +4,7 @@
  * GENERATED. Do not edit by hand: run `npm run resort -- latemar` instead.
  *
  * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:32:51.602Z
- * Places:    OpenStreetMap
+ * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
  *
@@ -307,6 +307,7 @@ export const PLACES = [
   ["Rifugio Monte Agnello", "hut", 46.33367, 11.54779, 2165],
   ["Ski Bar", "cafe", 46.34154, 11.54098, 1773],
   ["Sport Alm Ristorante & Bistrò", "restaurant", 46.38421, 11.52648, 1555],
+  ["Sport Ventura Pampeago", "rental", 46.34238, 11.54086, 1777, {"src":"manual"}],
   ["Stalimen parking", "parking", 46.32652, 11.60001, 1048, {"fee":"no"}],
   ["Weigler Schupf", "restaurant", 46.35819, 11.54071, 1949],
   ["Zischgalm", "restaurant", 46.34972, 11.54802, 1996],
@@ -320,7 +321,7 @@ export const PLACES = [
  * reading "412 spaces" should be able to find out who counted, whether or not
  * that source's licence obliges it.
  */
-export const PLACE_SOURCES = ["OpenStreetMap"];
+export const PLACE_SOURCES = ["OpenStreetMap","a few checked by hand"];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 

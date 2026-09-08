@@ -47,5 +47,15 @@
   "cameraWhy": "Set by eye to open looking up the Gressoney valley. The derivation from lowest base to high point gives -53, which looks up from Alagna instead.",
   "toleranceWhy": "Re-measured against the widened export, after the prune learned that a gondola can be ridden down. 75 keeps all three valleys — Alagna, Stafal and Champoluc — with 21 lifts and 62.3 km. 60 loses Alagna entirely along with three lifts and six kilometres.",
   "publishedSource": "NOT RECORDED. The figures the app used before this resort had OSM data came from src/resort.js, which was hand-typed from memory and is not a source. Needs the resort's own published network figures or its PDF piste map.",
-  "bboxWhy": "Widened all round. Champoluc sat close to the west edge and Alagna to the east, and Gressoney-Saint-Jean was outside the south edge entirely; Alagna's own village node did not survive the connectivity prune."
+  "bboxWhy": "Widened all round. Champoluc sat close to the west edge and Alagna to the east, and Gressoney-Saint-Jean was outside the south edge entirely; Alagna's own village node did not survive the connectivity prune.",
+  "extraPlaces": [
+    {
+      "name": "Ermanno Sport",
+      "kind": "rental",
+      "lat": 45.85787,
+      "lon": 7.812,
+      "note": "Località Staffal 15, 11020 Gressoney-La-Trinité. ermannosport.it and monterosaskirental.it, read 8 Sep 2026; its own directions put it beside the Monterosa Ski ticket office, two flights of stairs from the cable car — that is, inside the station. The coordinate is OpenStreetMap's Stafal station node (391337577). OSM's address node for Località Staffal 15b, the Wunderbar next door, is 51 m from it, which is the same building: two readings that agree."
+    }
+  ],
+  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. Stafal was the one base of the three with no ski hire on the map at all — Champoluc has La Glisse 52 m from the gondola and Alagna has La marmotta rossa down the valley, and Gressoney had nothing, which is the busiest of the three lift bases. The note says where the address was read and what the coordinate actually is, because no geocoder is reachable from the build. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs."
 }

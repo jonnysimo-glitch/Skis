@@ -410,13 +410,31 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
    * are in the records: `source` says who supplied a whole place and `from`
    * says who supplied a single field of one.
    */
+  /*
+   * A phrase rather than a name for the manual source, because the two places
+   * this ends up read as sentences: "Pistes, lifts and places from
+   * OpenStreetMap and a few checked by hand" in the resort guide, and "Resort
+   * data — OpenStreetMap, a few checked by hand" in Settings. "manual" is a
+   * variable name and "Checked by hand" starts a clause mid-sentence; neither
+   * is what a reader wants to be told.
+   */
   const CREDIT = {
     osm: "OpenStreetMap",
     opendatahub: "Open Data Hub South Tyrol",
+    manual: "a few checked by hand",
   };
   const contributors = [...new Set(
     kept.flatMap((place) => [place.source ?? "osm", ...Object.values(place.from ?? {})])
-  )].sort().map((key) => CREDIT[key] ?? key);
+  )]
+    /*
+     * OpenStreetMap leads, then the rest alphabetically. A plain sort is on
+     * the keys, and "manual" sorts before "osm", so the credit line came out
+     * as "a few checked by hand and OpenStreetMap" — which inverts what the
+     * data is. OSM is the base every resort is built from and the only source
+     * whose licence requires the credit at all.
+     */
+    .sort((a, b) => (a === "osm" ? -1 : b === "osm" ? 1 : a.localeCompare(b)))
+    .map((key) => CREDIT[key] ?? key);
 
   return `/**
  * ${meta.name} — resort graph.

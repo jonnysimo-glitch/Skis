@@ -66,6 +66,28 @@
     "Kronplatz I": "Bruneck / Brunico"
   },
   "baseNamesWhy": "The Kronplatz I cable car is the Bruneck base, and 'Kronplatz I' is what OSM and the sign at the bottom both call it. It is not what anyone says when they say where the car is: they say Bruneck, or Brunico. Both, because South Tyrol signs both and a skier may know either.",
-  "extraPlaces": [],
-  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. Empty on purpose: the one this exists for is Rent and Go in Brunico, a hire shop by the gondola that a broad sweep of the export does not contain, and nobody has yet supplied a coordinate for it that was checked rather than guessed. Shape: {\"name\": \"Rent and Go Brunico\", \"kind\": \"rental\", \"lat\": 46.7, \"lon\": 11.9, \"note\": \"where you checked it, e.g. the shop's own site, and when\"}. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs for why."
+  "extraPlaces": [
+    {
+      "name": "Rentasport Kronplatz",
+      "kind": "rental",
+      "lat": 46.77212,
+      "lon": 11.94209,
+      "note": "Seilbahnstraße 12/b — Via Funivia 12/b, 39031 Reischach / Riscone. rentasport.biz and rentandgo.it, read 8 Sep 2026; the shop's own page puts it inside the cable car station, 40 m from the Kronplatz 1-2 lift. No geocoder is reachable from this build, so the coordinate is OpenStreetMap's own Kronplatz I station node (320974326). OSM's address node for the same street number is the K1 restaurant, 51 m away, at the far end of the same building — two readings that agree."
+    },
+    {
+      "name": "Rentasport Kronplatz Ried-Percha",
+      "kind": "rental",
+      "lat": 46.79024,
+      "lon": 11.97811,
+      "note": "Via Stazione 2 / Bahnhofstraße 2, at the Ried valley station, 39030 Perca / Percha. rentasport.biz and rentandgo.it, read 8 Sep 2026. The coordinate is OpenStreetMap's Ried station node (1573070001), which is the valley station the address itself names; the export holds no address node for that street, so this is the station rather than the doorway — a hundred metres at the outside."
+    },
+    {
+      "name": "Rent and Go Olang",
+      "kind": "rental",
+      "lat": 46.74669,
+      "lon": 12.01065,
+      "note": "Gassl 21, 39030 Olang / Valdaora. sportrent.it and rentandgo.it, read 8 Sep 2026; its own page says a few steps from the cable car. The coordinate is OpenStreetMap's Olang I — Valdaora I station node (283553882), for the same reason as Ried: no address node for Gassl in the export, and no geocoder from the build."
+    }
+  ],
+  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. The export's own hire sweep — anything tagged ski, sport, rental or outdoor, or named rent-and-go, noleggio or verleih — finds six shops at Kronplatz and all six are at St Vigil or San Lorenzo, so Reischach, Olang and Percha, three of the four valleys people park in, had no ski hire on the map at all. These three are the Rent and Go and Rentasport shops at those bases, reported as a gap twice. Every note says where the address was read and what the coordinate actually is, because no geocoder is reachable from the build: a station node with the discrepancy stated is worth more than a street number placed by eye. Shape: {\"name\": \"Rent and Go Olang\", \"kind\": \"rental\", \"lat\": 46.74669, \"lon\": 12.01065, \"note\": \"where you checked it, and when\"}. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs for why."
 }

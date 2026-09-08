@@ -4,7 +4,7 @@
  * GENERATED. Do not edit by hand: run `npm run resort -- paganella` instead.
  *
  * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:33:51.865Z
- * Places:    OpenStreetMap
+ * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
  *
@@ -205,6 +205,7 @@ export const PLACES = [
   ["Malga di Fai", "restaurant", 46.15232, 11.04976, 1668],
   ["Malga Zambana", "restaurant", 46.15027, 11.02837, 1782],
   ["Pizzeria Romantica", "restaurant", 46.16312, 11.00291, 1030],
+  ["Rent and Go Andalo", "rental", 46.16357, 11.0056, 1033, {"src":"manual"}],
   ["Rifugio Dosso Larici", "hut", 46.15272, 11.04335, 1836],
   ["Rifugio Dosson", "restaurant", 46.1535, 11.01597, 1448],
   ["Rifugio La Roda", "hut", 46.14245, 11.03693, 2106],
@@ -222,7 +223,7 @@ export const PLACES = [
  * reading "412 spaces" should be able to find out who counted, whether or not
  * that source's licence obliges it.
  */
-export const PLACE_SOURCES = ["OpenStreetMap"];
+export const PLACE_SOURCES = ["OpenStreetMap","a few checked by hand"];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 

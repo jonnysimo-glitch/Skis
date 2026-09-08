@@ -4,7 +4,7 @@
  * GENERATED. Do not edit by hand: run `npm run resort -- monterosa` instead.
  *
  * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:33:20.851Z
- * Places:    OpenStreetMap
+ * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
  *
@@ -305,6 +305,7 @@ export const PLACES = [
   ["Dir und Don", "restaurant", 45.8532, 7.93757, 1181],
   ["Edelboden", "cafe", 45.83128, 7.8232, 1638],
   ["Edelweiss", "restaurant", 45.83258, 7.7422, 1967],
+  ["Ermanno Sport", "rental", 45.85787, 7.812, 1817, {"src":"manual"}],
   ["Fitz Roy", "restaurant", 45.85943, 7.81274, 1826],
   ["Genzianella", "restaurant", 45.85452, 7.93613, 1201],
   ["Kondor", "restaurant", 45.83667, 7.7309, 1578],
@@ -349,7 +350,7 @@ export const PLACES = [
  * reading "412 spaces" should be able to find out who counted, whether or not
  * that source's licence obliges it.
  */
-export const PLACE_SOURCES = ["OpenStreetMap"];
+export const PLACE_SOURCES = ["OpenStreetMap","a few checked by hand"];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 

@@ -4,7 +4,7 @@
  * GENERATED. Do not edit by hand: run `npm run resort -- kronplatz` instead.
  *
  * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:32:21.249Z
- * Places:    OpenStreetMap
+ * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
  *
@@ -372,6 +372,9 @@ export const PLACES = [
   ["Pâtisserie", "cafe", 46.69867, 11.93016, 1187],
   ["Pizzeria Dolasilla", "restaurant", 46.77105, 11.93893, 952],
   ["Prackenhütte - Rifugio Pracken", "restaurant", 46.75254, 11.98288, 1808],
+  ["Rent and Go Olang", "rental", 46.74669, 12.01065, 1166, {"src":"manual"}],
+  ["Rentasport Kronplatz", "rental", 46.77212, 11.94209, 954, {"src":"manual"}],
+  ["Rentasport Kronplatz Ried-Percha", "rental", 46.79024, 11.97811, 925, {"src":"manual"}],
   ["Riff'a Ski & Sky Restaurant", "restaurant", 46.70929, 11.94694, 1410],
   ["Rifugio CAI Plan de Corones - Kronplatzhütte CAI", "restaurant", 46.74065, 11.95727, 2230],
   ["Ritterkeller", "restaurant", 46.70595, 11.92903, 1236],
@@ -397,7 +400,7 @@ export const PLACES = [
  * reading "412 spaces" should be able to find out who counted, whether or not
  * that source's licence obliges it.
  */
-export const PLACE_SOURCES = ["OpenStreetMap"];
+export const PLACE_SOURCES = ["OpenStreetMap","a few checked by hand"];
 
 export const DIFFICULTY_RANK = { blue: 1, red: 2, black: 3 };
 

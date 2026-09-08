@@ -634,6 +634,33 @@ counted says **what**.
 |---|---|---|---|
 | OpenStreetMap, via Overpass | everywhere | position, outline, whatever tags exist | ODbL |
 | [Open Data Hub South Tyrol](https://opendatahub.com/) | Kronplatz, Latemar | capacity, whether it costs, and live occupancy for the SKIDATA sites | CC0 |
+| Checked by hand, from a resort config's `extraPlaces` | six shops across the four | a place OSM does not have at all | n/a — a name and a street address |
+
+The third one is not a feed, and ski hire is what it exists for. `shop=ski`
+gets tagged where a mapper happened to be standing, which for hire shops turns
+out to be badly uneven: all six of Kronplatz's are at St Vigil, so Reischach,
+Olang and Percha — three of the four valleys people park in — had none, and
+Paganella and Latemar had none at all. The resort guide's **Ski hire** section
+simply did not render for two resorts in four.
+
+So a resort config can list `extraPlaces`, and `scripts/sources/manual.mjs`
+refuses any entry without a `note` saying where it was checked, a kind from the
+five the map draws, and a coordinate on Earth — failing the whole resort rather
+than skipping the entry, because a hand-typed coordinate with no provenance is
+the one thing this must never ship. Six are in: the three Rent and Go /
+Rentasport shops at Kronplatz, Rent and Go Andalo, Sport Ventura at Pampeago
+and Ermanno Sport at Stafal. Each note records the street address it was read
+from and says plainly what the coordinate actually is — usually the lift
+station's, out of this graph, because no geocoder is reachable from the build
+and a station node with the discrepancy stated beats a street number placed by
+eye. Twice the address settled it: the shop at Reischach and the K1 restaurant
+share Seilbahnstraße 12, and Rent and Go Andalo is Via Rindole 3B where the
+cabinovia's valley station is Via Rindole 3.
+
+They carry a field saying they did not come off the map, so `check-places`
+knows not to look for them in the export, counts and names them instead, and
+asserts that whoever supplied them is credited in words rather than as a
+variable name.
 
 The merge is field by field, not record by record. Two records within 120 m of
 each other and of the same kind are the same place — a car park is not a point,

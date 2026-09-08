@@ -271,6 +271,31 @@ for (const meta of RESORTS.filter((r) => r.available)) {
       `${byHand.slice(0, 4).map((p) => `${p[0]} [${p[5].src}]`).join(", ")})`);
   }
 
+  /*
+   * And whoever supplied them is credited in words.
+   *
+   * `contributors` in emit.mjs maps each source id through a CREDIT table and
+   * falls back to the id itself when there is no entry, so a source added
+   * without a credit line does not fail the build — it quietly ships the
+   * variable name to the Settings screen and to the last line of the resort
+   * guide, where it reads as "places from OpenStreetMap and manual". That
+   * fallback is what this asserts against: no entry in PLACE_SOURCES may be
+   * one of the raw ids the places themselves carry.
+   */
+  const ids = new Set(byHand.map((p) => p[5].src));
+  const credits = mod.PLACE_SOURCES ?? [];
+  const bare = credits.filter((s) => ids.has(s));
+  note(bare.length === 0,
+    "the credits are in words, not source ids" +
+    (bare.length ? `: ${bare.join(", ")} needs a line in CREDIT` : ""));
+  note(byHand.length === 0 || credits.length > 1,
+    "a place added by hand is credited as well as OpenStreetMap" +
+    (byHand.length && credits.length <= 1 ? `: ${credits.join(", ")} alone` : ""));
+  // ODbL asks for the attribution wherever the data is shown, and both screens
+  // print this list in order, so OSM has to be the one that leads it.
+  note(credits[0] === "OpenStreetMap",
+    `OpenStreetMap leads the credits` + (credits[0] === "OpenStreetMap" ? "" : `: ${credits[0]} does`));
+
   const seen = new Set();
   const doubled = mod.PLACES.filter((p) => seen.has(p[0]) || !seen.add(p[0]));
   note(doubled.length === 0, `no place appears twice` + (doubled.length ? `: ${doubled.map((p) => p[0]).join(", ")}` : ""));

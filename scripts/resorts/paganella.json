@@ -44,5 +44,15 @@
     "bottom": 1028
   },
   "publishedSource": "Paganella Ski's own published network figures, as recorded in src/resorts/index.js before this resort had data.",
-  "bboxWhy": "Widened a little. This one already holds 14 of its 15 published lifts, so the margin is only to stop a piste running off an edge."
+  "bboxWhy": "Widened a little. This one already holds 14 of its 15 published lifts, so the margin is only to stop a piste running off an edge.",
+  "extraPlaces": [
+    {
+      "name": "Rent and Go Andalo",
+      "kind": "rental",
+      "lat": 46.16357,
+      "lon": 11.0056,
+      "note": "Via Rindole 3B, 38010 Andalo. rentandgoandalo.it and rentandgo.it, read 8 Sep 2026, which give the number and call it the cabinovia's valley station. Paganella's own ticket-office page puts the Andalo — Doss Pelà telecabina's bottom station at via Rindole 3, the same street number, so the shop is in that building. The coordinate is OpenStreetMap's Andalo station node (309505670). Worth recording that two rental aggregators call the lift a chairlift named Rindole - Doss Pelà, which is two lift names run together: the chair at Rindole is Rindole - Dos de Leva, 334 m away, and picking it would have put this shop at the wrong end of the village."
+    }
+  ],
+  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. The export's hire sweep finds no ski hire at Paganella at all — neither base had a single shop, at a resort whose village centre is full of them — so the guide simply had no Ski hire section. This is the one that could be placed to a street number rather than to a village. The note says where the address was read and what the coordinate actually is, because no geocoder is reachable from the build. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs."
 }

@@ -174,6 +174,18 @@ for (const resort of RESORTS.filter((r) => r.available)) {
     g.pistes.filter((p) => !p.described).length > g.pistes.length * 0.7,
     `${g.pistes.filter((p) => p.described).length} described by their ends of ${g.pistes.length}`);
   is(`${resort.id}: there is somewhere to eat`, g.eats.length > 0, `${g.eats.length}`);
+  /*
+   * And somewhere to hire skis, which used to be true of one resort in four.
+   *
+   * OSM tags hire shops where a mapper happened to be standing: all six of
+   * Kronplatz's were at St Vigil, so Reischach, Olang and Percha had none, and
+   * Paganella and Latemar had none at all — the section simply did not render
+   * for two of the four. They are in the resort configs' extraPlaces now, so
+   * this holds the floor rather than describing it: a rebuild that loses them
+   * fails here.
+   */
+  is(`${resort.id}: and somewhere to hire skis`, g.services.rental.length > 0,
+    `${g.services.rental.length}`);
   is(`${resort.id}: the highlights are all real`,
     g.highlights.length >= 3 && g.highlights.every((f) => !/NaN|undefined|Infinity/.test(`${f.v} ${f.note}`)),
     g.highlights.map((f) => `${f.k}=${f.v}`).join(", "));
