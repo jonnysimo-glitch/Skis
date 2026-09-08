@@ -1947,6 +1947,21 @@ if (feature("33. The sun casts shadows")) {
 // resort, and the ones a plan turns on — come first, and the ski hire at the
 // bases arrives when you zoom into a base, which is when you want it.
 if (feature("32. The places arrive as you get closer")) {
+  /*
+   * `atRest`, never a wall-clock wait, before reading anything off the canvas.
+   *
+   * The fades advance on DRAWN FRAMES: the renderer repaints only when
+   * something moved, and `__skisFadeClock` is the sum of the deltas it has
+   * actually applied. So a fixed 1800ms buys however many frames the machine
+   * felt like giving, and under load — a second suite running, a rebuild —
+   * it buys fewer. That is how "the mountain huts are still on it — 0 against
+   * 0 before" and "the restaurants are on the map — 0 drawn" got reported
+   * against a build where both were fine: the sample landed before the first
+   * fade had finished, on a machine that was busy.
+   *
+   * atRest waits for that clock to stop moving, so it is as long as it needs
+   * to be and no longer.
+   */
   const page = await newPage(browser, { at: [9, 30] });
   await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".hero", { timeout: 20000 });
@@ -1955,7 +1970,7 @@ if (feature("32. The places arrive as you get closer")) {
   await heroes[1].click();
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(1800);
+  await atRest(page);
 
   const SEL = "canvas[aria-label*='Terrain view']";
   const places = () => page.evaluate(() => window.__skisPlaces ?? []);
@@ -2459,7 +2474,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   await page.click(".hero");
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(1800);
+  await atRest(page);
 
   // Explicitly, rather than relying on what the app opens on. Whether there is
   // a key decides that, and there is one in the build these checks run
@@ -3710,7 +3725,7 @@ if (feature("28. The runs have their names on them")) {
   await page.click(".hero");
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(1800);
+  await atRest(page);
 
   const names = () => page.evaluate(() => window.__skisRunNames ?? []);
   const far = await names();
@@ -3817,7 +3832,7 @@ if (feature("26. Somewhere to eat")) {
   await page.click(".hero");
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
-  await page.waitForTimeout(2200);
+  await atRest(page);
 
   const drawn = (await page.evaluate(() => window.__skisPlaces)) ?? [];
   const known = (await page.evaluate(() => window.__skisAllPlaces)) ?? [];
