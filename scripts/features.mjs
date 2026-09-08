@@ -3616,6 +3616,39 @@ if (feature("20. The mountain is labelled")) {
   const closer = await labels();
   check("zooming in does not lose them", closer.length >= 3, `${closer.length} names`);
 
+  /*
+   * And nothing is named onto a ridge it is not on, from any bearing.
+   *
+   * Village names have been through three answers here. Dropped with every
+   * other tier, which took all of a resort's bases off at once from some
+   * bearings; exempted, which painted Stafal and Champoluc at full strength
+   * onto whatever slope happened to be in front of them; then dimmed to half,
+   * on the argument that saying "the village is over there" quietly beats
+   * both. Reported against the third: "they should disappear if they're
+   * behind the mountain. You shouldn't see them."
+   *
+   * Which is the rule the mountain already keeps for pistes, huts and run
+   * names, so the bases keep it too. Turned through five bearings because one
+   * view proves nothing: what changes with the bearing is which valley is
+   * behind which ridge.
+   *
+   * Measured cost, all four resorts: Monterosa names one of its three bases
+   * from most bearings and Paganella can name neither of its two from one of
+   * them. That is what a deep valley seen over a ridge looks like, and one
+   * finger turns the map.
+   */
+  const occludedShowing = [];
+  for (const bearing of [0, 72, 144, 216, 288]) {
+    await page.evaluate((b) => window.__skisSetBearing(b), bearing);
+    await atRest(page, { quiet: 500, limit: 14000 });
+    const lit = await page.evaluate(() => window.__skisLabelLit ?? []);
+    for (const l of lit) {
+      if (l.occluded && l.alpha > 0.02) occludedShowing.push(`${l.name}@${bearing}deg:${l.alpha}`);
+    }
+  }
+  check("no name is drawn while the mountain is in front of it",
+    occludedShowing.length === 0, occludedShowing.slice(0, 4).join(", "));
+
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
 
@@ -5415,6 +5448,73 @@ if (feature("43. Every screen takes a finger")) {
   }
   check("no page errors", rest.errors.length === 0, rest.errors.join(" | "));
   await rest.context_.close();
+
+  /*
+   * ---- and a phone-shaped viewport, where the wall is close --------------
+   *
+   * Reported from a phone as "the touchscreen got messed up" on the route
+   * detail screen. Two faults meeting.
+   *
+   * The pan has a wall — you cannot throw the mountain off the screen — and
+   * that wall is a fraction of the strip of map left above the sheet. On a
+   * viewport shortened by browser chrome the strip is short and the wall is
+   * close: measured 4 ordinary thumb drags to reach it at 393x852, 3 at
+   * 412x640, 2 at 390x560. Past it the map bands under the finger and springs
+   * back to exactly where it was, which reads as the map having died.
+   *
+   * The wall itself is proportionate — at it, half the mountain is still in
+   * shot — so what was actually broken is that there was no way back from it.
+   * The whole control stack hides when the OPEN stack would not fit, and the
+   * collapsed opener went with it, so the screen where the wall is easiest to
+   * hit was the one screen with no control to undo it.
+   *
+   * So this walks into the wall on purpose and then asks for the way out.
+   */
+  const short = await newPage(browser, { at: [9, 30], touch: true, viewport: { width: 390, height: 560 } });
+  await toPlan(short, `${url}?maptest=1`);
+  await solve(short);
+  await openRoute(short);
+  await short.waitForSelector(".detail__legs", { timeout: 20000 });
+  await atRest(short, { quiet: 600, limit: 16000 });
+
+  const shortView = () => short.evaluate(() => ({ ...window.__skisView }));
+  const shove = async () => {
+    await touchDrag(short, [292, 163], [97, 83]);
+    await short.waitForTimeout(400);
+  };
+  await shove();
+  const first = await shortView();
+  check("a drag moves the map on a phone-shaped detail screen",
+    Math.hypot(first.panX, first.panY) > 20,
+    `pan ${Math.round(first.panX)},${Math.round(first.panY)}`);
+  for (let i = 0; i < 4; i++) await shove();
+  const stuck = await shortView();
+  await shove();
+  const still = await shortView();
+  check("and enough of them reach the wall, which is what was reported",
+    Math.hypot(still.panX - stuck.panX, still.panY - stuck.panY) < 4,
+    `pan ${Math.round(stuck.panX)},${Math.round(stuck.panY)} of limit ` +
+    `${Math.round(stuck.panLimit?.x ?? 0)},${Math.round(stuck.panLimit?.y ?? 0)}`);
+  /*
+   * One tap, with nothing to open first. The stack does not fit on this strip
+   * and the point of the cramped branch is that the way back does.
+   */
+  const back = await short.$('.maptools .iconbtn[aria-label="Recentre the view"]');
+  check("the way back is one tap, with no stack to open", Boolean(back));
+  if (back) {
+    check("and it takes a finger", await touchTap(short, '.maptools .iconbtn[aria-label="Recentre the view"]'));
+    await atRest(short, { quiet: 600, limit: 14000 });
+    const home = await shortView();
+    check("and it puts the map back", Math.hypot(home.panX, home.panY) < 12,
+      `pan ${Math.round(home.panX)},${Math.round(home.panY)}`);
+    await shove();
+    const again = await shortView();
+    check("and the map takes a finger again",
+      Math.hypot(again.panX - home.panX, again.panY - home.panY) > 20,
+      `moved ${Math.hypot(again.panX - home.panX, again.panY - home.panY).toFixed(0)}px`);
+  }
+  check("no page errors on the short viewport", short.errors.length === 0, short.errors.join(" | "));
+  await short.context_.close();
 }
 
 // ============== 44. THE GESTURES A REAL HAND MAKES ==

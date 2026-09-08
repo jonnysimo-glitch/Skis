@@ -157,6 +157,28 @@ const SCALE_CLEARANCE = 32;
 const MAPTOOLS_H = 5 * 48 + 4 * 4;
 /** And still clear the resort bar floating at the top of the map. */
 const MAPTOOLS_HEADROOM = 96;
+/**
+ * And what one button needs, which is what a cramped strip gets instead of
+ * nothing.
+ *
+ * Reported from a phone as "the touchscreen got messed up" on the route
+ * detail screen, and it was two faults meeting. The pan has a wall — you
+ * cannot throw the mountain off the screen — and that wall is a fraction of
+ * the map strip, so on a phone whose browser chrome takes a quarter of the
+ * viewport the strip is short and the wall is close: measured 4 ordinary thumb
+ * drags to reach it at 393x852, 3 at 412x640, 2 at 390x560. Past it the map
+ * bands under the finger and springs back to exactly where it was, which reads
+ * as the map having died.
+ *
+ * The way back from that is the recentre button, and on those same short
+ * viewports it was not there: the whole stack hides when the OPEN stack would
+ * not fit, and the collapsed opener went with it. So the one screen where the
+ * wall is easiest to hit was the screen with no control to undo it.
+ *
+ * A strip too short for five buttons is not too short for one. See the
+ * `cramped` branch below.
+ */
+const MAPTOOLS_ONE_H = 48 + 24;
 
 
 
@@ -797,13 +819,23 @@ export default function App() {
    * of map with its own labels cut in half by the sheet edge.
    */
   const mapStrip = viewportH - chromeBottom;
+  /*
+   * Three states, not two: the full stack, one button, or nothing.
+   *
+   * The middle one is new. Measured against the height of the OPEN stack even
+   * while it is shut, because it can be opened: a strip with room for the one
+   * button and not for the five it reveals would slide the top of the stack
+   * off the screen the moment anybody pressed it. That reasoning is right and
+   * the conclusion it used to reach — hide everything — threw away the one
+   * control that matters most, on the screens that need it most. See
+   * MAPTOOLS_ONE_H.
+   */
+  const noRoomForStack = mapStrip < MAPTOOLS_H + MAPTOOLS_HEADROOM;
   const chromeHidden = navigating
     ? navExpanded
-    // Against the height of the OPEN stack even while it is shut, because it
-    // can be opened: a strip with room for the one button and not for the five
-    // it reveals would slide the top of the stack off the screen the moment
-    // anybody pressed it.
-    : mapStrip < MAPTOOLS_H + MAPTOOLS_HEADROOM;
+    : noRoomForStack && mapStrip < MAPTOOLS_ONE_H;
+  // Room for the way back, and not for the rest of it.
+  const chromeCramped = !navigating && noRoomForStack && !chromeHidden;
 
   // ---- actions ------------------------------------------------------------
 
@@ -1230,6 +1262,25 @@ export default function App() {
           * burst of zooming works without a second thought and the map is
           * clear the rest of the time.
           */}
+        {/*
+          * On a strip with no room for the stack, the one control that undoes
+          * a stuck view, on its own.
+          *
+          * Not the opener: opening it is what there is no room for. Recentre
+          * rather than zoom or the compass, because the fault it answers is
+          * the pan wall — a map that has stopped moving under the finger and
+          * has no other way back. Same handler and same label as the one in
+          * the stack, so a check and a habit both keep working.
+          */}
+        {chromeCramped ? (
+          <button
+            className="iconbtn"
+            aria-label="Recentre the view"
+            onClick={() => mapControl.current?.resetView()}
+          >
+            <Locate />
+          </button>
+        ) : (<>
         <button
           className={`iconbtn iconbtn--tools${toolsOpen ? " iconbtn--on" : ""}`}
           aria-label={toolsOpen ? "Hide the map controls" : "Map controls"}
@@ -1272,6 +1323,7 @@ export default function App() {
         <button className="iconbtn" aria-label="Zoom out" onClick={() => mapControl.current?.zoom(-1)}>
           <Minus />
         </button>
+        </>)}
         </>)}
       </div>
       )}

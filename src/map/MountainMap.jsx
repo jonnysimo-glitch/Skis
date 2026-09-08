@@ -3678,24 +3678,34 @@ export default function MountainMap({
         .map((c) => {
           const hidden = steady(`lo:${c.key}`, !visible(c.s), frameNow, RUN_NAME_OCCLUSION_MS);
           /*
-           * A base behind the mountain is dimmed, not dropped and not ignored.
+           * A base behind the mountain goes, like everything else behind it.
            *
-           * Exempting bases outright was the fix for taking all three off the
-           * map at once, and it bought a different fault: Stafal and Champoluc
-           * sit in deep valleys, so from the opening view they are usually
-           * behind the massif, and their names were painted at full strength
-           * onto whatever ridge happened to be in front of them. Reported as
-           * the names being "on the mountain, at a certain point where it is
-           * not", which is exactly right — the label claimed a position on a
-           * slope kilometres from the village.
+           * This has been through three answers. Dropping bases with the rest
+           * took all of them off at once from some bearings, so they were
+           * exempted; the exemption painted Stafal and Champoluc at full
+           * strength onto whatever ridge happened to be in front of them,
+           * which was reported as the names sitting "on the mountain, at a
+           * certain point where it is not"; so they were dimmed to half
+           * instead, on the argument that the village is over there and
+           * saying so quietly beats both.
            *
-           * Neither hiding it nor asserting it is the answer. Half strength
-           * says what is true: the village is over there, and there is
-           * mountain between you and it. It stays findable, which is the whole
-           * reason for the exemption, and stops pretending to be somewhere it
-           * is not, which is what the exemption cost.
+           * Half strength is still a label on a ridge kilometres from the
+           * village, and reported as such: "they should disappear if they're
+           * behind the mountain. You shouldn't see them." Which is right, and
+           * it is the same rule the mountain already keeps for pistes, huts
+           * and run names — if the terrain is in the way, you cannot see it.
+           * A tier with its own exemption is the odd one out, and the dim was
+           * the exemption wearing a quieter coat.
+           *
+           * What it costs, measured across the four resorts at five bearings:
+           * two of Monterosa's three bases are usually behind the massif from
+           * the opening view, and Latemar loses three of four from two
+           * bearings. So the opening view of some resorts will name one
+           * village rather than three. That is the honest picture of a deep
+           * valley seen over a ridge, and turning the map — which is one
+           * finger — brings them back.
            */
-          return { ...c, behind: c.n.base ? false : hidden, occluded: hidden };
+          return { ...c, behind: hidden, occluded: hidden };
         })
         /*
          * Only the ones this zoom has room for, and always the same ones.
@@ -3816,7 +3826,11 @@ export default function MountainMap({
         ctx.fillStyle = n.base ? "#0b1a24" : "rgba(11,26,36,0.7)";
         ctx.fillText(n.name, tx, y);
         ctx.globalAlpha = 1;
-        lit?.push({ name: n.name, alpha: Math.round(solid * 100) / 100 });
+        // `occluded` as well as the fade: the alpha that reaches the canvas is
+        // the product of the two, and a check that reads only the fade cannot
+        // tell a label at full strength from one dimmed for sitting behind the
+        // mountain.
+        lit?.push({ name: n.name, alpha: Math.round(solid * 100) / 100, occluded });
         if (keep) drawn.push({ name: n.name, ...box });
       }
       // Canvas text leaves no DOM to assert against, so the placement is
