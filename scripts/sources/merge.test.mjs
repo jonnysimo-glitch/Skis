@@ -4,6 +4,7 @@
  */
 import { merge, MATCH_M } from "./index.mjs";
 import { covers, toPlace, url } from "./opendatahub.mjs";
+import * as manual from "./manual.mjs";
 
 let ran = 0;
 let bad = 0;
@@ -116,6 +117,63 @@ console.log("\n### the query");
     u.includes("scoordinate.bbi.(11.83,46.66,12.08,46.82,4326)"), u);
   check("and for the fields the merge needs",
     u.includes("sname") && u.includes("smetadata") && u.includes("scoordinate"));
+}
+
+console.log("\n### places checked by hand");
+{
+  const good = {
+    name: "Rent and Go Brunico",
+    kind: "rental",
+    lat: 46.79,
+    lon: 11.94,
+    note: "checked against the shop's own site",
+  };
+  check("a well-formed entry becomes a place", manual.toPlace(good).name === "Rent and Go Brunico");
+  check("and says it did not come off the map", manual.toPlace(good).source === "manual");
+  check("and is not marked as drawn, because nobody traced it",
+    manual.toPlace(good).drawn === false);
+
+  /*
+   * Every one of these has to throw rather than skip.
+   *
+   * A hand-typed coordinate with no provenance is the single thing this
+   * source must never let through: it is a person walking to the wrong end of
+   * a village in ski boots, and it looks exactly like a real place in the
+   * app. Skipping quietly would let a typo ship; stopping the build cannot.
+   */
+  const refuses = [
+    ["no note at all", { ...good, note: undefined }],
+    ["a note that says nothing", { ...good, note: "n/a" }],
+    ["a kind that is not one of ours", { ...good, kind: "shop" }],
+    ["a coordinate as a string", { ...good, lat: "46.79" }],
+    ["a coordinate off the planet", { ...good, lat: 946 }],
+    ["no name", { ...good, name: "  " }],
+    ["nothing at all", null],
+  ];
+  for (const [why, entry] of refuses) {
+    let threw = false;
+    try { manual.toPlace(entry); } catch { threw = true; }
+    check(`refuses ${why}`, threw);
+  }
+
+  check("says nothing to add when the config lists nothing",
+    manual.covers([11, 46, 12, 47], { extraPlaces: [] }) === false);
+  check("and nothing when there is no such key",
+    manual.covers([11, 46, 12, 47], {}) === false);
+  check("and answers once something is listed",
+    manual.covers([11, 46, 12, 47], { extraPlaces: [good] }) === true);
+
+  // It goes through the same merge as any other source, which means it cannot
+  // land a second pin on a hire shop OSM already has.
+  const osm = [{ name: "Ski Sport Heinz", kind: "rental", lat: 46.79, lon: 11.9401, source: "osm" }];
+  const { report } = merge(osm, [manual.toPlace(good)], { sourceId: "manual" });
+  check("does not double a shop the map already has", report.added === 0,
+    JSON.stringify(report));
+  const far = merge(osm, [manual.toPlace({ ...good, lon: 11.96 })], { sourceId: "manual" });
+  check("and does add one it does not", far.report.added === 1, JSON.stringify(far.report));
+  check("a car park by hand cannot be filed as a restaurant",
+    merge([{ name: "X", kind: "restaurant", lat: 46.79, lon: 11.94, source: "osm" }],
+      [manual.toPlace({ ...good, kind: "parking" })], { sourceId: "manual" }).report.added === 1);
 }
 
 console.log(bad ? `\n  ${bad} FAILING of ${ran} checks\n` : `\n  all ${ran} source checks passed\n`);

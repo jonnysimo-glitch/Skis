@@ -65,5 +65,7 @@
   "baseNames": {
     "Kronplatz I": "Bruneck / Brunico"
   },
-  "baseNamesWhy": "The Kronplatz I cable car is the Bruneck base, and 'Kronplatz I' is what OSM and the sign at the bottom both call it. It is not what anyone says when they say where the car is: they say Bruneck, or Brunico. Both, because South Tyrol signs both and a skier may know either."
+  "baseNamesWhy": "The Kronplatz I cable car is the Bruneck base, and 'Kronplatz I' is what OSM and the sign at the bottom both call it. It is not what anyone says when they say where the car is: they say Bruneck, or Brunico. Both, because South Tyrol signs both and a skier may know either.",
+  "extraPlaces": [],
+  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. Empty on purpose: the one this exists for is Rent and Go in Brunico, a hire shop by the gondola that a broad sweep of the export does not contain, and nobody has yet supplied a coordinate for it that was checked rather than guessed. Shape: {\"name\": \"Rent and Go Brunico\", \"kind\": \"rental\", \"lat\": 46.7, \"lon\": 11.9, \"note\": \"where you checked it, e.g. the shop's own site, and when\"}. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs for why."
 }

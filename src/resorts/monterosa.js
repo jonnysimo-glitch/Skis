@@ -311,6 +311,7 @@ export const PLACES = [
   ["L’Abri du ski", "restaurant", 45.8326, 7.76429, 2396],
   ["La Glisse", "rental", 45.83661, 7.73084, 1578],
   ["La Mandria", "restaurant", 45.85961, 7.75351, 2275],
+  ["La marmotta rossa", "rental", 45.83446, 7.95525, 1079],
   ["La Stube", "restaurant", 45.85458, 7.93703, 1193],
   ["Le Sapin", "restaurant", 45.83703, 7.73123, 1579],
   ["Morgenrot", "restaurant", 45.84182, 7.81961, 1837],

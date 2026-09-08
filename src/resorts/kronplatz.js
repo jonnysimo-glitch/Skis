@@ -377,6 +377,7 @@ export const PLACES = [
   ["Ritterkeller", "restaurant", 46.70595, 11.92903, 1236],
   ["Schnapskurve", "restaurant", 46.71255, 11.9498, 1497],
   ["Ski Noleggio", "rental", 46.69771, 11.93005, 1192],
+  ["Ski Rent Sebatum", "rental", 46.78227, 11.9048, 807],
   ["Ski Sport Heinz", "rental", 46.69845, 11.93055, 1190],
   ["Skidepot und Verleih - Noleggio", "rental", 46.70098, 11.92785, 1179],
   ["Skisaloon Miara", "rental", 46.70453, 11.93022, 1222],

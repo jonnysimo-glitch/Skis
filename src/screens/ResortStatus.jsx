@@ -175,6 +175,26 @@ export default function ResortStatus({ resort, onClose }) {
                   </li>
                 ))}
               </ul>
+              {/*
+                * And what is not there, said out loud.
+                *
+                * Two of the four resorts list no ski hire, and the reason is
+                * that OpenStreetMap has none near their lifts — Latemar's
+                * nearest is four kilometres away in Predazzo. A section that
+                * silently omits a category reads as "there is none here",
+                * which is a claim about the mountain we cannot make; this is
+                * a claim about the map, which is the true one.
+                *
+                * Only for hire. Somewhere to eat is on every one of them, and
+                * a car park that is missing is not a car park somebody was
+                * looking for in a list.
+                */}
+              {!PLACES.some(([, kind]) => kind === "rental") && (
+                <p className="note" style={{ marginTop: "var(--s-3)" }}>
+                  No ski hire here yet — OpenStreetMap has none mapped near
+                  these lifts. It is not that there is none.
+                </p>
+              )}
             </div>
           )}
 

@@ -179,6 +179,30 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
    * at the lift, which is the one case that was never in doubt.
    */
   const NEAR_BASE = 900;
+  /*
+   * Ski hire reaches further, because hiring happens in the village.
+   *
+   * Nine hundred metres is the right question for a car park — you park below
+   * the village and walk — and the wrong one for a hire shop. Hiring is an
+   * errand you run before you ski, in the town you drove to, and a shop two
+   * kilometres from the gondola is a shop you would want to be told about.
+   * Reported twice as a gap: "I know there's a Rent and Go in Brunico and I
+   * don't see it."
+   *
+   * Three thousand, and it is measured rather than guessed. Every hire shop in
+   * the four exports, by distance from the nearest base:
+   *
+   *   8, 441, 555, 684, 766 m   at the lift (Kronplatz's five, Monterosa's one at 52)
+   *   2,611 m                   La marmotta rossa, down the valley from Alagna
+   *   2,876 m                   Ski Rent Sebatum, San Lorenzo, near Brunico
+   *   3,970 m and beyond        Predazzo and Cavalese, which are other resorts'
+   *                             valleys and not somewhere to send an Obereggen skier
+   *
+   * So there is a gap between 2,876 and 3,970 and this sits in it, the same
+   * way NEAR_BASE sits in the gap above 1,018. It brings in the two village
+   * shops and stops before the other valleys.
+   */
+  const NEAR_BASE_HIRE = 3000;
   const NEAR_NODE = 350;
   const OURS = 250;
   const spanM = (a, b) => {
@@ -246,7 +270,8 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
     place.kind !== "parking" || Boolean(place.name || place.spaces || place.drawn);
   const kept = PLACES.filter((place) =>
     worthParking(place) && (DRIVE_TO.has(place.kind)
-      ? nearest(place, baseList) <= NEAR_BASE || nearest(place, nodeList) <= NEAR_NODE
+      ? nearest(place, baseList) <= (place.kind === "rental" ? NEAR_BASE_HIRE : NEAR_BASE) ||
+        nearest(place, nodeList) <= NEAR_NODE
       : toPistes(place) <= NEAR_PISTE));
 
   /*
@@ -300,6 +325,15 @@ export function emit({ id, meta, NODES, LIFTS, RUNS, PLACES = [], ways = [], ter
           covered: place.covered ?? null,
         }).filter(([, v]) => v !== null))
         : {};
+      /*
+       * Which places did not come off the map.
+       *
+       * One field, on the place itself, because the audit has to know not to
+       * look for it in the OSM export and a reader ought to be able to tell.
+       * Absent for everything from OSM, which is nearly all of them, so the
+       * files do not grow a repeated word.
+       */
+      if (place.source && place.source !== "osm") facts.src = place.source;
       const tail = Object.keys(facts).length ? `, ${JSON.stringify(facts)}` : "";
       return `  [${quote(place.name)}, ${quote(place.kind)}, ` +
         `${Math.round(place.lat * 1e5) / 1e5}, ${Math.round(place.lon * 1e5) / 1e5}, ` +

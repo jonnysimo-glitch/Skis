@@ -25,10 +25,18 @@
  * commercial parking APIs, and Google Places, whose terms forbid caching what
  * this pipeline exists to cache — cannot be added here whatever its coverage.
  */
+import * as manual from "./manual.mjs";
 import * as opendatahub from "./opendatahub.mjs";
 
-/** Every source that is not OpenStreetMap. Order is precedence, best first. */
-export const SOURCES = [opendatahub];
+/**
+ * Every source that is not OpenStreetMap. Order is precedence, best first.
+ *
+ * `manual` leads because it is the only one somebody has actually looked at.
+ * It also cannot overwrite anything — see `merge` below, which fills gaps and
+ * never replaces — so its precedence only decides which of two records that
+ * land on the same spot keeps its name.
+ */
+export const SOURCES = [manual, opendatahub];
 
 const R = 6371000;
 const rad = (d) => (d * Math.PI) / 180;
@@ -112,7 +120,9 @@ export async function enrich(places, config, { offline = false, force = false } 
   let merged = places;
   const lines = [];
   for (const source of SOURCES) {
-    if (!source.covers(config.bbox)) continue;
+    // The config as well as the box: a source can be one that only answers
+    // where somebody has written something down. See manual.mjs.
+    if (!source.covers(config.bbox, config)) continue;
     const { places: found, skipped, from } = await source.fetchPlaces(config, { offline, force });
     if (skipped) {
       lines.push(`  ${source.id.padEnd(12)}${skipped}`);

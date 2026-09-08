@@ -86,6 +86,14 @@ const KIND = (t) =>
 // The same thresholds emit.mjs applies, restated rather than imported: a copy
 // that drifts is a finding, an import that agrees proves nothing.
 const NEAR_PISTE = 200;
+/*
+ * How near a base a hire shop has to be before the file is expected to carry
+ * it. Independently chosen, and deliberately TIGHTER than the pipeline's
+ * NEAR_BASE_HIRE: this asks "was anything obviously nearby left out", and a
+ * check that used the same number as the thing it audits would only ever be
+ * confirming arithmetic. 600 m is unarguable — a shop that close is at the
+ * lift.
+ */
 const NEAR_BASE = 600;
 const OURS = 250;
 
@@ -180,6 +188,10 @@ for (const meta of RESORTS.filter((r) => r.available)) {
     `nothing to eat within ${NEAR_PISTE} m of a piste is missing` +
     (missedEats.length ? `: ${missedEats.slice(0, 6).map((c) => `${c.name} (${Math.round(c.d)} m)`).join(", ")}` : ""));
 
+  /*
+   * Hire is measured on its own radius, the wider one. See NEAR_BASE_HIRE in
+   * emit.mjs: hiring is an errand in the village, not a walk from the car.
+   */
   const missedHire = candidates
     .filter((c) => c.kind === "rental" && !covered(c))
     .map((c) => ({ ...c, d: toBases(c) }))
@@ -238,9 +250,26 @@ for (const meta of RESORTS.filter((r) => r.available)) {
 
   // 2. Nothing invented, nothing doubled.
   const known = new Set(candidates.flatMap((c) => c.aka));
-  const invented = mod.PLACES.filter((p) => p[1] !== "parking" && !known.has(p[0])).map((p) => p[0]);
+  /*
+   * Except the ones that are in the file because somebody looked.
+   *
+   * A place carrying `src` did not come off the map — see
+   * scripts/sources/manual.mjs, and the hire shop in Brunico that OSM does
+   * not have. Requiring it in the export would make the honest case fail; not
+   * counting them at all would make this check hollow, so they are counted
+   * and named instead.
+   */
+  const byHand = mod.PLACES.filter((p) => p[5]?.src);
+  const invented = mod.PLACES
+    .filter((p) => p[1] !== "parking" && !p[5]?.src && !known.has(p[0]))
+    .map((p) => p[0]);
   note(invented.length === 0,
-    `every place in the file is in the export` + (invented.length ? `: ${invented.slice(0, 5).join(", ")} are not` : ""));
+    `every place in the file is in the export, or says it is not` +
+    (invented.length ? `: ${invented.slice(0, 5).join(", ")} are neither` : ""));
+  if (byHand.length) {
+    console.log(`        (${byHand.length} added by hand: ` +
+      `${byHand.slice(0, 4).map((p) => `${p[0]} [${p[5].src}]`).join(", ")})`);
+  }
 
   const seen = new Set();
   const doubled = mod.PLACES.filter((p) => seen.has(p[0]) || !seen.add(p[0]));
