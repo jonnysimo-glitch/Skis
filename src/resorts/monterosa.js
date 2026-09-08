@@ -307,7 +307,7 @@ export const PLACES = [
   ["Dir und Don", "restaurant", 45.8532, 7.93757, 1181],
   ["Edelboden", "cafe", 45.83128, 7.8232, 1638],
   ["Edelweiss", "restaurant", 45.83258, 7.7422, 1967],
-  ["FZRY", "restaurant", 45.85943, 7.81274, 1826],
+  ["Fitz Roy", "restaurant", 45.85943, 7.81274, 1826],
   ["Genzianella", "restaurant", 45.85452, 7.93613, 1201],
   ["Kondor", "restaurant", 45.83667, 7.7309, 1578],
   ["L’Abri du ski", "restaurant", 45.8326, 7.76429, 2396],

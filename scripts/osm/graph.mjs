@@ -46,6 +46,31 @@ export const label = (name) => {
 };
 
 /**
+ * The name a person would say, where the sign is a logo.
+ *
+ * A restaurant above Gressoney is tagged `name=FZRY`, `alt_name=Fitz Roy`.
+ * FZRY is what is painted on the building and it is the correct primary name
+ * by OSM's rules; it is also four consonants, and on a mountain at navigation
+ * zoom it reads as a rendering fault rather than as somewhere to eat. The
+ * skier is looking for Fitz Roy.
+ *
+ * The test is "no vowel at all", which is narrow on purpose. `alt_name` is
+ * usually a second-language variant — Brunico for Bruneck, Cogne for Cogne —
+ * and preferring it in general would quietly retranslate half the mountain.
+ * A name with no vowel in it is not a word in any of the four languages these
+ * resorts are mapped in, so it is a contraction of one, and the expansion is
+ * the thing to show. `y` does not count as a vowel here: it is exactly the
+ * letter these contractions keep.
+ */
+export const readable = (tags) => {
+  const name = tags?.name;
+  if (typeof name !== "string" || !name.trim()) return name;
+  if (/[aeiouàáâäèéêëìíîïòóôöùúûü]/i.test(name)) return name;
+  const alt = tags["alt_name"] ?? tags["name:en"] ?? tags["official_name"];
+  return typeof alt === "string" && alt.trim() ? alt : name;
+};
+
+/**
  * A name that is not a name: what a cluster is called before anything better
  * is known about it. Nothing may be named after one of these, or the
  * placeholder propagates from a node onto an edge and back onto a node.
@@ -326,7 +351,7 @@ export function build(osm, { tolerance = 45, elevation }) {
     .filter((el) => el.tags && KIND(el.tags) &&
       (el.tags.name || KIND(el.tags) === "parking"))
     .map((el) => ({
-      name: el.tags.name ? label(el.tags.name) : null,
+      name: el.tags.name ? label(readable(el.tags)) : null,
       kind: KIND(el.tags),
       /*
        * What a driver wants to know before choosing between two car parks,

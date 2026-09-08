@@ -3800,6 +3800,25 @@ export default function MountainMap({
         if (shortSeen.has(short)) ambiguous.add(short);
         shortSeen.add(short);
       }
+      /*
+       * And a short name a junction already carries is not a short name
+       * either.
+       *
+       * A car park with no name of its own is exported as "<base> parking",
+       * so shortening it gives back the base: the pin beside Brunico reads
+       * "Bruneck / Brunico" and so does the station label ten pixels away.
+       * Two identical words stacked on a mountain is not brevity, it is a
+       * rendering fault — and the one thing the label is for, telling you
+       * that this is where the car goes, is the word that came off.
+       *
+       * Same rule as above rather than a special case for parking: whatever
+       * the map already says elsewhere cannot be the short form of something
+       * else. Every node name, not just the bases, because which of them are
+       * labelled is a function of zoom and this runs once.
+       */
+      for (const n of Object.values(propsRef.current.nodes ?? {})) {
+        if (n?.name) ambiguous.add(n.name);
+      }
       for (const [full, kind, lat, lon, alt, facts] of order) {
         const short = shortName(full);
         const name = ambiguous.has(short) ? full : short;

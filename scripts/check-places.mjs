@@ -89,11 +89,26 @@ for (const meta of RESORTS.filter((r) => r.available)) {
   };
   const toBases = (p) => (bases.length ? Math.min(...bases.map((b) => metres(p, b))) : Infinity);
 
-  // Every candidate in the export, with its own name.
+  /*
+   * Every candidate in the export, under every name it answers to.
+   *
+   * `aka` rather than one name, because the pipeline is allowed to prefer a
+   * readable alternative where the primary is a logo: a restaurant above
+   * Gressoney is tagged name=FZRY, alt_name=Fitz Roy, and the file says Fitz
+   * Roy. This audit exists to catch a name the pipeline invented, and it has
+   * to keep catching those — so it accepts any name the OSM element actually
+   * carries and nothing else. Checking `name` alone made a legitimate
+   * substitution look like both a missing place and a fabricated one, which
+   * is two false alarms for one correct behaviour.
+   */
+  const aliases = (t) =>
+    [t.name, t.alt_name, t["name:en"], t.official_name]
+      .filter((n) => typeof n === "string" && n.trim());
   const candidates = (raw.elements ?? [])
     .filter((el) => el.tags && KIND(el.tags) && el.tags.name)
     .map((el) => ({
       name: el.tags.name,
+      aka: aliases(el.tags),
       kind: KIND(el.tags),
       lat: el.lat ?? el.center?.lat,
       lon: el.lon ?? el.center?.lon,
@@ -109,7 +124,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
 
   // 1. Anything the file should have and does not.
   const missedEats = candidates
-    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !inFile.has(c.name))
+    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !c.aka.some((n) => inFile.has(n)))
     .map((c) => ({ ...c, d: toPistes(c) }))
     .filter((c) => c.d <= NEAR_PISTE)
     .sort((a, b) => a.d - b.d);
@@ -118,7 +133,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
     (missedEats.length ? `: ${missedEats.slice(0, 6).map((c) => `${c.name} (${Math.round(c.d)} m)`).join(", ")}` : ""));
 
   const missedHire = candidates
-    .filter((c) => c.kind === "rental" && !inFile.has(c.name))
+    .filter((c) => c.kind === "rental" && !c.aka.some((n) => inFile.has(n)))
     .map((c) => ({ ...c, d: toBases(c) }))
     .filter((c) => c.d <= NEAR_BASE)
     .sort((a, b) => a.d - b.d);
@@ -134,7 +149,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
    */
   const hireInExport = candidates.filter((c) => c.kind === "rental");
   const hireFar = hireInExport
-    .filter((c) => !inFile.has(c.name))
+    .filter((c) => !c.aka.some((n) => inFile.has(n)))
     .map((c) => Math.round(toBases(c)))
     .sort((a, b) => a - b);
   console.log(`        (ski hire in the export: ${hireInExport.length}` +
@@ -143,7 +158,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
   // What was excluded, and how far away it was: the number that shows the
   // rule is doing work rather than the export simply being small.
   const farEats = candidates
-    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !inFile.has(c.name))
+    .filter((c) => ["restaurant", "cafe", "hut"].includes(c.kind) && !c.aka.some((n) => inFile.has(n)))
     .map((c) => Math.round(toPistes(c)))
     .sort((a, b) => a - b);
   if (farEats.length) {
@@ -151,7 +166,7 @@ for (const meta of RESORTS.filter((r) => r.available)) {
   }
 
   // 2. Nothing invented, nothing doubled.
-  const known = new Set(candidates.map((c) => c.name));
+  const known = new Set(candidates.flatMap((c) => c.aka));
   const invented = mod.PLACES.filter((p) => p[1] !== "parking" && !known.has(p[0])).map((p) => p[0]);
   note(invented.length === 0,
     `every place in the file is in the export` + (invented.length ? `: ${invented.slice(0, 5).join(", ")} are not` : ""));
@@ -208,9 +223,23 @@ for (const meta of RESORTS.filter((r) => r.available)) {
    * the hut kinds — nothing is admitted on the strength of its name.
    */
   const EATS = new Set(["restaurant", "cafe", "bar", "pub", "fast_food", "biergarten"]);
+  /*
+   * Under every name it answers to, for the same reason as `aka` above — but
+   * primary names first, and an alias never displaces one.
+   *
+   * Filling this in one pass let an alias win: something in the Paganella
+   * export carries `alt_name=Albi de Mez`, so the real Albi de Mez — an
+   * `amenity=restaurant` a few hundred metres away — was looked up against
+   * the wrong element's tags and reported as a restaurant OSM had never
+   * called one. An alias is a fallback for a place whose primary name is a
+   * logo, so it only answers for a name nothing is primarily called.
+   */
   const tagsFor = new Map();
   for (const el of raw.elements ?? []) {
-    if (el.tags?.name) tagsFor.set(el.tags.name, el.tags);
+    if (typeof el.tags?.name === "string" && el.tags.name.trim()) tagsFor.set(el.tags.name, el.tags);
+  }
+  for (const el of raw.elements ?? []) {
+    for (const n of aliases(el.tags ?? {})) if (!tagsFor.has(n)) tagsFor.set(n, el.tags);
   }
   const wrongKind = [];
   for (const p of mod.PLACES) {

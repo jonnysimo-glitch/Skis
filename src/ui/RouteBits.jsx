@@ -96,6 +96,14 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1 }) {
             key={`${edge.id}-${i}`}
             className={`leg${done ? " leg--done" : ""}${now ? " leg--now" : ""}`}
           >
+            {/* The same number the map draws on the leg.
+                The route gained numbered badges on the terrain, and a "17"
+                sitting on a piste needs somewhere to be looked up — without
+                this the two halves of the screen counted the same day in two
+                different ways, which is worse than neither counting it. Quiet
+                and in the accent rather than a filled disc per row: fifty-nine
+                blue circles down a list is a pattern, not a reference. */}
+            <span className="leg__n">{i + 1}</span>
             <span className="leg__rail">
               <i className={`leg__dot leg__dot--${dotClass}`} />
             </span>

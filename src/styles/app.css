@@ -706,7 +706,7 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 .legs { list-style: none; }
 .leg {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 20px 24px 1fr auto;
   gap: var(--s-3);
   align-items: center;
   min-height: 56px;
@@ -716,6 +716,15 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 }
 .leg:last-child { border-bottom: 0; }
 .leg--done { opacity: 0.38; }
+/* The step number, matching the badge the map draws on that leg. Tabular so
+   the column does not shuffle between 9 and 10, and sized down from the name
+   because it is a reference rather than a thing to read. */
+.leg__n {
+  font-size: var(--t-footnote); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+  text-align: right;
+}
 .leg__rail { position: relative; align-self: stretch; display: grid; place-items: center; }
 .leg__rail::before {
   content: ""; position: absolute; top: calc(var(--s-2) * -1); bottom: calc(var(--s-2) * -1);

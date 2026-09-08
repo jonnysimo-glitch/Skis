@@ -9,7 +9,7 @@
  * the expected results is arithmetic rather than a guess: at 46.150 the ground
  * is 1000 m and it climbs 500 m per hundredth of a degree north.
  */
-import { build, metres, wayLength, runMinutes, liftMinutes, DIFFICULTY, isHire } from "./graph.mjs";
+import { build, metres, wayLength, runMinutes, liftMinutes, DIFFICULTY, isHire, readable } from "./graph.mjs";
 import { BOARDING_MINUTES, LIFT_SPEED_MS } from "../../src/lib/pace.js";
 import { prune, check } from "./validate.mjs";
 import { stitch, LINK_REACH } from "./stitch.mjs";
@@ -472,6 +472,38 @@ console.log("\nA RUN THAT STOPS SHORT OF ITS LIFT IS NOT THROWN AWAY");
   }
   for (const t of no) {
     is(`not hire: ${t.name}`, isHire(t) !== true, JSON.stringify(t));
+  }
+}
+
+/*
+ * A logo is not a name.
+ *
+ * Real case: a restaurant above Gressoney tagged name=FZRY, alt_name=Fitz
+ * Roy. The rule is deliberately narrow — no vowel at all — because alt_name
+ * is normally the other language and following it in general would rename
+ * half of South Tyrol.
+ */
+{
+  console.log("\nA NAME A PERSON WOULD SAY");
+  const swaps = [
+    [{ name: "FZRY", alt_name: "Fitz Roy" }, "Fitz Roy"],
+    [{ name: "MTB", "name:en": "Mountain Bar" }, "Mountain Bar"],
+    [{ name: "BRT", official_name: "Bar Roterd" }, "Bar Roterd"],
+    // Nothing better on offer, so the sign stands.
+    [{ name: "FZRY" }, "FZRY"],
+    [{ name: "P1" }, "P1"],
+    // Has a vowel, so it is a word and the alt_name is the other language.
+    [{ name: "Bruneck", alt_name: "Brunico" }, "Bruneck"],
+    [{ name: "Kronplatz", alt_name: "Plan de Corones" }, "Kronplatz"],
+    [{ name: "Rifugio Gabiet", alt_name: "Gabiet Hut" }, "Rifugio Gabiet"],
+    // Accented vowels count as vowels.
+    [{ name: "Crêt", alt_name: "Crest" }, "Crêt"],
+    // Nothing to work with either way.
+    [{}, undefined],
+    [{ name: "   " }, "   "],
+  ];
+  for (const [tags, want] of swaps) {
+    is(`${JSON.stringify(tags)} reads as ${want}`, readable(tags) === want, String(readable(tags)));
   }
 }
 

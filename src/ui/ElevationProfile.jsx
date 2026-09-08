@@ -165,9 +165,20 @@ export default function ElevationProfile({
           </>
         )}
       </svg>
+      {/* The band the chart spans, which is the one thing on it that is not
+          written down anywhere else.
+
+          This said "6,319 m descended" and sat ninety pixels above a stat
+          reading "6,319 DESCENT" — the same figure twice, in the same view,
+          on the two screens that use this scale. Total descent belongs in the
+          stat row, where it is large and labelled. What the chart itself was
+          missing is what its vertical axis means: no peak carries a number
+          and neither edge is annotated, so a shape rose and fell against
+          nothing. Bottom and top of the day is also the more useful pair on a
+          mountain — it says whether the snow at the bottom is a worry. */}
       {showScale && (
         <div className="profile__scale profile__scale--one">
-          <span>{route.vertical.toLocaleString()} m descended</span>
+          <span>{lo.toLocaleString()} m to {hi.toLocaleString()} m</span>
         </div>
       )}
     </div>

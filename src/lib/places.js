@@ -1,5 +1,5 @@
 /**
- * Saying what a mountain restaurant is, briefly.
+ * Saying what a place on the mountain is, briefly.
  *
  * OSM names carry their own category: "Bar Ristorante Ostafa", "Gipfel
  * Restaurant Cima", "Baita Rifugio Belvedere". On a marker beside a piste that
@@ -20,6 +20,26 @@ const CATEGORY = [
   "hütte", "hutte", "baita", "malga", "chalet", "gasthof", "gasthaus",
   "alm", "stube", "café", "cafe", "caffè", "caffe", "bar", "kiosk", "imbiss",
   "skihütte", "skibar", "apres ski", "après ski",
+  /*
+   * And the car park words, which arrived with the parking layer and read far
+   * worse than the restaurant ones, because a car park is named after the
+   * thing beside it and OSM writes the whole sign: "Parcheggio Riservato
+   * Klein Finnland" is thirty-five characters of which fourteen are the name.
+   * Over a mountain at navigation zoom that is a sentence lying across three
+   * pistes.
+   *
+   * The access qualifier goes with the category word rather than staying on
+   * the name — "riservato", "privato", "pubblico", "coperto". Whether you may
+   * park there and what it costs is a fact about the car park, and the
+   * decision on this app is that those facts are not carried in the label at
+   * all: the marker gives you the place and a Maps link, and Maps knows the
+   * rest. A four-word label that is three words of small print is the version
+   * of that decision nobody made on purpose.
+   */
+  "parcheggio riservato", "parcheggio pubblico", "parcheggio privato",
+  "parcheggio coperto", "parcheggio multipiano", "park and ride", "park & ride",
+  "parcheggio", "parkplatz", "parkhaus", "tiefgarage", "autosilo",
+  "car park", "parking", "garage", "p+r",
 ];
 
 /** What the category words said, so the description can say it instead. */
@@ -48,13 +68,23 @@ export function shortName(name) {
   let out = String(name || "").trim();
   let stripped = false;
   let changed = true;
+  /*
+   * What is left has to be a name, not a leftover.
+   *
+   * "Parking 1" is four car parks at Latemar and the category word is most of
+   * it; taking it off leaves "1", which is not a shorter name for anything.
+   * It is also, since the route gained numbered step badges, a label that
+   * reads as step one of the day sitting in a village car park. A remainder
+   * with no letter in it is not a name, so the word stays.
+   */
+  const keeps = (s) => /\p{L}/u.test(s);
   while (changed) {
     changed = false;
     for (const word of CATEGORY) {
       const lead = new RegExp(`^${word}[\\s'’\\-.,]+`, "i");
       const tail = new RegExp(`[\\s'’\\-.,]+${word}$`, "i");
-      if (lead.test(out) && out.replace(lead, "").trim()) { out = out.replace(lead, "").trim(); changed = true; }
-      else if (tail.test(out) && out.replace(tail, "").trim()) { out = out.replace(tail, "").trim(); changed = true; }
+      if (lead.test(out) && keeps(out.replace(lead, "").trim())) { out = out.replace(lead, "").trim(); changed = true; }
+      else if (tail.test(out) && keeps(out.replace(tail, "").trim())) { out = out.replace(tail, "").trim(); changed = true; }
       if (changed) { stripped = true; break; }
     }
   }
@@ -71,6 +101,19 @@ export function shortName(name) {
   // Quotes around a name are how OSM writes a sign, and they are not part of
   // the name: Bar "Passo da Mania'" is Passo da Mania'.
   out = out.replace(/^["“”'`]+|["“”'`]+$/g, "").trim();
+  /*
+   * A capital where the category word used to be.
+   *
+   * "Parcheggio inferiore funivia" is a real name and taking the first word
+   * off it leaves "inferiore funivia", which on a marker looks like a bug
+   * rather than a place. The first letter was mid-sentence and now starts
+   * one, so it gets the case that goes with the position.
+   *
+   * Only when something actually came off, and only the first character:
+   * anything cleverer would retitle "Klein Finnland" or "d'Otro", which are
+   * spelled the way they are spelled.
+   */
+  if (stripped && /^[a-zà-ÿ]/.test(out)) out = out[0].toUpperCase() + out.slice(1);
   return out || String(name || "").trim();
 }
 
