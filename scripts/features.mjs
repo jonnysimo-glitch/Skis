@@ -5907,7 +5907,8 @@ if (feature("47. A double tap zooms where you tapped")) {
     await hand.move([[at.x + 3, at.y + 2]]);
     await page.waitForTimeout(40);
     await hand.up([[at.x + 3, at.y + 2]]);
-    await hand.release();
+    // No release(): the finger is already up, and asking twice is what
+    // started this. close() detaches the session, which is all that is left.
     await hand.close();
     await atRest(page, { quiet: 500, limit: 8000 });
 
@@ -5927,6 +5928,22 @@ if (feature("47. A double tap zooms where you tapped")) {
   await page.context_.close();
 }
 
+} catch (err) {
+  /*
+   * A check that throws is a failing check, not a run that produced nothing.
+   *
+   * Without this, one uncaught error inside one section ended the process
+   * before the summary line — so the forty sections that had already passed
+   * printed their PASS lines and then the run simply stopped, with no count,
+   * no failure and no exit code anyone was reading. Three runs were read as
+   * partial results and argued about before the cause was found, which was a
+   * gesture helper being asked to lift a finger that was already up.
+   *
+   * Counted and named here, so the summary below still prints and the exit
+   * code is still wrong when something is.
+   */
+  failures++;
+  console.log(`\n  CRASHED in "${current}"\n  ${err?.stack ?? err}\n`);
 } finally {
   await browser.close();
   server.close();

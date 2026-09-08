@@ -327,8 +327,17 @@ export async function fingers(page) {
     down: (list) => send("touchStart", list),
     move: (list) => send("touchMove", list),
     up: (list) => send("touchEnd", list),
-    /** Every finger off the glass. */
-    release: () => send("touchEnd", []),
+    /*
+     * Every finger off the glass, and no complaint if they already are.
+     *
+     * Chrome refuses a touchEnd with no touch in progress — "Must send a
+     * TouchStart first" — and that refusal, uncaught, killed the whole feature
+     * suite from inside one check: the process died before the summary line,
+     * so forty sections' results vanished and the run looked like it had
+     * simply produced nothing. A gesture helper cannot be allowed to do that.
+     * Lifting a hand that is already up is a no-op, which is what it means.
+     */
+    release: () => send("touchEnd", []).catch(() => {}),
     close: () => cdp.detach().catch(() => {}),
   };
 }
