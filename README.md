@@ -67,6 +67,12 @@ node scripts/features.mjs --only=refine
   it never inherits a day plan's refinements. Salati to Champoluc takes 54
   minutes on red and does not exist at all on blue, so a stale *Easier* chip
   would report a real transfer as impossible.
+- **`src/lib/via.test.js`** — the list of places a day can be asked to swing
+  by. Everything it checks is about what a person sees in a list, which is
+  where this goes wrong: a picker with the same name twice in it, entries
+  nobody would choose, an entry for the place they are standing in. One lift
+  is two stations and OSM gives both of them the lift's name, so a choice is a
+  name rather than a node and either end answers it.
 - **`scripts/validate-layers.mjs`** — map layer paint expressions.
 - **`scripts/check-contrast.mjs`** — text contrast and the distance between the
   brand accent and the piste difficulty signals.

@@ -40,6 +40,13 @@ route detail, offline commit, navigate, summary, and the empty state. The 3D map
 works with a MapTiler key and falls back to a terrain view built from the graph's
 own altitudes without one.
 
+A day can also be asked to swing by up to three places — one collapsed row on
+the plan form, since the brief below is explicit that this must not become a
+required step. `solve({ ...opts, via })` takes them as groups of node keys
+(one lift is two stations under one name, and either end answers it), and
+`viaTrouble(opts)` says which place cannot be fitted in and why, so the empty
+state names the place rather than the mountain. See `src/lib/via.js`.
+
 Not done, in priority order:
 
 1. **Replace `src/resort.js` with real OSM data.** The pipeline is built and
