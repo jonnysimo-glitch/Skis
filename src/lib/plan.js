@@ -98,7 +98,6 @@ export function defaultPlan(resort, context, at, here) {
       // ten minutes is the honest answer and the empty state explains it.
       t0: Math.min(roundUp5(at), resort.lastDown - 5),
       t1: resort.lastDown,
-      noDrags: false,
       lunch: false,
       mode: "day",
       via: [],
@@ -110,7 +109,6 @@ export function defaultPlan(resort, context, at, here) {
       finish: base,
       t0: Math.max(roundUp5(at), resort.firstLift),
       t1: resort.lastDown,
-      noDrags: false,
       lunch: false,
       mode: "day",
       via: [],
@@ -121,7 +119,6 @@ export function defaultPlan(resort, context, at, here) {
     finish: base,
     t0: resort.firstLift + 30,
     t1: 16 * 60,
-    noDrags: false,
     lunch: false,
     mode: "day",
     via: [],
@@ -138,7 +135,6 @@ export const REFINEMENTS = [
   { id: "easier", label: "Easier", opposite: "harder" },
   { id: "harder", label: "Harder", opposite: "easier" },
   { id: "vertical", label: "More vertical" },
-  { id: "noDrags", label: "No drags" },
   { id: "lunch", label: "Lunch" },
 ];
 
@@ -152,7 +148,6 @@ const HARDER = { blue: "red", red: "black", black: "black" };
 export function refinementApplies(id, plan, ability, refine) {
   if (id === "easier") return (refine.has("easier") ? true : ability !== "blue");
   if (id === "harder") return (refine.has("harder") ? true : ability !== "black");
-  if (id === "noDrags") return true;
   return true;
 }
 
@@ -186,7 +181,6 @@ const ROUTE_COUNT = 5;
 export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
   let budget = plan.t1 - plan.t0;
   let level = ability;
-  let noDrags = plan.noDrags;
   let lunch = plan.lunch;
   let emphasis = null;
 
@@ -201,7 +195,6 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
       ability,
       budget,
       startClock: plan.t0,
-      noDrags: plan.noDrags,
       lunch: false,
       emphasis: null,
       count: 1,
@@ -222,7 +215,6 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
   if (refine.has("longer")) budget = Math.round(budget * 1.15);
   if (refine.has("easier")) level = EASIER[level];
   if (refine.has("harder")) level = HARDER[level];
-  if (refine.has("noDrags")) noDrags = true;
   if (refine.has("lunch")) lunch = true;
   if (refine.has("vertical")) emphasis = "vertical";
 
@@ -237,7 +229,6 @@ export function toSolverOpts({ plan, ability, refine, count = ROUTE_COUNT }) {
     ability: level,
     budget,
     startClock: plan.t0,
-    noDrags,
     lunch,
     emphasis,
     count,

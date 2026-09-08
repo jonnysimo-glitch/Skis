@@ -169,9 +169,11 @@ if (feature("1. Straight there: getting to one place, now")) {
     "lunch is not offered for a transfer",
     !(await text(page)).includes("Sit-down lunch")
   );
+  /* And nothing else is either, now that no-drag-lifts has gone: the whole
+     Also block is hidden on a transfer rather than showing one dead chip. */
   check(
-    "no drags still is, because a drag can be impassable",
-    (await text(page)).includes("No drag lifts")
+    "and neither is anything else under Also",
+    !(await text(page)).includes("Also")
   );
 
   // Both ends the same.
@@ -352,12 +354,12 @@ if (feature("4. Refine never sends you back to the form")) {
   // as "not offered" rather than as "not found".
   const chips = await page.$$eval(".sectionrule .chip", (n) => n.map((b) => b.textContent.trim()));
   check("the refine chips are one tap away", chips.length >= 6, chips.join(", "));
-  for (const want of ["Shorter", "Longer", "Easier", "Harder", "More vertical", "No drags", "Lunch"]) {
+  for (const want of ["Shorter", "Longer", "Easier", "Harder", "More vertical", "Lunch"]) {
     check(`"${want}" is offered`, chips.includes(want));
   }
 
   // Each chip re-solves in place.
-  for (const chip of ["Shorter", "More vertical", "No drags"]) {
+  for (const chip of ["Shorter", "More vertical", "Lunch"]) {
     const btn = await page.$(`.sectionrule .chip:text-is("${chip}")`);
     if (!btn || (await btn.isDisabled())) { check(`"${chip}" is tappable`, false, "disabled"); continue; }
     await btn.click();
@@ -1954,10 +1956,7 @@ if (feature("32. The places arrive as you get closer")) {
    * something moved, and `__skisFadeClock` is the sum of the deltas it has
    * actually applied. So a fixed 1800ms buys however many frames the machine
    * felt like giving, and under load — a second suite running, a rebuild —
-   * it buys fewer. That is how "the mountain huts are still on it — 0 against
-   * 0 before" and "the restaurants are on the map — 0 drawn" got reported
-   * against a build where both were fine: the sample landed before the first
-   * fade had finished, on a machine that was busy.
+   * it buys fewer, and the sample lands mid-fade.
    *
    * atRest waits for that clock to stop moving, so it is as long as it needs
    * to be and no longer.
@@ -2482,6 +2481,19 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
   // the baseline, and every comparison after it was against itself.
   await page.evaluate(() => window.__skisSetMapMode("cutout"));
   await page.waitForTimeout(1400);
+  /*
+   * In two steps, so there is something to compare.
+   *
+   * The comparison below is "everything the app draws on the mountain
+   * survives the drape", and at the opening framing the hut tier is
+   * deliberately empty — so it was comparing zero against zero and requiring
+   * one. Both samples are taken at the level a skier reads huts at; that the
+   * drape does not disturb them is the thing worth knowing.
+   */
+  await openTools(page);
+  const zoomIn30 = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  for (let i = 0; i < 2 && zoomIn30; i++) { await zoomIn30.click(); await page.waitForTimeout(420); }
+  await atRest(page, { quiet: 500, limit: 12000 });
   const drawn = await greenness();
   check("the drawn terrain has no photography in it", drawn < 2, `${drawn}% green`);
 
@@ -3833,6 +3845,26 @@ if (feature("26. Somewhere to eat")) {
   await page.click("text=Go skiing");
   await page.waitForSelector(".planbtn", { timeout: 15000 });
   await atRest(page);
+
+  /*
+   * Zoomed in first, because at the opening framing there are deliberately
+   * none.
+   *
+   * This check and section 32 disagreed for a while and both were run every
+   * time: 32 asserts "nothing to eat at the framing it opens on" and this
+   * asserted three of them on the same screen. The tiering is the newer and
+   * deliberate decision — a marker ten kilometres up says only that there is
+   * lunch somewhere in this valley — so this one was wrong, and it failed
+   * honestly for weeks while being read as a flake.
+   *
+   * What it still has to hold is what it was written for: the mountain has
+   * places on it and the resort's whole list is behind them. That is a
+   * question about the level a skier reads huts at, so it is asked there.
+   */
+  await openTools(page);
+  const zoomIn26 = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+  for (let i = 0; i < 2 && zoomIn26; i++) { await zoomIn26.click(); await page.waitForTimeout(420); }
+  await atRest(page, { quiet: 500, limit: 12000 });
 
   const drawn = (await page.evaluate(() => window.__skisPlaces)) ?? [];
   const known = (await page.evaluate(() => window.__skisAllPlaces)) ?? [];

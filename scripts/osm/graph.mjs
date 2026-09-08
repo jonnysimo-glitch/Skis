@@ -46,6 +46,33 @@ export const label = (name) => {
 };
 
 /**
+ * A car park a skier can actually leave a car in.
+ *
+ * OSM tags every car park it finds, and a good many of them belong to
+ * somebody: Monterosa's export carries "Parcheggio Hotel La Rouja" and
+ * "Parcheggio Riservato Klein Finnland", both `access=private`. Offering
+ * those is worse than offering nothing — the app has sent a driver in ski
+ * boots to a barrier, and a car park is the one place on this map you commit
+ * to before you can check it.
+ *
+ * `access=customers` stays. That is how the resorts' own paid car parks are
+ * tagged — Kronplatz's P1 to P4 are all `access=customers` — and a lift pass
+ * makes you the customer.
+ *
+ * The name rule is for the ones nobody tagged. A hotel or a guesthouse names
+ * its car park after itself, so the name is the access tag it is missing. A
+ * motorhome stop-over goes for a different reason: `Area Sosta Camper
+ * "Rindole"- Andalo` is a real public parking area and its bays are the wrong
+ * shape for a car, so sending somebody there is the same wasted trip.
+ */
+const PRIVATE_PARKING = /\b(hotel|albergo|garni|pension|pensione|residence|residenza|apartment|appartament|ferienwohnung|agriturismo|ostello|hostel|b&b|bed\s?(and|&)\s?breakfast|camping|campeggio|camper|wohnmobil|motorhome|caravan|privat[oe]?|riservato|reserved)\b/i;
+
+export const publicParking = (t) => {
+  if (t.access === "private" || t.access === "no" || t.parking === "private") return false;
+  return !PRIVATE_PARKING.test(t.name ?? "");
+};
+
+/**
  * The name a person would say, where the sign is a logo.
  *
  * A restaurant above Gressoney is tagged `name=FZRY`, `alt_name=Fitz Roy`.
@@ -336,7 +363,7 @@ export function build(osm, { tolerance = 45, elevation }) {
       : t.amenity === "restaurant" ? "restaurant"
         : EATS.has(t.amenity) ? "cafe"
           : isHire(t) ? "rental"
-            : t.amenity === "parking" ? "parking"
+            : t.amenity === "parking" && publicParking(t) ? "parking"
               : null;
   /*
    * A car park does not have to be named to be the one you want.

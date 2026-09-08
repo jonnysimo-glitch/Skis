@@ -275,7 +275,7 @@ const PEOPLE = [
       if (!(await routeCount(page))) await takeAFix(page);
       if (!(await routeCount(page))) { check(`${resort.id}: ${this.who} has something to refine`, false, "no routes"); return; }
       let stuck = null;
-      for (const chip of ["Shorter", "Longer", "Harder", "More vertical", "No drags"]) {
+      for (const chip of ["Shorter", "Longer", "Harder", "More vertical", "Lunch"]) {
         const el = await page.$(`.sectionrule .chip:text-is("${chip}")`);
         if (!el || (await el.isDisabled())) continue;
         await el.click();

@@ -1467,8 +1467,27 @@ export default function MountainMap({
      * is zoomed in and a hut tier that thinks it is zoomed out would fight
      * over the same pixels.
      */
+    /*
+     * Scaled by the zoom the user has actually applied, not frozen.
+     *
+     * NAV_LABEL_ZOOM is the answer at the framing navigation places you in,
+     * and it was the whole answer while that framing was the only one. Then
+     * navigating got a zoom floor of its own so you can pull back and see
+     * where the day goes — and this kept returning the same 2.2, so every
+     * tier stayed open. Reported as: pull out to a five-kilometre view at
+     * Kronplatz and there are fourteen station names and seven restaurant
+     * pins on the screen, which is the far view of a piste map with the
+     * close-up's labelling.
+     *
+     * `f` in navWindow is directly proportional to `v.zoom`, so metres across
+     * the frame go as 1/zoom and magnification goes as zoom. Multiplying is
+     * therefore the honest conversion, not an approximation: at the placed
+     * framing v.zoom is 1 and this is the tuned constant, and four times
+     * further out it is a quarter of it, which is below NAME_ZOOM and turns
+     * the run names and the huts off exactly as pulling back should.
+     */
     const labelZoom = (v) =>
-      isFollowing(propsRef.current) ? NAV_LABEL_ZOOM : v.zoom;
+      isFollowing(propsRef.current) ? NAV_LABEL_ZOOM * v.zoom : v.zoom;
 
     /**
      * Bring a pan back inside its wall, but only from rest.
@@ -3009,21 +3028,31 @@ export default function MountainMap({
       const done = propsRef.current.camera?.doneThrough ?? 0;
       const ahead = flat ? done + NAV_LOOKAHEAD : Infinity;
       /*
-       * While following, only the legs either side of you get a number.
+       * Every fifth number far out, every one of them close in.
        *
-       * A ski day loops through its own base, so navigating the first leg out
-       * of Stafal put seventeen numbers on the screen — 27 through 59, from
-       * three hours later — because that is where their geometry lands. They
-       * were dimmed rather than drawn, which makes them quieter noise and
-       * still noise: a faint 43 beside the gondola you are riding answers a
-       * question nobody is asking on a lift.
+       * A sixty-leg day cannot put sixty numbers on a phone, and the first
+       * attempt at that problem was a hard window — the leg behind, the leg
+       * you are on, the leg ahead — which fixed the crowding and threw away
+       * what the numbers are for. Zoomed out you want to see the SHAPE of the
+       * order: 1, 5, 10, 15 tells you the day runs clockwise and where it
+       * turns round, and no window can say that.
        *
-       * So the window is the leg behind, the leg you are on, and the leg
-       * ahead. Everything else is dropped outright rather than faded, which
-       * also gives the labels back the room. Off the navigate screen the
-       * whole route is the subject and every leg keeps its number.
+       * So the stride comes from the zoom, on the same scale the label tiers
+       * read, which means the numbers thin out at the same moment the run
+       * names do rather than on a rule of their own. Step 1 is always there —
+       * it is the one a person looks for — and while navigating so is the leg
+       * under your skis, whatever the stride says, because that is the
+       * question the screen exists to answer.
+       *
+       * Counted on the STEP, not the leg index, so the sequence a reader sees
+       * is 1, 5, 10, 15 and not 1, 6, 11, 16.
        */
-      const inWindow = (leg) => !flat || (leg >= done - 1 && leg <= ahead);
+      const z = labelZoom(v);
+      const stride = z >= 3.2 ? 1 : z >= 2.2 ? 2 : z >= 1.4 ? 3 : 5;
+      const inWindow = (leg) =>
+        leg === 0 ||
+        (flat && leg >= done - 1 && leg <= ahead) ||
+        (leg + 1) % stride === 0;
 
       /*
        * The point half way along the leg, by length rather than by index.
@@ -4043,8 +4072,9 @@ export default function MountainMap({
         const s = project(x, field.sample(x, z), z, v, cam);
         const role = feature.properties.role;
         // A place to swing by is smaller than either end of the day: it is
-        // something the route passes, not something it is for.
-        const r = role === "now" ? 8 : role === "via" ? 5 : 6;
+        // something the route passes, not something it is for. Where you are
+        // is the biggest, and gets a point on it — see drawPins.
+        const r = role === "now" ? 9 : role === "via" ? 5 : 6;
         const name = feature.properties.name;
         const w = ctx.measureText(name).width;
         // The dot stays where the place is; only the words move inside the
@@ -4081,56 +4111,80 @@ export default function MountainMap({
       const drawn = [];
       const lit = mapTest ? [] : null;
       for (const { feature, s, role, r, box, fits } of plan) {
-
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(11,26,36,0.22)";
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = role === "now" ? ACCENT : role === "finish" ? INK : "#ffffff";
-        ctx.fill();
-        ctx.lineWidth = 2.5;
         /*
-         * A ring in the accent for a place to swing by.
+         * Which way you are going, if this is you and there is a next thing.
          *
-         * White fill like the start, so it reads as the same family of
-         * marker, and the brand ring rather than the near-black one so the
-         * two are not the same dot at two sizes. Not an accent FILL, which is
-         * where you are while navigating and the one thing on the map that
-         * should never have a twin.
+         * Read from the target's projected position rather than a stored
+         * heading, so it stays right while the map turns under it.
          */
-        ctx.strokeStyle = role === "via" ? ACCENT : role === "start" ? "#0b1a24" : "#ffffff";
-        ctx.stroke();
-
-        // Which way to go next. It points at the end of the current leg: the
-        // top station of the lift you are riding, or the junction the run
-        // finishes at. Aimed from the target's projected position rather than
-        // a stored heading, so it stays right while the map turns.
-        //
-        // Clear of the dot rather than tucked under it: underneath, its white
-        // casing merged with the casing on the route running through the same
-        // pixels and it read as a smudge.
+        let ang = null;
         if (role === "now" && feature.properties.aim) {
           const [alon, alat] = feature.properties.aim;
           const t = field.proj.project(alat, alon);
           const target = project(t.x, field.sample(t.x, t.z), t.z, v, cam);
-          const ang = Math.atan2(target.y - s.y, target.x - s.x);
-          const at = (rad, d) => [s.x + Math.cos(rad) * d, s.y + Math.sin(rad) * d];
-          const tip = at(ang, r + 15);
-          const left = at(ang + 0.62, r + 6);
-          const right = at(ang - 0.62, r + 6);
-          ctx.beginPath();
-          ctx.moveTo(tip[0], tip[1]);
-          ctx.lineTo(left[0], left[1]);
-          ctx.lineTo(right[0], right[1]);
-          ctx.closePath();
+          if (Number.isFinite(target.x) && Number.isFinite(target.y)) {
+            ang = Math.atan2(target.y - s.y, target.x - s.x);
+          }
+        }
+
+        if (ang !== null) {
+          /*
+           * One shape, not a disc with a separate arrowhead behind it.
+           *
+           * It was a filled circle and then a triangle standing clear of it,
+           * each with its own white casing, and it read as two objects that
+           * happened to be touching — reported as "a circle and a triangle
+           * back to back". Every navigation app draws this as one silhouette
+           * because that is what it is: you, and the way you are pointing.
+           *
+           * The outline is the major arc — everything except the wedge around
+           * the heading — closed through the tip. Cased once around the whole
+           * thing and filled last, so the casing reads as a rim rather than
+           * as a seam across the middle.
+           */
+          const SPREAD = 1.05;
+          const TIP = r * 2.6;
+          const puck = () => {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, r, ang + SPREAD, ang - SPREAD + Math.PI * 2);
+            ctx.lineTo(s.x + Math.cos(ang) * TIP, s.y + Math.sin(ang) * TIP);
+            ctx.closePath();
+          };
           ctx.lineJoin = "round";
-          ctx.lineWidth = 4;
+          // The soft edge the plain dots get from their r+2 disc, which a
+          // shape this one cannot have underneath it.
+          puck();
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = "rgba(11,26,36,0.20)";
+          ctx.stroke();
+          puck();
+          ctx.lineWidth = 3;
           ctx.strokeStyle = "#ffffff";
           ctx.stroke();
+          puck();
           ctx.fillStyle = ACCENT;
           ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(11,26,36,0.22)";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = role === "now" ? ACCENT : role === "finish" ? INK : "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = 2.5;
+          /*
+           * A ring in the accent for a place to swing by.
+           *
+           * White fill like the start, so it reads as the same family of
+           * marker, and the brand ring rather than the near-black one so the
+           * two are not the same dot at two sizes. Not an accent FILL, which
+           * is where you are while navigating and the one thing on the map
+           * that should never have a twin.
+           */
+          ctx.strokeStyle = role === "via" ? ACCENT : role === "start" ? "#0b1a24" : "#ffffff";
+          ctx.stroke();
         }
 
         if (!box) continue;

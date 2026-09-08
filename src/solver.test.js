@@ -19,7 +19,7 @@ function check(name, condition, detail = "") {
 
 const base = {
   start: "staffal", finish: "staffal", ability: "red",
-  budget: 405, startClock: 555, noDrags: false, lunch: false, emphasis: null,
+  budget: 405, startClock: 555, lunch: false, emphasis: null,
 };
 
 console.log("\nFULL DAY, red ability, 09:15 to 16:00");
@@ -86,9 +86,6 @@ check("cruisiest has fewer hard runs than the vertical option",
   `cruisy R${cruisy.counts.red}K${cruisy.counts.black} vs vertical R${hardest.counts.red}K${hardest.counts.black}`);
 
 console.log("\nCONSTRAINTS");
-const noDrags = solve({ ...base, noDrags: true });
-check("no-drags routes contain no drag lifts",
-  noDrags.every(r => r.segments.every(e => e.kind !== "lift" || e.liftType !== "drag")));
 const lunch = solve({ ...base, lunch: true, budget: 360 });
 check("lunch routes pass a rifugio",
   lunch.every(r => r.segments.some(e => NODES[e.to].rifugio)));

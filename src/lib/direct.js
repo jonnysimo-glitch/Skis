@@ -10,7 +10,7 @@
  * than in the solver, which stays what it is.
  *
  * The same hard constraints apply: nothing above your ability, nothing that
- * boards a lift after it has shut, and no drags if you have said so.
+ * boards a lift after it has shut.
  */
 import { NODES, DIFFICULTY_RANK, buildEdges } from "../active-resort.js";
 import { measure } from "../solver.js";
@@ -35,7 +35,6 @@ function allowed(edge, opts) {
   if (edge.kind === "run") {
     return DIFFICULTY_RANK[edge.difficulty] <= DIFFICULTY_RANK[opts.ability];
   }
-  if (opts.noDrags && edge.liftType === "drag") return false;
   return true;
 }
 
@@ -52,7 +51,6 @@ function allowed(edge, opts) {
  * @param {string} opts.finish
  * @param {'blue'|'red'|'black'} opts.ability
  * @param {number} opts.startClock  minute of day you set off
- * @param {boolean} [opts.noDrags]
  * @returns {null | object}  a measured route, or null if there is no way
  */
 export function directRoute(opts) {

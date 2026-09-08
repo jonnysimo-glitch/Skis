@@ -198,7 +198,6 @@ export const RUNS = [
 export const PLACES = [
   ["Albi de Mez", "restaurant", 46.14639, 11.02396, 1776],
   ["Andalo parking", "parking", 46.16497, 11.00344, 1022, {"spaces":9,"fee":"no"}],
-  ["Area Sosta Camper \"Rindole\"- Andalo", "parking", 46.1607, 11.00611, 1062],
   ["Baita Lovara", "restaurant", 46.14718, 10.99762, 1401],
   ["Chalet Forst", "restaurant", 46.15013, 10.99632, 1328],
   ["Chalet Malga Terlaga", "restaurant", 46.14163, 11.02179, 1816],

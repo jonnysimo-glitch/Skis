@@ -16,7 +16,7 @@ function check(name, condition, detail = "") {
   console.log(`  ${status}  ${name}${detail ? "  — " + detail : ""}`);
 }
 
-const base = { ability: "red", startClock: 600, noDrags: false };
+const base = { ability: "red", startClock: 600 };
 const go = (start, finish, over = {}) => directRoute({ ...base, ...over, start, finish });
 
 console.log("\nIT GETS YOU THERE");
@@ -37,7 +37,6 @@ check(
   "no route between the same points is quicker",
   (() => {
     const alternatives = [
-      go("salati", "champoluc", { noDrags: true }),
       go("salati", "champoluc", { ability: "black" }),
     ].filter(Boolean);
     // A wider ability set can only ever match or beat it; a narrower one cannot beat it.
@@ -61,13 +60,6 @@ check(
 check(
   "a blue skier cannot cross the valleys, and is told so rather than fudged",
   go("salati", "champoluc", { ability: "blue" }) === null
-);
-check(
-  "no drag lifts when they are ruled out",
-  (() => {
-    const r = go("staffal", "jolanda", { noDrags: true });
-    return r === null || r.segments.every((e) => e.kind !== "lift" || e.liftType !== "drag");
-  })()
 );
 check(
   "never boards a lift after it has shut",
@@ -131,7 +123,6 @@ console.log("\nA TRANSFER IGNORES A DAY'S REFINEMENTS");
     finish: "champoluc",
     t0: 11 * 60,
     t1: 12 * 60 + 45,
-    noDrags: false,
     lunch: true,
     mode: "direct",
   };

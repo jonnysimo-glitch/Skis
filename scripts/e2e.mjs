@@ -520,7 +520,7 @@ try {
      * test for the words "Pick a shape", which the page stops saying when it
      * has nothing to offer, and read a correct ruled-out page as a failure.
      */
-    for (const chip of ["Easier", "Harder", "More vertical", "No drags", "Lunch"]) {
+    for (const chip of ["Easier", "Harder", "More vertical", "Lunch"]) {
       const el = await page.$(`.sectionrule button.chip:text-is("${chip}")`);
       const disabled = await el.evaluate((n) => n.disabled);
       if (disabled) {
@@ -1381,7 +1381,6 @@ try {
       { name: "first lift to lunch", t0: "08:45", t1: "12:30", ability: "Blue and red" },
       { name: "the last two hours", t0: "14:45", t1: "16:30", ability: "Anything" },
       { name: "a beginner with a morning", t0: "10:00", t1: "12:00", ability: "Blue" },
-      { name: "no drag lifts", t0: "09:15", t1: "15:45", ability: "Anything", also: "No drag lifts" },
       { name: "a sit-down lunch", t0: "09:30", t1: "16:00", ability: "Blue and red", also: "Sit-down lunch" },
     ];
 

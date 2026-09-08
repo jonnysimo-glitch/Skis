@@ -107,7 +107,6 @@ function isAllowed(edge, opts) {
   if (edge.kind === "run") {
     return DIFFICULTY_RANK[edge.difficulty] <= DIFFICULTY_RANK[opts.ability];
   }
-  if (opts.noDrags && edge.liftType === "drag") return false;
   return true;
 }
 
@@ -651,7 +650,7 @@ export function viaTrouble(opts) {
   const home = timesHome(g, adj, opts.finish);
   // The same mountain with nothing ruled out, so "you cannot get there on
   // blue" can be told apart from "you cannot get there at all".
-  const open = buildAdjacency(g, { ...opts, ability: "black", noDrags: false });
+  const open = buildAdjacency(g, { ...opts, ability: "black" });
   const openHome = timesHome(g, open, opts.finish);
 
   const out = [];
@@ -691,7 +690,6 @@ export function viaTrouble(opts) {
  * @param {'blue'|'red'|'black'} opts.ability  hardest run they'll take
  * @param {number} opts.budget     minutes available (already net of lunch)
  * @param {number} opts.startClock minute-of-day of first lift, e.g. 555 = 09:15
- * @param {boolean} [opts.noDrags]
  * @param {boolean} [opts.lunch]   require passing a rifugio
  * @param {string[]} [opts.via]    node keys the day must pass through
  * @param {'vertical'|null} [opts.emphasis]

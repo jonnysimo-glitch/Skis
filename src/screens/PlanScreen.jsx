@@ -295,28 +295,6 @@ export default function PlanScreen({
           </p>
         </div>
 
-        <div className="field">
-          <label className="flabel">Also</label>
-          <div className="chips">
-            <button
-              className="chip"
-              aria-pressed={plan.noDrags}
-              onClick={() => set({ noDrags: !plan.noDrags })}
-            >
-              No drag lifts
-            </button>
-            {plan.mode !== "direct" && (
-              <button
-                className="chip"
-                aria-pressed={plan.lunch}
-                onClick={() => set({ lunch: !plan.lunch })}
-              >
-                Sit-down lunch
-              </button>
-            )}
-          </div>
-        </div>
-
         {plan.mode !== "direct" && (
           <div className="field">
             <button
@@ -409,6 +387,25 @@ export default function PlanScreen({
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Just the one, now that no-drag-lifts has gone. A drag being
+            unpleasant is not the kind of thing that should get a control on
+            the screen where a day is decided; if it were, so would half a
+            dozen others. */}
+        {plan.mode !== "direct" && (
+          <div className="field">
+            <label className="flabel">Also</label>
+            <div className="chips">
+              <button
+                className="chip"
+                aria-pressed={plan.lunch}
+                onClick={() => set({ lunch: !plan.lunch })}
+              >
+                Sit-down lunch
+              </button>
+            </div>
           </div>
         )}
 
