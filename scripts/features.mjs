@@ -6126,6 +6126,159 @@ if (feature("48. The day is numbered, in the order you ski it")) {
   await page.context_.close();
 }
 
+if (feature("49. Somewhere to swing by, and what it says when it cannot")) {
+  /*
+   * The plan form can be asked to take the day past up to three places.
+   *
+   * The brief is explicit that this must not become the required pin-dropping
+   * step it is in Komoot, so the first thing checked is that it is closed and
+   * out of the way — and then that a stop actually reaches the solver, shows
+   * on the mountain, and that a place the day cannot include is named rather
+   * than reported as a broken mountain.
+   */
+  const page = await newPage(browser, { at: [9, 30] });
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  await page.click(".hero");
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 15000 });
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+
+  const row = await page.$(".disclose");
+  check("the plan form offers it", Boolean(row));
+  check("closed, and saying so", await page.$eval(".disclose", (n) => n.getAttribute("aria-expanded")) === "false");
+  check("and it says it is optional",
+    /Optional/.test(await page.$eval(".disclose", (n) => n.innerText)),
+    (await page.$eval(".disclose", (n) => n.innerText)).replace(/\n/g, " "));
+  check("nothing to pick until it is opened", !(await page.$("#p-via")));
+
+  await page.click(".disclose");
+  await page.waitForSelector("#p-via", { timeout: 8000 });
+  const options = await page.$$eval("#p-via option", (ns) =>
+    ns.filter((n) => n.value).map((n) => ({ v: n.value, t: n.textContent })));
+  check("there are places to pick", options.length > 0, `${options.length} of them`);
+  /*
+   * No junction the pipeline named for itself.
+   *
+   * Thirty-five of Monterosa's eighty-two nodes carry a description rather
+   * than a name — "Above Gabiet", "Ostafa 2 junction" — because the start
+   * picker has to be answerable from wherever a skier is standing. Nobody
+   * chooses to swing by Ostafa 2 junction, and a list padded with them is a
+   * list nobody reads to the bottom.
+   */
+  check("and none of them is a junction the export named for itself",
+    options.every((o) => !/junction$|^(Above|Below) |^Point \d/.test(o.t.split(" — ")[0])),
+    options.filter((o) => /junction|^(Above|Below) /.test(o.t)).slice(0, 3).map((o) => o.t).join(", ") || "all real names");
+  // A name twice in a picker is a picker you cannot use. One lift is two
+  // stations under one name and either end answers it.
+  const names = options.map((o) => o.t.split(" — ")[0]);
+  check("no name appears twice", new Set(names).size === names.length,
+    names.filter((n, i) => names.indexOf(n) !== i).join(", ") || `${names.length} distinct`);
+  check("somewhere to eat is named under the station it stands at",
+    options.some((o) => o.t.includes(" — ")),
+    `${options.filter((o) => o.t.includes(" — ")).length} with something at them`);
+
+  // Pick one that the mountain can actually take in.
+  const reachable = options.find((o) => o.v === "collesalati") ?? options[0];
+  await page.selectOption("#p-via", reachable.v);
+  await page.waitForSelector(".viachip", { timeout: 8000 });
+  check("picking one adds a row you can read",
+    (await page.$eval(".viachip", (n) => n.innerText)).length > 2,
+    (await page.$eval(".viachip", (n) => n.innerText)).replace(/\n/g, " | "));
+  check("and the closed row would now say how many",
+    /1 of 3/.test(await page.$eval(".disclose__n", (n) => n.textContent)),
+    await page.$eval(".disclose__n", (n) => n.textContent));
+
+  // On the mountain, not just in the form. Three taps can put a day across
+  // two valleys without the reader ever seeing where they are.
+  await atRest(page, { quiet: 600, limit: 16000 });
+  const pins = await page.evaluate(() => (window.__skisPinLabels ?? []).map((b) => b.name));
+  check("and it is a marker on the map", pins.length > 1, pins.join(", "));
+
+  await page.click("text=Find routes");
+  await page.waitForSelector(".routecard, .empty", { timeout: 30000 });
+  check("a place the day can take in still returns routes",
+    Boolean(await page.$(".routecard")),
+    (await page.$(".empty")) ? (await page.$eval(".empty", (n) => n.innerText.split("\n")[0])) : "routes");
+
+  // And it is actually on every one of them. The solver's own checks assert
+  // this on the graph; this asserts it on what a skier is shown.
+  if (await page.$(".routecard")) {
+    await openRoute(page, 0);
+    await page.waitForSelector(".detail__legs", { timeout: 20000 });
+    await openLegs(page);
+    const legs = await page.$$eval(".leg__nm", (ns) => ns.map((n) => n.textContent));
+    check("the day it offers is a real day", legs.length > 4, `${legs.length} legs`);
+    // Numbered in step with the map's badges, which is why they were added.
+    const numbers = await page.$$eval(".leg__n", (ns) => ns.map((n) => Number(n.textContent)));
+    check("and its legs are numbered from one, in order",
+      numbers.length === legs.length && numbers.every((n, i) => n === i + 1),
+      `${numbers[0]}..${numbers[numbers.length - 1]} over ${legs.length} legs`);
+  }
+  check("no page errors on the way there", page.errors.length === 0, page.errors.join(" | "));
+  await page.context_.close();
+
+  /*
+   * A place the day cannot include is named, and so is the reason.
+   *
+   * The failure this replaced: a day from Stafal via Alagna on red came back
+   * as "there is no day on red or below runs at Monterosa Ski, however long
+   * you give it" — about a mountain that plans a red day from Stafal every
+   * time. Naming the wrong thing in an error sends the reader to change the
+   * wrong setting, which is worse than a vague error.
+   *
+   * A fresh page rather than walking back through four screens. Backing out
+   * of the leg list, the route and the list of routes is three clicks that
+   * test nothing this section is about, and the second of them raced the
+   * collapsing route bar for thirty seconds before timing out on a button it
+   * could see.
+   */
+  const two = await newPage(browser, { at: [9, 30] });
+  await two.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await two.waitForSelector(".hero", { timeout: 20000 });
+  await two.click(".hero");
+  await two.click("text=Go skiing");
+  await two.waitForSelector(".planbtn", { timeout: 15000 });
+  await two.click(".planbtn");
+  await two.waitForSelector("#p-t1", { timeout: 15000 });
+  await two.click(".disclose");
+  await two.waitForSelector("#p-via", { timeout: 8000 });
+
+  // Alagna is the far end of the valley and the node the picker offers for it
+  // is only served by a black run, so no red day from Stafal takes it in.
+  const hopeless = (await two.$$eval("#p-via option", (ns) =>
+    ns.filter((n) => n.value).map((n) => n.value))).find((v) => v === "alagna");
+  check("the mountain still offers the far valley as a choice", Boolean(hopeless));
+  if (hopeless) {
+    await two.selectOption("#p-via", hopeless);
+    await two.waitForSelector(".viachip", { timeout: 8000 });
+    await two.click("text=Find routes");
+    await two.waitForSelector(".empty, .routecard", { timeout: 30000 });
+    const empty = await two.$(".empty");
+    const said = empty ? await two.$eval(".empty", (n) => n.innerText.replace(/\n+/g, " / ")) : "";
+    check("it says which place, not which mountain",
+      Boolean(empty) && /Alagna/.test(said), said.slice(0, 140) || "found routes after all");
+    check("and does not claim the resort has no day at this grade",
+      !/however long you give it/.test(said), said.slice(0, 140));
+    check("and the first thing it offers is dropping that place",
+      /without Alagna|Drop the places/.test(said), said.slice(0, 200));
+    // Tapping it must actually get you a day, not the same screen again.
+    const fix = await two.$(".fixlist button");
+    check("the offer is a button", Boolean(fix));
+    if (fix) {
+      await fix.click();
+      await two.waitForSelector(".routecard, .empty", { timeout: 30000 });
+      check("and taking it plans the day",
+        Boolean(await two.$(".routecard")),
+        (await two.$(".empty")) ? "still empty" : "routes");
+    }
+  }
+
+  check("no page errors", two.errors.length === 0, two.errors.join(" | "));
+  await two.context_.close();
+}
+
 } catch (err) {
   /*
    * A check that throws is a failing check, not a run that produced nothing.
