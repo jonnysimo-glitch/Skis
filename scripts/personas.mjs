@@ -14,7 +14,7 @@
  * them, whether anything on screen is broken text, whether every image
  * actually loaded, and whether the page threw. Run with npm run personas.
  */
-import { serve, launch, newPage, toForm, solve, routeCount, openRoute, openLegs, reachNext, atRest, multiTouch, openTools } from "./harness.mjs";
+import { serve, launch, newPage, toForm, solve, routeCount, openRoute, openLegs, reachNext, atRest, multiTouch, openTools, zoomBy } from "./harness.mjs";
 import { RESORTS } from "../src/resorts/index.js";
 
 const LIVE = RESORTS.filter((r) => r.available);
@@ -172,35 +172,6 @@ async function toNav(page, url, index, resort, who) {
   await page.waitForSelector(".nav__head", { timeout: 25000 });
   await atRest(page, { quiet: 700, limit: 16000 });
   return true;
-}
-
-/**
- * Tap zoom `n` times, reopening the map tools whenever they have closed.
- *
- * The tools panel collapses on its own — the map is the hero and the chrome
- * gets out of the way — so a loop that grabs the zoom button once and clicks
- * it eight times clicks a detached element. Every persona that wrote that loop
- * had `if (!button) break` in it, so instead of failing it quietly stopped
- * zooming and then reported whatever the opening framing showed. That is how
- * "0 markers" was read as the car parks having gone from two resorts, when
- * the camera had never left the view where the place tier is deliberately
- * empty.
- *
- * A person taps the control again. So does this.
- */
-async function zoomBy(page, n, way = "in") {
-  for (let i = 0; i < n; i++) {
-    let btn = await page.$(`.maptools .iconbtn[aria-label="Zoom ${way}"]`);
-    if (!btn) {
-      await openTools(page);
-      btn = await page.$(`.maptools .iconbtn[aria-label="Zoom ${way}"]`);
-    }
-    if (!btn) return i;
-    const done = await btn.click().then(() => true).catch(() => false);
-    if (!done) { await openTools(page); i--; continue; }
-    await page.waitForTimeout(220);
-  }
-  return n;
 }
 
 /** Take the first offered fix, if there is one. Returns what it led to. */

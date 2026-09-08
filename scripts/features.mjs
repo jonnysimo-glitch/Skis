@@ -29,6 +29,7 @@ import {
   openLegs,
   openTools,
   atRest,
+  zoomBy,
   touchDrag,
   touchTap,
   touchHold,
@@ -2016,8 +2017,7 @@ if (feature("32. The places arrive as you get closer")) {
 
   // And they arrive with the run names, which is the level they belong to.
   await openTools(page);
-  const zoomIn32 = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-  for (let i = 0; i < 2; i++) { await zoomIn32.click(); await page.waitForTimeout(420); }
+  await zoomBy(page, 2, "in", { settle: 420 });
   await atRest(page, { quiet: 500, limit: 12000 });
   const withRuns = await page.evaluate(() => ({
     eat: (window.__skisPlaces ?? []).length,
@@ -2513,8 +2513,7 @@ if (feature("30. Satellite is a skin, not somewhere else")) {
    * drape does not disturb them is the thing worth knowing.
    */
   await openTools(page);
-  const zoomIn30 = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-  for (let i = 0; i < 2 && zoomIn30; i++) { await zoomIn30.click(); await page.waitForTimeout(420); }
+  await zoomBy(page, 2, "in", { settle: 420 });
   await atRest(page, { quiet: 500, limit: 12000 });
   const drawn = await greenness();
   check("the drawn terrain has no photography in it", drawn < 2, `${drawn}% green`);
@@ -3814,8 +3813,7 @@ if (feature("28. The runs have their names on them")) {
     `${far.length} names`);
 
   await openTools(page);
-  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(430); }
+  await zoomBy(page, 5, "in", { settle: 430 });
   await page.waitForTimeout(800);
   const near = await names();
   check("zooming in writes them along the runs", near.length >= 5,
@@ -3888,8 +3886,7 @@ if (feature("27. How far is that")) {
     check("and it is out of the way, bottom left", rest.left < 60, `${rest.left}px from the left`);
 
     await openTools(page);
-    const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-    for (let i = 0; i < 4; i++) { await zoomIn.click(); await page.waitForTimeout(420); }
+    await zoomBy(page, 4, "in", { settle: 420 });
     const close = await read();
     check("zooming in makes the same bar mean less ground",
       close && (close.metres ?? Number(close.label.replace(/[^\d.]/g, ""))) !== undefined &&
@@ -3929,8 +3926,7 @@ if (feature("26. Somewhere to eat")) {
    * question about the level a skier reads huts at, so it is asked there.
    */
   await openTools(page);
-  const zoomIn26 = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-  for (let i = 0; i < 2 && zoomIn26; i++) { await zoomIn26.click(); await page.waitForTimeout(420); }
+  await zoomBy(page, 2, "in", { settle: 420 });
   await atRest(page, { quiet: 500, limit: 12000 });
 
   const drawn = (await page.evaluate(() => window.__skisPlaces)) ?? [];
@@ -4483,7 +4479,6 @@ if (feature("36. Every name arrives the same way")) {
    * the transition between them was a pop.
    */
   await openTools(page);
-  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
   const trace = await page.evaluate(() => {
     window.__skisTrace = [];
     const tick = () => {
@@ -4497,7 +4492,7 @@ if (feature("36. Every name arrives the same way")) {
     tick();
     return true;
   });
-  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(430); }
+  await zoomBy(page, 5, "in", { settle: 430 });
   await page.waitForTimeout(900);
   const steps = await page.evaluate((fadeMs) => {
     cancelAnimationFrame(window.__skisTraceId);
@@ -4650,8 +4645,7 @@ if (feature("38. Every tier of label, the same way")) {
   }, TIERS);
 
   await openTools(page);
-  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(400); }
+  await zoomBy(page, 5, "in", { settle: 400 });
   await page.waitForTimeout(700);
   await page.evaluate(async () => {
     const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -4660,8 +4654,7 @@ if (feature("38. Every tier of label, the same way")) {
   // And back out through the threshold, which is the direction that used to
   // freeze a tier's fades at full and make the NEXT crossing pop.
   await openTools(page);
-  const zoomOut = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
-  for (let i = 0; i < 5; i++) { await zoomOut.click(); await page.waitForTimeout(400); }
+  await zoomBy(page, 5, "out", { settle: 400 });
   await page.waitForTimeout(700);
 
   const report = await page.evaluate((args) => {
@@ -5934,10 +5927,9 @@ if (feature("39. The map settles, and is not crowded")) {
    */
   const sweep = await (async () => {
     await openTools(page);
-    const zin = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-    await openTools(page);
-    const zout = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
-    const up = async (b, n) => { for (let i = 0; i < n; i++) { await b.click(); await page.waitForTimeout(850); } };
+    // Both directions through the shared helper, so a panel that closes
+    // mid-section reopens instead of throwing.
+    const up = (way, n) => zoomBy(page, n, way, { settle: 850 });
     const shown = () => page.evaluate((hooks) => {
       const out = [];
       for (const h of Object.values(hooks)) {
@@ -5946,8 +5938,8 @@ if (feature("39. The map settles, and is not crowded")) {
       return out;
     }, HOOKS);
     const seq = [new Set(await shown())];
-    for (let i = 0; i < 5; i++) { await up(zin, 1); seq.push(new Set(await shown())); }
-    for (let i = 0; i < 5; i++) { await up(zout, 1); seq.push(new Set(await shown())); }
+    for (let i = 0; i < 5; i++) { await up("in", 1); seq.push(new Set(await shown())); }
+    for (let i = 0; i < 5; i++) { await up("out", 1); seq.push(new Set(await shown())); }
     const flicker = (from, to) => {
       const all = new Set();
       for (let i = from; i <= to; i++) for (const n of seq[i]) all.add(n);
@@ -6020,8 +6012,7 @@ if (feature("37. A connector is not a piste")) {
   await page.waitForTimeout(1500);
   // Ried is a named piste on the map now, at the zoom that writes names.
   await openTools(page);
-  const zoomIn = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-  for (let i = 0; i < 5; i++) { await zoomIn.click(); await page.waitForTimeout(400); }
+  await zoomBy(page, 5, "in", { settle: 400 });
   await page.waitForTimeout(700);
   const onMap = await page.evaluate(() => window.__skisRunNames ?? []);
   check("and the map is willing to write its name on it",

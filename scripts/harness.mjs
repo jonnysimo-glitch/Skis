@@ -167,6 +167,43 @@ export async function openTools(page) {
   await page.waitForSelector('.maptools .iconbtn[aria-label="Zoom in"]', { timeout: 5000 });
 }
 
+/**
+ * Tap zoom `n` times, reopening the map tools whenever they have closed.
+ *
+ * The tools panel collapses on its own — the map is the hero and the chrome
+ * gets out of the way — so a handle grabbed once and clicked eight times
+ * clicks a detached element. Both suites had written that loop, in ten places
+ * between them, and it failed in two different ways: with `if (!button) break`
+ * it silently stopped zooming and reported whatever the opening framing showed,
+ * which is how "0 markers" was read as the car parks having gone from two
+ * resorts; without the guard it threw mid-section and took the run down with
+ * it ("elementHandle.click: Element is not attached to the DOM", section 38).
+ *
+ * A person taps the control again. Returns how many taps actually landed, so
+ * a caller can assert on that rather than assume.
+ */
+export async function zoomBy(page, n, way = "in", { settle = 220 } = {}) {
+  const find = () => page.$(`.maptools .iconbtn[aria-label="Zoom ${way}"]`);
+  let landed = 0;
+  for (let i = 0; i < n; i++) {
+    let btn = await find();
+    if (!btn) {
+      await openTools(page);
+      btn = await find();
+    }
+    if (!btn) return landed;
+    if (await btn.click().then(() => true).catch(() => false)) landed++;
+    else {
+      // Detached between the look-up and the click. Reopen and retry once.
+      await openTools(page);
+      const again = await find();
+      if (again && (await again.click().then(() => true).catch(() => false))) landed++;
+    }
+    await page.waitForTimeout(settle);
+  }
+  return landed;
+}
+
 /** Home → pick the resort → the skiing tab's plan screen. */
 export async function toPlan(page, url) {
   // Not networkidle: the map streams elevation tiles for as long as it is on
