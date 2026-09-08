@@ -1408,8 +1408,12 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   cursor: pointer;
 }
 .hero__info:active { background: rgba(10, 25, 34, 0.62); }
-.btn--sm {
-  min-height: 36px;
+/* The "all 29 blue runs" button.
+   Its own class, not a second `.btn--sm`: that class already exists with
+   `min-height: var(--tap)`, and redefining it here took four buttons that had
+   been using it — See this day, Keep, Delete — down to 36px and under the 44pt
+   floor the audit enforces. Lighter, not smaller. */
+.gradeblock__more {
   padding: 0 var(--s-4);
   font-size: 13.5px;
   margin-top: var(--s-2);

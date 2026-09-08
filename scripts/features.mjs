@@ -30,6 +30,7 @@ import {
   openTools,
   atRest,
   zoomBy,
+  tapControl,
   touchDrag,
   touchTap,
   touchHold,
@@ -1023,8 +1024,22 @@ if (feature("10. Map chrome only where there is a map")) {
       const finish = await ended.$('button:has-text("Finish")');
       if (finish) await finish.click();
       await ended.waitForTimeout(1400);
-      check("the summary leaves too little map for them, so they go",
-        (await tools()) === 0, `${await tools()} still showing`);
+      /*
+       * The STACK goes; the one way back stays.
+       *
+       * This asked for nothing at all, and the fault it was written for is a
+       * five button stack in 185 pixels — which did not clip at the bottom, it
+       * ran off the TOP, a half-round button hanging into the status bar. One
+       * button needs 72 and cannot do that, and it is the control that undoes
+       * a map pushed into its pan wall, which is as reachable here as anywhere
+       * the map takes a finger. So: at most one, it is the recentre, and the
+       * check below still proves nothing is painted off the top.
+       */
+      const left = await tools();
+      check("the summary leaves too little map for the stack, so it goes",
+        left <= 1, `${left} still showing`);
+      check("and what is left is the way back, not a stack",
+        left === 0 || Boolean(await ended.$('.maptools .iconbtn[aria-label="Recentre the view"]')));
       // And nothing a person can see is hanging off the top of the screen.
       // The hidden stack still has a layout box up there, which is why this
       // asks about what is painted rather than about where the boxes are.
@@ -1250,8 +1265,7 @@ if (feature("12. You cannot scroll the mountain off the screen")) {
       const v = window.__skisView;
       return { x: v.panX, lim: v.panLimit?.x ?? 0 };
     });
-    await openTools(page);
-  await page.click("[aria-label='Recentre the view']");
+    await tapControl(page, "Recentre the view");
     await page.waitForTimeout(700);
     const cxx = box.x + box.w / 2;
     const cyy = box.y + box.h / 2;
@@ -2939,8 +2953,9 @@ if (feature("16. One gesture at a time")) {
       return { zoom: v.targetZoom, bearing: v.bearing, pitch: v.pitch };
     };
     const reset = async () => {
-      await openTools(page);
-      await page.tap("[aria-label='Recentre the view']");
+      // Through the harness, which reopens the panel if it has closed under
+      // the tap. See tapControl.
+      await tapControl(page, "Recentre the view", { touch: true });
       await page.waitForTimeout(500);
     };
     const twoFinger = (frames) =>

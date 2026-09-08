@@ -196,7 +196,7 @@ export default function ResortGuide({ resort, onClose, onChoose }) {
                       </ul>
                       {(rest > 0 || all) && (
                         <button
-                          className="btn btn--ghost btn--sm"
+                          className="btn btn--ghost btn--sm gradeblock__more"
                           onClick={() => setOpenGrade(all ? null : g.grade)}
                           aria-expanded={all}
                         >

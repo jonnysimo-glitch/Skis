@@ -204,6 +204,33 @@ export async function zoomBy(page, n, way = "in", { settle = 220 } = {}) {
   return landed;
 }
 
+/**
+ * Tap one map control, reopening the panel if it has closed.
+ *
+ * Same hazard as zoomBy and the same cause: the stack collapses on its own, so
+ * a locator that resolved a moment ago can detach before the tap lands. It
+ * showed up as a crash rather than a failure — "page.tap: Timeout 30000ms
+ * exceeded, locator resolved to <button aria-label='Recentre the view'>" —
+ * which took a whole features run down at 309 checks of 691 while four suites
+ * were sharing the machine. Section 16 passes 26 of 26 on its own, so it is
+ * load, and load is not something a check should be sensitive to.
+ *
+ * `touch` picks tap over click, for the sections driving a touchscreen.
+ */
+export async function tapControl(page, label, { touch = false, tries = 3 } = {}) {
+  const sel = `.maptools .iconbtn[aria-label="${label}"]`;
+  for (let i = 0; i < tries; i++) {
+    if (!(await page.$(sel))) await openTools(page);
+    const el = await page.$(sel);
+    if (!el) continue;
+    const done = touch
+      ? await el.tap().then(() => true).catch(() => false)
+      : await el.click().then(() => true).catch(() => false);
+    if (done) return true;
+  }
+  return false;
+}
+
 /** Home → pick the resort → the skiing tab's plan screen. */
 export async function toPlan(page, url) {
   // Not networkidle: the map streams elevation tiles for as long as it is on
