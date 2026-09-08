@@ -1,5 +1,6 @@
 /**
- * Fifteen people, each using the whole app their own way, on every live resort.
+ * Thirty-one people, each using the whole app their own way, on every live
+ * resort.
  *
  * The other suites test the product a behaviour at a time. This one tests it a
  * person at a time: open the app cold, pick a mountain, plan the day you
@@ -128,6 +129,37 @@ async function withLunch(page) {
   const chip = await page.$('.chip:text-is("Sit-down lunch")');
   if (!chip) return false;
   if ((await chip.getAttribute("aria-pressed")) !== "true") await chip.click();
+  return true;
+}
+
+/**
+ * All the way to the navigation screen on the resort at `index`, with the
+ * maptest hooks on.
+ *
+ * Four of the people below start here, because what they came to look at is
+ * the follow camera and there are seven taps in front of it. A persona that
+ * spells those out is a persona that breaks when a button moves, which is not
+ * what these journeys are for. Reports its own failure and leaves the page on
+ * whatever screen it got stuck on, so the caller can bail without a second
+ * message about the same thing.
+ */
+async function toNav(page, url, index, resort, who) {
+  await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hero", { timeout: 20000 });
+  (await page.$$(".hero"))[index].click();
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 20000 });
+  await plan(page, {});
+  if (!(await routeCount(page))) await takeAFix(page);
+  if (!(await routeCount(page))) {
+    check(`${resort.id}: ${who} has a day to ski`, false, "no routes");
+    return false;
+  }
+  await openRoute(page);
+  await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+  await page.click("text=/Save and start/");
+  await page.waitForSelector(".nav__head", { timeout: 25000 });
+  await atRest(page, { quiet: 700, limit: 16000 });
   return true;
 }
 
@@ -1032,6 +1064,257 @@ const PEOPLE = [
       if (!n) { const f = await takeAFix(page); n = f?.routes ?? 0; }
       check(`${resort.id}: ${this.who} still ends up with a day`, n > 0, `${n} routes`);
       await screen(page, this.who, "after changing her mind");
+    },
+  },
+  /*
+   * ---- and six more, on the round of work that followed -------------------
+   *
+   * Every one of these uses something built after the last persona round: the
+   * lean the ground allows, the recentre that undoes whatever you did to the
+   * view, the mountain going back to being a mountain, and the step numbers
+   * easing instead of blinking. A feature check knows what it is looking for;
+   * these arrive at it the way a person does, which is how the last four
+   * rounds found what they found.
+   */
+  {
+    id: "wrecksview",
+    who: "shoves the map about with gloves on and wants it back",
+    at: [10, 15],
+    async run(page, url, index, resort) {
+      await toNav(page, url, index, resort, this.who);
+      if (!(await page.$(".nav__head"))) return;
+      const view = () => page.evaluate(() => ({ ...window.__skisView }));
+      // A gloved hand does not deliver a tidy gesture. Long, off-axis, fast.
+      await multiTouch(page, [
+        [[200, 260]],
+        [[240, 340]], [[290, 430]], [[330, 520]], [[350, 610]], [[360, 700]],
+        [],
+      ]);
+      await openTools(page);
+      for (let i = 0; i < 3; i++) {
+        const zin = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
+        if (zin) { await zin.click(); await page.waitForTimeout(200); }
+      }
+      await atRest(page, { quiet: 600, limit: 14000 });
+      const bad = await view();
+      /*
+       * She has to be able to tell she has broken it, or the check is
+       * measuring nothing. Either the map moved off centre or the zoom went
+       * somewhere she did not mean.
+       */
+      const moved = Math.hypot(bad.panX ?? 0, bad.panY ?? 0) > 40 || Math.abs((bad.zoom ?? 1) - 1) > 0.4;
+      check(`${resort.id}: ${this.who} can get the view into a mess`, moved,
+        `zoom ${(bad.zoom ?? 0).toFixed(2)}, pan ${Math.round(bad.panX ?? 0)},${Math.round(bad.panY ?? 0)}`);
+      await openTools(page);
+      const home = await page.$('.maptools .iconbtn[aria-label="Recentre the view"]');
+      check(`${resort.id}: ${this.who} finds one button to fix it`, Boolean(home));
+      if (home) {
+        await home.click();
+        await atRest(page, { quiet: 700, limit: 16000 });
+        const now = await view();
+        check(`${resort.id}: ${this.who} gets the follow view back`,
+          Math.hypot(now.panX ?? 0, now.panY ?? 0) < 14 && Math.abs((now.zoom ?? 0) - 1) < 0.15,
+          `zoom ${(now.zoom ?? 0).toFixed(2)}, pan ${Math.round(now.panX ?? 0)},${Math.round(now.panY ?? 0)}`);
+        const drawn = await page.evaluate(() =>
+          (window.__skisRouteDrawn ?? []).reduce((n, l) => n + l.pts, 0));
+        check(`${resort.id}: ${this.who} can see the route again`, drawn > 100, `${drawn} points`);
+      }
+      await screen(page, this.who, "after fixing the view");
+    },
+  },
+  {
+    id: "ridesup",
+    who: "rides the long lift and wants to see where she is going",
+    at: [9, 0],
+    async run(page, url, index, resort) {
+      await toNav(page, url, index, resort, this.who);
+      if (!(await page.$(".nav__head"))) return;
+      /*
+       * The complaint this is for: "sometimes it gets inside the mountain".
+       * Riding up, the hillside in front rises faster than the sight line and
+       * fills the frame. So she rides a dozen junctions and, at each one,
+       * asks whether the camera is leaning further over than the ground ahead
+       * allows and whether the route is still drawn.
+       */
+      const buried = [];
+      const blank = [];
+      let ridden = 0;
+      for (let i = 0; i < 12; i++) {
+        await atRest(page, { quiet: 500, limit: 14000 });
+        const v = await page.evaluate(() => ({
+          pitch: window.__skisView?.pitch ?? null,
+          cap: window.__skisView?.pitchCap ?? null,
+          route: (window.__skisRouteDrawn ?? []).reduce((n, l) => n + l.pts, 0),
+          leg: document.querySelector(".nav__legcount")?.textContent?.trim() ?? "",
+        }));
+        ridden++;
+        if (Number.isFinite(v.cap) && v.pitch > v.cap + 1) buried.push(`${v.leg} ${Math.round(v.pitch)}>${Math.round(v.cap)}`);
+        if (!(v.route > 20)) blank.push(v.leg);
+        if (!(await reachNext(page))) break;
+        await page.waitForTimeout(400);
+      }
+      check(`${resort.id}: ${this.who} rides the day`, ridden >= 5, `${ridden} legs`);
+      check(`${resort.id}: ${this.who} never ends up inside the hill`,
+        buried.length === 0, buried.slice(0, 3).join(", "));
+      check(`${resort.id}: ${this.who} can see the route at every junction`,
+        blank.length === 0, blank.slice(0, 3).join(", "));
+      await screen(page, this.who, "part way up");
+    },
+  },
+  {
+    id: "startsover",
+    who: "abandons the day and expects the mountain back",
+    at: [11, 0],
+    async run(page, url, index, resort) {
+      await toNav(page, url, index, resort, this.who);
+      if (!(await page.$(".nav__head"))) return;
+      await reachNext(page);
+      await page.waitForTimeout(500);
+      /*
+       * Out the way she came in: stop navigating, off the detail, change the
+       * plan, off the form. Four taps, four screens that could each have kept
+       * the day, which is why it is walked rather than jumped.
+       */
+      for (const sel of [
+        '[aria-label="Stop navigating"]',
+        ".sheet__foot .btn--quiet",
+        '[aria-label="Change the plan"]',
+        '[aria-label="Back to the resort"]',
+      ]) {
+        const el = await page.$(sel);
+        if (el) { await el.click().catch(() => {}); await page.waitForTimeout(700); }
+      }
+      const home = Boolean(await page.$(".planbtn"));
+      check(`${resort.id}: ${this.who} gets back to the mountain`, home);
+      if (!home) return;
+      await atRest(page, { quiet: 700, limit: 16000 });
+      const left = await page.evaluate(() => ({
+        route: (window.__skisRouteDrawn ?? []).reduce((n, l) => n + l.pts, 0),
+        badges: (window.__skisStepBadges ?? []).length,
+      }));
+      check(`${resort.id}: ${this.who} finds it clean, not yesterday's day`,
+        left.route === 0 && left.badges === 0,
+        `${left.route} route points, ${left.badges} numbers`);
+      // And it still works: a reset that leaves a dead mountain is no better.
+      await plan(page, {});
+      let n = await routeCount(page);
+      if (!n) { const f = await takeAFix(page); n = f?.routes ?? 0; }
+      check(`${resort.id}: ${this.who} can plan a fresh one`, n > 0, `${n} routes`);
+      await screen(page, this.who, "starting over");
+    },
+  },
+  {
+    id: "watchesnumbers",
+    who: "pinches in and out and notices things blinking",
+    at: [9, 45],
+    async run(page, url, index, resort) {
+      await toNav(page, url, index, resort, this.who);
+      if (!(await page.$(".nav__head"))) return;
+      const badges = () => page.evaluate(() => window.__skisStepBadges ?? []);
+      await openTools(page);
+      /*
+       * "There's a bit of a glitching." Sampled fast across a zoom out,
+       * because a tier that eases and a tier that pops have the same
+       * endpoints and differ only in the middle.
+       */
+      const samples = [];
+      for (let i = 0; i < 3; i++) {
+        const out = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
+        if (!out) break;
+        await out.click();
+        for (let j = 0; j < 10; j++) { samples.push(await badges()); await page.waitForTimeout(50); }
+      }
+      const easing = samples.filter((s) => s.some((b) => b.fade > 0.05 && b.fade < 0.95)).length;
+      check(`${resort.id}: ${this.who} sees the numbers ease rather than blink`,
+        samples.length === 0 || easing > 0,
+        `${easing} of ${samples.length} samples caught one part way`);
+      await atRest(page, { quiet: 700, limit: 16000 });
+      const far = (await badges()).filter((b) => !b.going).map((b) => b.step);
+      check(`${resort.id}: ${this.who} still has numbers to read`, far.length > 0,
+        far.sort((a, b) => a - b).join(", "));
+      await screen(page, this.who, "zoomed out mid-day");
+    },
+  },
+  {
+    id: "countsstops",
+    who: "reads the order of the day off the map at a glance",
+    at: [8, 45],
+    async run(page, url, index, resort) {
+      await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".hero", { timeout: 20000 });
+      (await page.$$(".hero"))[index].click();
+      await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 20000 });
+      await plan(page, { t0: "09:00", t1: "16:00" });
+      if (!(await routeCount(page))) await takeAFix(page);
+      if (!(await routeCount(page))) { check(`${resort.id}: ${this.who} has a day`, false, "no routes"); return; }
+      await openRoute(page);
+      await page.waitForSelector(".detail__legs", { timeout: 15000 });
+      await atRest(page, { quiet: 700, limit: 16000 });
+      const shown = (await page.evaluate(() => window.__skisStepBadges ?? []))
+        .filter((b) => !b.going).map((b) => b.step).sort((a, b) => a - b);
+      /*
+       * What she is doing is reading which way round the day goes, and that
+       * needs a first number and a sequence after it. Not every number: a
+       * sixty-leg day cannot put sixty on a phone, and the whole design of
+       * this tier is that it thins.
+       */
+      check(`${resort.id}: ${this.who} finds where the day starts`, shown[0] === 1,
+        shown.join(", "));
+      check(`${resort.id}: ${this.who} can see the order without zooming`,
+        shown.length >= 3, `${shown.length} numbers: ${shown.join(", ")}`);
+      check(`${resort.id}: ${this.who} is not shown so many they stop meaning anything`,
+        shown.length <= 16, `${shown.length} numbers`);
+      // And the list says the same thing in words, in the same order.
+      await openLegs(page);
+      const numbers = await page.$$eval(".leg__n", (ns) => ns.map((n) => n.textContent.trim()));
+      check(`${resort.id}: ${this.who} finds the same order written down`,
+        numbers.length === 0 || numbers[0] === "1", numbers.slice(0, 6).join(" "));
+      await screen(page, this.who, "reading the day");
+    },
+  },
+  {
+    id: "thumbsit",
+    who: "does the whole thing one-handed on a bus",
+    at: [7, 50],
+    async run(page, url, index, resort) {
+      await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".hero", { timeout: 20000 });
+      (await page.$$(".hero"))[index].click();
+      await page.click("text=Go skiing");
+      await page.waitForSelector(".planbtn", { timeout: 20000 });
+      /*
+       * A thumb on a bus taps low, wide and twice. Nothing here should
+       * dead-end, double-fire, or leave a screen half open — and the ability
+       * chip and the stops row are the two things she will hit by accident.
+       */
+      await toForm(page);
+      const row = await page.$(".disclose");
+      if (row) {
+        await row.click(); await page.waitForTimeout(200);
+        await row.click(); await page.waitForTimeout(200);
+        check(`${resort.id}: ${this.who} can close the stops row again`,
+          (await row.getAttribute("aria-expanded")) === "false");
+      }
+      const chips = await page.$$('.chips[aria-label="Ability"] .chip');
+      for (const c of chips.slice(0, 2)) { await c.click(); await page.waitForTimeout(150); }
+      const pressed = await page.$$eval('.chips[aria-label="Ability"] .chip',
+        (ns) => ns.filter((n) => n.getAttribute("aria-pressed") === "true").length);
+      check(`${resort.id}: ${this.who} ends up with exactly one ability set`, pressed === 1,
+        `${pressed} pressed`);
+      await solve(page);
+      let n = await routeCount(page);
+      if (!n) { const f = await takeAFix(page); n = f?.routes ?? 0; }
+      check(`${resort.id}: ${this.who} gets a day out of it`, n > 0, `${n} routes`);
+      if (!n) return;
+      // Double-tapping the card must open one route, not two screens.
+      const card = (await page.$$(".routecard"))[0];
+      await card.click();
+      await card.click().catch(() => {});
+      await page.waitForSelector(".detail__legs", { timeout: 15000 });
+      check(`${resort.id}: ${this.who} opens one route, not two`,
+        (await page.$$(".detail__legs")).length === 1);
+      await screen(page, this.who, "one-handed");
     },
   },
 ];

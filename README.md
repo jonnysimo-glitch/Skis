@@ -68,12 +68,35 @@ node scripts/features.mjs --only=refine
   minutes on red and does not exist at all on blue, so a stale *Easier* chip
   would report a real transfer as impossible.
 - **`src/lib/via.test.js`** — the list of places a day can be asked to swing
-  by. Everything it checks is about what a person sees in a list, which is
-  where this goes wrong: a picker with the same name twice in it, entries
-  nobody would choose, an entry for the place they are standing in. One lift
-  is two stations and OSM gives both of them the lift's name, so a choice is a
-  name rather than a node and either end answers it.
-- **`scripts/validate-layers.mjs`** — map layer paint expressions.
+  by, 38 checks. Everything it checks is about what a person sees in a list,
+  which is where this goes wrong: a picker with the same name twice in it,
+  entries nobody would choose, an entry for the place they are standing in.
+  One lift is two stations and OSM gives both of them the lift's name, so a
+  choice is a name rather than a node and either end answers it.
+- **`src/lib/plan.test.js`** — turning a filled-in form into solver options,
+  and turning a route back into a clock. The lunch one is the reason this file
+  exists: the sit-down was added to the finish time rather than to the leg it
+  happens on, so every leg after lunch read forty-five minutes early while the
+  total stayed right.
+- **`src/lib/graph.test.js`** — the solver taking an injected graph, which is
+  what makes a second resort a dataset rather than a rewrite.
+- **`src/active-resort.test.js`** — 22 checks that the resort the app is
+  looking at and the graph the solver is routing over are the same mountain.
+- **`src/map/field.test.js`**, **`imagery.test.js`**, **`glmatrix.test.js`** —
+  the height field, the satellite drape, and the matrix maths under the
+  terrain. Pure functions, no canvas.
+- **`scripts/osm/graph.test.mjs`**, **`query.test.mjs`** — the pipeline that
+  turns Overpass output into a graph: stitching, difficulty inference, name
+  cleaning, and which car parks are public.
+- **`scripts/sources/merge.test.mjs`** — merging places from more than one
+  source without inventing any.
+- **`scripts/check-resorts.mjs`**, **`check-mapping.mjs`**,
+  **`check-places.mjs`** — the data rather than the code. Every resort plans a
+  day from every base at every ability; nothing in a graph contradicts the
+  source it came from; no place is on the mountain twice, mis-kinded, or
+  without a working Maps link.
+- **`scripts/check-portable.mjs`** — no file carries a path to one particular
+  computer.
 - **`scripts/check-contrast.mjs`** — text contrast and the distance between the
   brand accent and the piste difficulty signals.
 
@@ -96,13 +119,23 @@ free endpoints, refine, GPS following, location failures and the record of a
 day. It drives the real geolocation: it moves the phone to a junction's actual
 coordinates and asserts the leg advances with no tap.
 
-`npm run audit` walks 24 screen states and checks the things that are tedious to
+`npm run audit` walks 25 screen states and checks the things that are tedious to
 eyeball and easy to regress: horizontal overflow, clipped text, 44pt tap
 targets, spacing on the 4pt half-step, placeholder text reaching the screen, and
 computed contrast against whatever is actually behind each piece of text.
 
-All three share `scripts/harness.mjs`, so they cannot drift apart on what counts
-as a page error or which browser gets driven.
+`npm run personas` is the one that finds things nobody wrote a check for. The
+others test the product a behaviour at a time; this tests it a person at a
+time, on every live resort: open the app cold, plan the day you actually came
+to ski, choose, read it, ski it, and see it written down. Thirty-one of them,
+each with a habit — the one who only ever skis blue, the one who arrives at
+two with ninety minutes left, the one who shoves the map about with gloves on,
+the one who does the whole thing one-handed on a bus. Every persona also
+records the same four things at every screen: broken text, an image that did
+not load, a control with no accessible name, and text clipped by its box.
+
+All of them share `scripts/harness.mjs`, so they cannot drift apart on what
+counts as a page error or which browser gets driven.
 
 ### Satellite imagery, and why it is not winter
 

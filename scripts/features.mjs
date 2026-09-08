@@ -459,16 +459,27 @@ if (feature("5. Navigation follows the GPS")) {
   check("it opens on leg one", /(leg )?1 of \d+/i.test(first),
     first.match(/(leg )?\d+ of \d+/i)?.[0] || "no leg counter");
   /*
-   * Naming the junction beats using the word: "to Gabiet" is a place you can
-   * see from the chairlift, "to junction" is a category.
+   * Naming the junction beats using the word: "Reached Gabiet" is a place you
+   * can see from the chairlift, "reached the junction" is a category.
    *
-   * Read off the screen rather than out of `.navmetric__k`, because navigation
-   * now opens minimised and the three metrics are behind the expander. What
-   * matters is that a skier can read where they are going without asking, and
-   * the compact bar says "300 m to Gabiet · leg 1 of 59".
+   * Read off the button, which is where the junction is named now. This used
+   * to look for "to <Name>" in the page text, and that was true of the
+   * compact bar until the bar stopped saying it: "300 m to Gabiet · leg 1 of
+   * 59" is a nowrap line that wants 322 pixels and has 213, so what a reader
+   * got was the leg count cut in half. The destination came off that line
+   * because it is already on the screen twice — in the instruction above and
+   * on the button below — and the check kept looking at the line it had left.
+   *
+   * The button is also the better place to ask. The instruction names the run
+   * you are about to ski; the button names the junction you are skiing to,
+   * which is the thing this check is about.
    */
-  check("it points at the next junction by name", /\bto [A-Z]/.test(first),
-    first.replace(/\n/g, " ").slice(0, 80));
+  const reached = await page
+    .$eval('.nav__foot .btn:has-text("Reached")', (n) => n.innerText.trim().split("\n")[0])
+    .catch(() => "");
+  check("it points at the next junction by name",
+    /^reached\s+\p{L}/iu.test(reached) && /\p{Lu}/u.test(reached.replace(/^reached\s*/i, "")),
+    reached || "no destination on the button");
   check("it never says 'turn'", !/turn/i.test(first));
   /*
    * And it says whose position it is using — once you ask.
@@ -858,7 +869,18 @@ if (feature("9. Navigating is pinned, not dragged")) {
   check("it opens with the instruction and nothing else",
     /^(Ride|Ski|Cross to) /.test(shut.doing || "") && shut.metrics === 0,
     `${shut.doing} · ${shut.metrics} metrics`);
-  check("and how far, and where to", /\bto [A-Z]/.test(shut.then || ""), shut.then);
+  /*
+   * And how far, and how far through the day.
+   *
+   * Not "where to": that came off this line on purpose. It is nowrap and the
+   * destination pushed the leg count past the end of it, so a reader got
+   * "10 min to Olang I / II · 1 ..." — the one number on the line that is
+   * written nowhere else, cut in half. Where you are going is in the
+   * instruction above and on the button below; how long and how far through
+   * are only here.
+   */
+  check("and how far, and how far through the day",
+    /\d/.test(shut.then || "") && /\d+ of \d+/.test(shut.then || ""), shut.then);
   check("and the button you press when you get there",
     /^Reached /.test(shut.action || ""), shut.action);
   const shutPanels = await page.evaluate(() => {

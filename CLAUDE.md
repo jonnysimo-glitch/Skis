@@ -47,19 +47,26 @@ required step. `solve({ ...opts, via })` takes them as groups of node keys
 `viaTrouble(opts)` says which place cannot be fitted in and why, so the empty
 state names the place rather than the mountain. See `src/lib/via.js`.
 
+The first two items on this list were "replace the hand-typed graph with real
+OSM data" and "a second resort", and both are done. Four resorts are live —
+Monterosa, Kronplatz, Paganella and Latemar — and every one of them, Monterosa
+included, is generated from OpenStreetMap into `src/resorts/`. Nothing a skier
+sees comes from `src/resort.js` any more; it says so at the top of the file.
+It is kept on purpose as the fallback graph `solve()` uses when called without
+one, which is what lets the solver be run and benchmarked on its own, and as
+the fixture eight test files are written against.
+
 Not done, in priority order:
 
-1. **Replace `src/resort.js` with real OSM data.** The pipeline is built and
-   tested (`npm run resort -- <id>`, see README "Adding a resort"); what it
-   needs is network access to overpass-api.de, which some sandboxes block.
-   Configs exist for monterosa, kronplatz and paganella. Everything else is
-   downstream of this.
-2. Second resort. `src/resorts/index.js` is the registry. The solver now takes
-   a graph (`solve({ ...opts, graph })`, `asGraph()` builds one) and falls back
-   to Monterosa when none is passed, so the code side is done and covered by
-   `src/lib/graph.test.js`. What is missing is a real dataset: a resort needs
-   every node's lat/lon/altitude and every run's length, drop and endpoints,
-   which only OSM has. See "Replacing the resort data".
+1. **Queue times and last-lift times.** The only numbers in the graph that are
+   not from OSM, because they are not in OSM and never will be. They need a
+   data agreement with each resort, which is also the B2B business model. Until
+   then they are estimates, and the "what is open" panel says so.
+2. **A resort outside Italy**, which is the first real test of the pipeline
+   against different tagging habits. The code side is done — `src/resorts/`
+   holds a generated graph per resort and the solver takes one as an argument
+   — so this is a config, a fetch and a cleaning pass rather than a rewrite.
+   See "Adding a resort" in README.md.
 3. iOS wrapper. Capacitor is configured and `npm run ios:prepare` builds the
    whole Xcode project, plist keys, privacy manifest and icons included — on
    Linux too, because Capacitor 8 wires plugins through Swift Package Manager
@@ -191,8 +198,12 @@ If you go wide, consider showing three by default with the rest behind a
 "more options" affordance.
 
 **Refine is make-or-break.** One-tap chips that re-solve in place: shorter,
-longer, easier, harder, more vertical, no drags, lunch. The user must never be
-sent back to the form. If this feels slow or surprising, the product fails.
+longer, easier, harder, more vertical, lunch. The user must never be sent back
+to the form. If this feels slow or surprising, the product fails.
+
+*No drags* was on that list and has been taken off, on the call that it does
+not matter enough to be one of six things a skier chooses between. It is gone
+from the planner and from the solver, not hidden.
 
 **"To next junction", not "to next turn".** Pistes have decision points where
 runs split. They don't have turns.
@@ -246,11 +257,15 @@ the eye.
 
 Everything else about the Komoot direction above stands as written.
 
-## Replacing the resort data
+## Replacing the resort data — done, and here is how it went
 
-`src/resort.js` is **hand-typed from memory and is not accurate.** Run names,
-times and queue estimates are plausible fiction. Replacing it is the highest
-priority after the app works.
+This section was written when `src/resort.js` was the only mountain there was
+and it was hand-typed from memory: run names, times and queue estimates were
+plausible fiction. It has been replaced. Four resorts are generated from
+OpenStreetMap into `src/resorts/`, the pipeline is `scripts/osm/`, and the
+prediction below about the data being messy was right in every particular.
+What follows is kept as the description of what the pipeline does, because it
+is still what it does.
 
 Real source: OpenStreetMap via the Overpass API. Alpine resorts are tagged with
 `piste:type` and `piste:difficulty`, and `aerialway` covers lifts. Coverage
