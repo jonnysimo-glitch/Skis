@@ -54,9 +54,25 @@ export const isDescribed = (name) => / to /.test(String(name ?? ""));
  * made the status panel claim 82 red runs — a number nobody could check
  * against a piste map, which is the whole point of the app's figures.
  *
- * Length is the sum of the pieces. Grade is the hardest piece, the same
- * direction the pipeline rounds when OSM leaves `piste:difficulty` off — the
- * mistake that hurts is telling somebody a run is easier than it is.
+ * Grade is whichever grade carries the most of its length, not the hardest
+ * piece. The hardest was tried and is wrong here, and Kronplatz's Ried is why:
+ * 4.8 km of it is tagged red, and one 300 m variant of a single stretch is
+ * tagged black, so "hardest wins" printed a six-kilometre red run as black.
+ * Reported straight away, because anybody who has skied it knows.
+ *
+ * Rounding towards harder is the right convention where it came from — the
+ * solver deciding whether a run is allowed for an ability, where over-stating
+ * the difficulty is the safe error and understating it puts somebody on
+ * terrain they cannot ski. That logic reads `edge.difficulty` per edge and is
+ * untouched. This is a different question: what colour is this run, on a piste
+ * map. The answer is what most of it is.
+ *
+ * Length sums one piece per stretch rather than every row. OSM maps
+ * alternatives of the same stretch as separate ways — Ried's 1291 to 1168 is
+ * there as a 600 m blue AND a 300 m black — and adding both counts ground
+ * nobody skis twice: it made Ried 6.0 km against about 5.5 for the run. So
+ * rows are collapsed on their endpoints first, keeping the longest, which is
+ * the main line rather than a cut-off.
  *
  * Drop is end to end: the highest endpoint of the piste minus the lowest.
  * Summing each piece's fall was tried first and is arguably the truer measure
@@ -78,31 +94,58 @@ export function pistes(runs = [], nodes = {}) {
     const [from, to, name, grade, km, min, link] = row;
     if (!name || link) continue;
     const seen = byName.get(name) ?? {
-      name, grade, km: 0, minutes: 0, pieces: 0,
-      top: -Infinity, foot: Infinity, described: isDescribed(name),
+      name,
+      described: isDescribed(name),
+      /* One entry per stretch, keyed on its ends. See the note above. */
+      stretches: new Map(),
+      /* And how much length each grade carries, which decides the colour. */
+      km: new Map(),
+      top: -Infinity,
+      foot: Infinity,
     };
-    seen.km += km ?? 0;
-    seen.minutes += min ?? 0;
-    seen.pieces += 1;
-    if ((RANK[grade] ?? 0) > (RANK[seen.grade] ?? 0)) seen.grade = grade;
-    for (const key of [from, to]) {
-      const alt = nodes[key]?.alt;
+    const key = `${from}>${to}`;
+    const had = seen.stretches.get(key);
+    if (!had || (km ?? 0) > had.km) seen.stretches.set(key, { km: km ?? 0, min: min ?? 0, grade });
+    for (const end of [from, to]) {
+      const alt = nodes[end]?.alt;
       if (!Number.isFinite(alt)) continue;
       if (alt > seen.top) seen.top = alt;
       if (alt < seen.foot) seen.foot = alt;
     }
     byName.set(name, seen);
   }
-  return [...byName.values()].map((p) => ({
-    name: p.name,
-    grade: p.grade,
-    described: p.described,
-    pieces: p.pieces,
-    km: Math.round(p.km * 10) / 10,
-    minutes: Math.round(p.minutes),
-    drop: Number.isFinite(p.top) && Number.isFinite(p.foot) ? Math.round(p.top - p.foot) : 0,
-    top: Number.isFinite(p.top) ? p.top : null,
-  }));
+  return [...byName.values()].map((p) => {
+    let km = 0;
+    let minutes = 0;
+    for (const s of p.stretches.values()) {
+      km += s.km;
+      minutes += s.min;
+      p.km.set(s.grade, (p.km.get(s.grade) ?? 0) + s.km);
+    }
+    /*
+     * The grade carrying the most length. A tie goes to the harder of the two,
+     * which is the only place the old convention still applies: with nothing
+     * to choose between them, over-stating is the safer half of the mistake.
+     */
+    let grade = null;
+    let most = -1;
+    for (const [g, amount] of p.km) {
+      if (amount > most || (amount === most && (RANK[g] ?? 0) > (RANK[grade] ?? 0))) {
+        grade = g;
+        most = amount;
+      }
+    }
+    return {
+      name: p.name,
+      grade,
+      described: p.described,
+      pieces: p.stretches.size,
+      km: Math.round(km * 10) / 10,
+      minutes: Math.round(minutes),
+      drop: Number.isFinite(p.top) && Number.isFinite(p.foot) ? Math.round(p.top - p.foot) : 0,
+      top: Number.isFinite(p.top) ? p.top : null,
+    };
+  });
 }
 
 /**

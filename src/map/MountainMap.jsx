@@ -236,6 +236,22 @@ const NAME_ZOOM = 1.5;
  * mountain" rather than "on it", high enough to still be legible over snow.
  */
 const BEHIND_DIM = 0.45;
+/**
+ * How close two copies of one word have to be before they are a duplicate.
+ *
+ * A piste is very often named after the lift that serves it or the junction at
+ * its top, and at Kronplatz Sonne, Belvedere, Marchner and Arndt are each a
+ * lift, a junction and a run — one word, one place, and writing it twice is
+ * the fault this guards. But the same word at either end of a long piste is
+ * not a duplicate, it is the run and the place it comes out at: Ried's node is
+ * at the bottom of five and a half kilometres of Ried, and dropping the run
+ * name outright left the piste unlabelled everywhere.
+ *
+ * Ninety pixels is about a fifth of a phone's width — near enough that a
+ * reader takes two labels for one thing, far enough that a piste crossing the
+ * screen keeps its name.
+ */
+const SAME_WORD_PX = 90;
 const HUT_ZOOM = NAME_ZOOM;
 const HUT_NAME_ZOOM = 2.1;
 
@@ -2698,8 +2714,28 @@ export default function MountainMap({
          * two and three times over. Every other layer already went through
          * `spoken`; this one did not, because it was the last to be written and
          * nobody had passed it the set.
+         *
+         * Kept only where the two words would land in the same place, which is
+         * what "said twice" actually means. This dropped the name outright and
+         * that is wrong for a long piste whose namesake is at one end of it:
+         * Kronplatz's Ried node is at the bottom of five and a half kilometres
+         * of Ried, and the piste had no name along any of it. Where the other
+         * label is far enough away that a reader would not read them as one
+         * thing, both are useful — the piste, and the place it comes out at.
          */
-        if (spoken?.has(f.properties.name)) continue;
+        const said = spoken?.get(f.properties.name);
+        if (said !== undefined) {
+          // Claimed but never placed on screen: nothing to be near, so the
+          // duplicate rule cannot apply and the piste keeps its name.
+          if (said) {
+            const mid = f.geometry?.coordinates?.[Math.floor((f.geometry.coordinates.length - 1) / 2)];
+            if (!mid) continue;
+            const q = field.proj.project(mid[1], mid[0]);
+            const at = project(q.x, field.sample(q.x, q.z), q.z, v, cam);
+            if (!Number.isFinite(at.x)) continue;
+            if (Math.hypot(at.x - said.x, at.y - said.y) < SAME_WORD_PX) continue;
+          }
+        }
         const list = byName.get(f.properties.name) ?? [];
         list.push(f);
         byName.set(f.properties.name, list);
@@ -3502,7 +3538,7 @@ export default function MountainMap({
       return boxes;
     };
 
-    const drawPlaces = (v, cam, placed, { only = null, spoken = new Set() } = {}) => {
+    const drawPlaces = (v, cam, placed, { only = null, spoken = new Map() } = {}) => {
       const list = Object.entries(propsRef.current.nodes ?? {})
         .filter(([, n]) => (only === "bases" ? n.base : only === "rest" ? !n.base : true));
       if (!list.length) return placed;
@@ -3615,14 +3651,19 @@ export default function MountainMap({
          * that if a name genuinely is handed back — the hut leaves the frame —
          * it arrives from nothing rather than at whatever it last was.
          */
-        .map((c) => {
-          const taken = spoken.has(c.n.name);
-          if (!taken) spoken.add(c.n.name);
-          return { ...c, taken };
-        })
+        /*
+         * Projected before the name is claimed, because the claim records
+         * where. These two were the other way round and `c.s` did not exist
+         * yet.
+         */
         .map((c) => {
           const { x, z } = field.proj.project(c.n.lat, c.n.lon);
           return { ...c, s: project(x, field.sample(x, z), z, v, cam) };
+        })
+        .map((c) => {
+          const taken = spoken.has(c.n.name);
+          if (!taken) spoken.set(c.n.name, Number.isFinite(c.s.x) ? { x: c.s.x, y: c.s.y } : null);
+          return { ...c, taken };
         })
         /*
          * The screen edge is a fade too, with a band to fade in.
@@ -4235,7 +4276,7 @@ export default function MountainMap({
          * Being on screen is stable across a frame or two in a way that
          * winning a slot is not, so that is what settles it.
          */
-        if (!labelsOnly && !hidden) spoken?.add(name);
+        if (!labelsOnly && !hidden) spoken?.set(name, { x: s.x, y: s.y });
 
         const r = 6.4;
         /*
@@ -4463,69 +4504,131 @@ export default function MountainMap({
 
         if (ang !== null) {
           /*
-           * One shape, not a disc with a separate arrowhead behind it.
+           * A dot, and a cone of light along the heading.
            *
-           * It was a filled circle and then a triangle standing clear of it,
-           * each with its own white casing, and it read as two objects that
-           * happened to be touching — reported as "a circle and a triangle
-           * back to back". Every navigation app draws this as one silhouette
-           * because that is what it is: you, and the way you are pointing.
+           * This is the shape every phone map draws for "you", and it is the
+           * one that was asked for, with a screenshot of Google Maps to point
+           * at. Worth writing down what it replaced and why, because the
+           * marker has been round this loop four times: a disc with a separate
+           * arrowhead standing off it ("a circle and a triangle back to
+           * back"), then one silhouette with the tip run out to 2.6 radii on a
+           * wide base, which came out a raindrop, then a narrower base, which
+           * was still a raindrop, then sixteen degrees of base and a two-radius
+           * spike — a disc with a small point on it.
            *
-           * The outline is the major arc — everything except the wedge around
-           * the heading — closed through the tip. Cased once around the whole
-           * thing and filled last, so the casing reads as a rim rather than
-           * as a seam across the middle.
+           * Every one of those was an attempt to make the heading part of the
+           * SILHOUETTE, and that is the thing that does not work at this size:
+           * a shape small enough to sit under a route line has no room to be
+           * both a clear dot and a clear arrow. The convention solves it by
+           * not trying. The dot stays a plain circle, and the direction is a
+           * translucent wedge UNDER it — so the dot reads as a dot at any
+           * size, and the heading reads as a beam that can be as big as it
+           * likes without competing.
+           *
+           * It also says something truer. A hard arrow claims a bearing to the
+           * degree; a fanned cone says "somewhere this way", which is what a
+           * compass on a phone actually knows.
            */
           /*
-           * A disc with a small point on it, not a teardrop.
+           * Measured off the reference rather than guessed.
            *
-           * The first version ran the tip out to 2.6 radii on a wide base and
-           * came out as a raindrop — reported as wanting "a little arrow
-           * coming out" instead. A narrower base and a shorter point leave
-           * the disc reading as the disc, with just enough in front of it to
-           * say which way you are facing.
+           * In the screenshot this was asked from, the dot is about 44 pixels
+           * across and the cone reaches about 105 from its centre — call it
+           * 4.8 radii — with roughly twenty degrees either side of the
+           * heading. The first go at this used 3.2 radii and nineteen
+           * degrees, and at r = 9 that is a 29 pixel wedge which the route
+           * line and the step badge in front of it swallowed whole.
            */
+          const CONE_HALF = 0.36;        // ~21 degrees either side of the heading
+          const CONE_REACH = r * 4.8;    // how far the beam throws
           /*
-           * A circle with a small tip on it. Not a teardrop.
+           * Drawn first, so the dot sits on top of its own beam and the beam
+           * never crosses the white ring. Filled with a gradient from the
+           * centre out: solid enough at the dot to read as attached, gone by
+           * the tip, which is what stops it looking like a slice of pie.
            *
-           * Two goes at this. Running the point out to 2.6 radii on a wide
-           * base made a raindrop; shortening it alone did not help, because
-           * what makes a teardrop is the WIDE base tapering — the tangents
-           * leave the disc so far apart that the whole silhouette becomes one
-           * smooth drop. A narrow base is what reads as an arrowhead: the
-           * disc stays a disc and there is a little point in front of it.
+           * In the accent's bright cyan, not its solid blue.
            *
-           * Sixteen degrees of base either side of the heading, out to twice
-           * the radius: the disc stays plainly a disc and there is a small
-           * spike in front of it. Rendered side by side at three and a half
-           * times life size, this is the first of five tries that stops
-           * reading as a drop. The casing drops to 2.5 with it, because three
-           * pixels of white on a wedge this narrow closes the accent up and
-           * leaves a white spike.
+           * The solid blue was tried first and vanished. Google's cone works
+           * against a satellite photograph of streets and roofs; ours is over
+           * a mountain drawn in blues — the piste network is blue, the route
+           * casing is blue, the snow reads blue-white — so a translucent
+           * mid-blue wedge is the same hue as everything under it. Measured
+           * along the heading it was there in the pixels and invisible on the
+           * screen.
+           *
+           * The bright cyan is the one colour on this map that nothing else
+           * uses at low saturation, which is why the route line is drawn in
+           * it. A wedge of it separates from the piste blues and from the
+           * snow, and over dark imagery it reads better still.
            */
-          const SPREAD = 0.28;
-          const TIP = r * 2.02;
-          const puck = () => {
+          const beam = ctx.createRadialGradient(s.x, s.y, r * 0.6, s.x, s.y, CONE_REACH);
+          beam.addColorStop(0, "rgba(42,196,238,0.66)");
+          beam.addColorStop(0.62, "rgba(42,196,238,0.30)");
+          beam.addColorStop(1, "rgba(42,196,238,0)");
+          const wedge = () => {
             ctx.beginPath();
-            ctx.arc(s.x, s.y, r, ang + SPREAD, ang - SPREAD + Math.PI * 2);
-            ctx.lineTo(s.x + Math.cos(ang) * TIP, s.y + Math.sin(ang) * TIP);
+            ctx.moveTo(s.x, s.y);
+            /*
+             * An arc at the far edge rather than a straight one, so the beam
+             * ends as a fan and not as a triangle with a flat top. The two
+             * radii either side are the same length as the arc's radius,
+             * which is what makes the whole thing read as a sector of light.
+             */
+            ctx.arc(s.x, s.y, CONE_REACH, ang - CONE_HALF, ang + CONE_HALF);
             ctx.closePath();
           };
-          ctx.lineJoin = "round";
-          // The soft edge the plain dots get from their r+2 disc, which a
-          // shape this one cannot have underneath it.
-          puck();
-          ctx.lineWidth = 6;
-          ctx.strokeStyle = "rgba(11,26,36,0.20)";
-          ctx.stroke();
-          puck();
+          /*
+           * A dark seat under it, the way every dot on this map gets one.
+           *
+           * The wedge has to read over light snow AND over a dark satellite
+           * photograph, and one translucent fill cannot do both — over snow
+           * it is a pale smudge. A faint dark shape underneath gives it an
+           * edge on the light side and disappears on the dark side, which is
+           * the same trick the markers' r+2 disc plays.
+           */
+          wedge();
+          ctx.fillStyle = "rgba(11,26,36,0.14)";
+          ctx.fill();
+          wedge();
+          ctx.fillStyle = beam;
+          ctx.fill();
+          /*
+           * The cone's own geometry, for the checks.
+           *
+           * It used to be enough to look for solid accent pixels past the
+           * dot's edge and take their centroid: the arrowhead was the one
+           * thing on the map painted in exactly that colour. A translucent
+           * wedge has no colour of its own — every pixel of it is a blend
+           * with whatever it is over — and the route line it points along is
+           * the same cyan, so a pixel test cannot tell the two apart by
+           * colour. Publishing the angle the renderer computed is the honest
+           * version of the question the old test was asking, and whether the
+           * wedge actually reached the canvas is a separate one, answered by
+           * sampling either side of the heading where the route is not.
+           */
+          if (mapTest) {
+            window.__skisNavCone = {
+              x: s.x, y: s.y, ang, reach: CONE_REACH, half: CONE_HALF,
+            };
+          }
+
+          // And then the plain dot, exactly as the other markers draw theirs.
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(11,26,36,0.22)";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = ACCENT;
+          ctx.fill();
           ctx.lineWidth = 2.5;
           ctx.strokeStyle = "#ffffff";
           ctx.stroke();
-          puck();
-          ctx.fillStyle = ACCENT;
-          ctx.fill();
         } else {
+          // No heading, no cone, and the hook says so rather than keeping the
+          // last frame that had one.
+          if (mapTest && role === "now") window.__skisNavCone = null;
           ctx.beginPath();
           ctx.arc(s.x, s.y, r + 2, 0, Math.PI * 2);
           ctx.fillStyle = "rgba(11,26,36,0.22)";
@@ -5015,9 +5118,30 @@ export default function MountainMap({
         // that says which way round the day goes; the route's own ends are not.
         const pins = planPins(v, cam, boxes);
         stepBadges(v, cam, boxes);
-        // One name, said once, whichever layer says it.
-        const spoken = new Set(
-          (propsRef.current.pins?.features ?? []).map((f) => f.properties?.name)
+        /*
+         * One name, said once, whichever layer says it — and WHERE it was
+         * said, because that turns out to matter.
+         *
+         * It was a Set of names, and a piste whose name is also a node's lost
+         * its label anywhere on the mountain. Right for Sonne, Belvedere and
+         * Marchner at Kronplatz, which are each a lift, a junction and the run
+         * off it, all in the same place. Wrong for Ried: the node sits at the
+         * bottom of a five and a half kilometre piste, so the run had no name
+         * along any of it while a dot two centimetres away carried the word.
+         * Reported as "the name doesn't show up on that specific slope".
+         *
+         * A position lets the rule say what it means. The same word twice in
+         * one place is a duplicate; the same word at either end of a long
+         * piste is a piste and the place it ends at.
+         */
+        const spoken = new Map(
+          (propsRef.current.pins?.features ?? []).map((f) => {
+            const at = f.geometry?.coordinates;
+            if (!at) return [f.properties?.name, null];
+            const q = field.proj.project(at[1], at[0]);
+            const s = project(q.x, field.sample(q.x, q.z), q.z, v, cam);
+            return [f.properties?.name, Number.isFinite(s.x) ? { x: s.x, y: s.y } : null];
+          })
         );
         drawPlaces(v, cam, boxes, { only: "bases", spoken });
         drawHuts(v, cam, boxes, { markersOnly: true, spoken });

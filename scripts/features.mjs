@@ -3293,30 +3293,57 @@ if (feature("17. The arrow points where you are going")) {
         const w = Math.min(c.width - x0, Math.round(2 * R * dpr));
         const h = Math.min(c.height - y0, Math.round(2 * R * dpr));
         if (w <= 0 || h <= 0) return null;
-        const { data } = c.getContext("2d").getImageData(x0, y0, w, h);
-        // Only past the dot's own edge: it is r=8 with a 2px ring, so anything
-        // beyond 11px from its centre is arrow. The centroid of dot plus arrow
-        // shifts about a pixel, which is far too little to take an angle from.
-        let vx = 0, vy = 0, far = 0;
-        for (let y = 0; y < h; y++) {
-          for (let x = 0; x < w; x++) {
-            const i = (y * w + x) * 4;
-            if (!(Math.abs(data[i]) < 14 && Math.abs(data[i + 1] - 0x77) < 14 && Math.abs(data[i + 2] - 0xa3) < 14)) continue;
-            const px = (x0 + x) / dpr - at.x;
-            const py = (y0 + y) / dpr - at.y;
-            const d = Math.hypot(px, py);
-            if (d < 11) continue;
-            vx += px / d; vy += py / d; far++;
-          }
-        }
-        return far ? { ang: Math.atan2(vy, vx), far } : null;
+        /*
+         * The cone's angle from the renderer, and its presence from the
+         * pixels.
+         *
+         * This used to take the centroid of solid-accent pixels past the
+         * dot's edge, which worked because the arrowhead was the one thing on
+         * the map painted in exactly that colour. The marker is a dot with a
+         * translucent heading cone now, the way every phone map draws it, and
+         * a translucent wedge has no colour of its own — every pixel of it is
+         * a blend with whatever it is over, and the route line it points
+         * along is the same cyan. Colour cannot separate them.
+         *
+         * So the angle comes from the hook, which is the question the old test
+         * was really asking — does the marker point along the leg the skier is
+         * on, or along some other segment. And whether the wedge reached the
+         * canvas at all is asked of the pixels, off the route line: sampled a
+         * few degrees either side of the heading, where the cone is and the
+         * line is not, against the same radius square across it.
+         */
+        const cone = window.__skisNavCone;
+        if (!cone) return null;
+        const tint = (off, rad) => {
+          const x = Math.round((cone.x + Math.cos(cone.ang + off) * rad) * dpr);
+          const y = Math.round((cone.y + Math.sin(cone.ang + off) * rad) * dpr);
+          if (x < 0 || y < 0 || x >= c.width || y >= c.height) return null;
+          const d = c.getContext("2d").getImageData(x, y, 1, 1).data;
+          // How much bluer than red, which is what the cyan adds and what the
+          // terrain and the snow under it do not have.
+          return d[2] - d[0];
+        };
+        const band = (off) =>
+          [0.5, 0.65, 0.8].map((f) => tint(off, cone.reach * f)).filter((n) => n !== null);
+        const inside = [...band(cone.half * 0.6), ...band(-cone.half * 0.6)];
+        const outside = [...band(Math.PI / 2), ...band(-Math.PI / 2)];
+        const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+        return {
+          ang: cone.ang,
+          far: inside.length,
+          inside: mean(inside),
+          outside: mean(outside),
+        };
       }, { sel: SEL, at: ends.from });
       if (!arrow) return null;
       const off = (t) => {
         const want = Math.atan2(t.y - ends.from.y, t.x - ends.from.x);
         return Math.abs((((arrow.ang - want) * 180) / Math.PI + 540) % 360 - 180);
       };
-      return { deg: off(ends.to), toFar: off(ends.far), far: arrow.far };
+      return {
+        deg: off(ends.to), toFar: off(ends.far), far: arrow.far,
+        inside: arrow.inside, outside: arrow.outside,
+      };
     };
 
     // Four legs, because a single one can be right by accident: the first
@@ -3326,8 +3353,17 @@ if (feature("17. The arrow points where you are going")) {
     for (let step = 0; step < 4; step++) {
       const r = await offBy();
       if (r) seen.push(r);
-      check(`leg ${step + 1}: the arrow points the way this leg sets off`,
-        r !== null && r.deg < 12, r ? `${r.deg.toFixed(0)} degrees off, ${r.far} arrow pixels` : "could not read it");
+      check(`leg ${step + 1}: the cone points the way this leg sets off`,
+        r !== null && r.deg < 12, r ? `${r.deg.toFixed(0)} degrees off` : "could not read it");
+      /*
+       * And it is on the canvas, not just in the hook. Inside the wedge the
+       * cyan puts blue well ahead of red; across it, on the same radii, the
+       * terrain does not. Ten levels is comfortably past the noise between two
+       * patches of the same hillside and comfortably under what the wedge adds.
+       */
+      check(`leg ${step + 1}: and the cone is actually painted`,
+        r !== null && r.inside !== null && r.outside !== null && r.inside - r.outside > 10,
+        r && r.inside !== null ? `${Math.round(r.inside)} inside against ${Math.round(r.outside)} across` : "nothing to read");
       check(`leg ${step + 1}: and not back the way you came`,
         r !== null && r.toFar < 90, r ? `${r.toFar.toFixed(0)} degrees from the far end` : "could not read it");
       const next = await page.$(".nav__foot .btn--nav");
@@ -3335,7 +3371,7 @@ if (feature("17. The arrow points where you are going")) {
       await next.click();
       await page.waitForTimeout(900);
     }
-    check("and it was actually drawn every time", seen.length === 4 && seen.every((r) => r.far >= 4),
+    check("and it was read every time", seen.length === 4 && seen.every((r) => r.far >= 4),
       seen.map((r) => r.far).join(", "));
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();

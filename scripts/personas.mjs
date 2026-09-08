@@ -950,71 +950,52 @@ const PEOPLE = [
       await page.click("text=/Save and start/");
       await page.waitForSelector(".nav__head", { timeout: 25000 });
       await atRest(page, { quiet: 700, limit: 16000 });
-      /*
-       * Where the puck is on screen, from the same hooks section 17 uses:
-       * the leg's own start, projected. There is no DOM element to measure —
-       * the marker is painted on a canvas.
-       */
-      const here = await page.evaluate(() => {
-        const l = window.__skisNavLeg;
-        if (!l || !window.__skisProject) return null;
-        const at = l.at ?? l.coords?.[0];
-        if (!at) return null;
-        const p = window.__skisProject(at[0], at[1]);
-        return p && Number.isFinite(p.x) ? { x: p.x, y: p.y } : null;
-      });
       check(`${resort.id}: ${this.who} is on the map`, Boolean(await page.$("canvas")));
       /*
-       * One silhouette, not a disc with an arrowhead standing off it.
+       * A dot with a cone of heading, which is what every phone map draws.
        *
-       * Measured the way section 17 measures the heading: accent-coloured
-       * pixels are counted in a ring just outside the disc. Back to back
-       * there was a gap of clear pixels between the two shapes; joined, the
-       * ring is continuous from the disc out to the tip.
+       * She is not reading the words, so the marker has to say two things on
+       * its own: where you are, and which way you are pointing. What she is
+       * checked against is the shape as drawn — the cone is translucent and
+       * the route line it points along is the same cyan, so colour cannot
+       * separate them. Blue-over-red inside the wedge against the same radii
+       * across it can: the cyan adds it and the hillside does not.
        */
-      if (here && Number.isFinite(here.x)) {
-        /*
-         * Along the heading, not around a ring.
-         *
-         * The point is a narrow nub now — a few pixels wide where it leaves
-         * the disc — so walking a circle at four degree steps can step
-         * straight over it. Looking down the direction of travel asks the
-         * question the shape is actually for, and looking sideways at the
-         * same radius proves it is a nub rather than a bigger disc.
-         */
-        const aim = await page.evaluate(() => {
-          const l = window.__skisNavLeg;
-          if (!l || !window.__skisProject) return null;
-          const a = l.at ?? l.coords?.[0];
-          const b = l.coords?.[Math.min(3, (l.coords?.length ?? 1) - 1)];
-          if (!a || !b) return null;
-          const pa = window.__skisProject(a[0], a[1]);
-          const pb = window.__skisProject(b[0], b[1]);
-          if (!pa || !pb) return null;
-          return Math.atan2(pb.y - pa.y, pb.x - pa.x);
-        });
-        const solid = aim === null ? null : await page.evaluate(({ at, ang }) => {
+      const cone = await page.evaluate(() => window.__skisNavCone ?? null);
+      check(`${resort.id}: ${this.who} has a heading to follow`, Boolean(cone),
+        cone ? `${Math.round((cone.ang * 180) / Math.PI)} degrees` : "no cone");
+      if (cone) {
+        const seen = await page.evaluate((k) => {
           const c = document.querySelector("canvas[aria-label*='Terrain view']");
           if (!c) return null;
           const dpr = c.width / c.getBoundingClientRect().width;
           const ctx = c.getContext("2d");
-          const accentAt = (r, a) => {
-            const x = Math.round((at.x + Math.cos(a) * r) * dpr);
-            const y = Math.round((at.y + Math.sin(a) * r) * dpr);
-            if (x < 0 || y < 0 || x >= c.width || y >= c.height) return false;
+          const tint = (off, rad) => {
+            const x = Math.round((k.x + Math.cos(k.ang + off) * rad) * dpr);
+            const y = Math.round((k.y + Math.sin(k.ang + off) * rad) * dpr);
+            if (x < 0 || y < 0 || x >= c.width || y >= c.height) return null;
             const d = ctx.getImageData(x, y, 1, 1).data;
-            return Math.abs(d[0]) < 30 && Math.abs(d[1] - 0x77) < 30 && Math.abs(d[2] - 0xa3) < 30;
+            return d[2] - d[0];
           };
-          const ahead = [11, 13, 15, 17].filter((r) => accentAt(r, ang)).length;
-          // Ninety degrees off the heading, at the same radius: outside the disc.
-          const beside = [11, 13].filter((r) => accentAt(r, ang + Math.PI / 2)).length;
-          return { ahead, beside };
-        }, { at: here, ang: aim });
-        if (solid) {
-          check(`${resort.id}: ${this.who} has a point in front of her`,
-            solid.ahead >= 2, JSON.stringify(solid));
-          check(`${resort.id}: ${this.who} and it is a point, not a bigger circle`,
-            solid.beside === 0, JSON.stringify(solid));
+          const band = (off) => [0.5, 0.65, 0.8]
+            .map((f) => tint(off, k.reach * f)).filter((n) => n !== null);
+          const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+          return {
+            inside: mean([...band(k.half * 0.6), ...band(-k.half * 0.6)]),
+            across: mean([...band(Math.PI / 2), ...band(-Math.PI / 2)]),
+            behind: mean(band(Math.PI)),
+          };
+        }, cone);
+        if (seen && seen.inside !== null && seen.across !== null) {
+          check(`${resort.id}: ${this.who} can see which way it points`,
+            seen.inside - seen.across > 10,
+            `${Math.round(seen.inside)} in front, ${Math.round(seen.across)} across`);
+          // And it is a cone rather than a halo: nothing behind her.
+          if (seen.behind !== null) {
+            check(`${resort.id}: ${this.who} sees nothing pointing backwards`,
+              seen.inside - seen.behind > 10,
+              `${Math.round(seen.inside)} in front, ${Math.round(seen.behind)} behind`);
+          }
         }
       }
       await screen(page, this.who, "navigating");

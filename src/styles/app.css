@@ -627,8 +627,10 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
   letter-spacing: 0.05em; text-transform: uppercase;
   margin-top: var(--s-1);
 }
+/* Top LEFT now: the info button took the right, because that is the corner a
+   thumb goes to for a control and the tick is not one — it is a state. */
 .hero__tick {
-  position: absolute; top: var(--s-3); right: var(--s-3);
+  position: absolute; top: var(--s-3); left: var(--s-3);
   width: 30px; height: 30px; border-radius: 50%;
   background: var(--accent); color: #fff;
   display: grid; place-items: center;
@@ -1381,9 +1383,22 @@ input[type="time"].control { font-weight: 600; font-variant-numeric: tabular-num
 /* A note under a value rather than beside it: "3.7 km" then "Alagna, black". */
 .row__sub { color: var(--ink-3); font-weight: 400; }
 
+/* A place row that goes somewhere. The whole row is the target, because a
+   name on its own is a 14px tap and this is used with gloves on. */
+.row__link {
+  display: flex; align-items: baseline; gap: var(--s-3);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s-2) 0;
+  color: inherit; text-decoration: none;
+}
+.row__linknm { flex: 1; min-width: 0; }
+.row__out { flex: none; color: var(--ink-3); align-self: center; }
+.row__link:active { opacity: 0.6; }
+
 /* Info, on the card, without choosing the card. */
 .hero__info {
-  position: absolute; top: var(--s-3); left: var(--s-3);
+  position: absolute; top: var(--s-3); right: var(--s-3);
   width: var(--tap); height: var(--tap);
   border-radius: 50%;
   display: grid; place-items: center;

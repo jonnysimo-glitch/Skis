@@ -20,11 +20,11 @@
  * started from.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Close, Mountain, Ruler, Descend, Lift, Info } from "../ui/Icons.jsx";
+import { Close, Mountain, Arrow } from "../ui/Icons.jsx";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { guideFor } from "../lib/guide.js";
 import { graphFor } from "../resorts/graphs.js";
-import { shortName, describe } from "../lib/places.js";
+import { shortName, describe, mapsLink } from "../lib/places.js";
 import Ridge from "../ui/Ridge.jsx";
 
 /**
@@ -225,11 +225,27 @@ export default function ResortGuide({ resort, onClose, onChoose }) {
                   <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>
                     Somewhere to eat
                   </div>
+                  {/*
+                    * Each one links out to Maps, the way the card you get
+                    * from tapping a marker does. Reading "Rifugio Gabiet,
+                    * 2,375 m" and then having to type it somewhere else is
+                    * the gap this closes — and it is the same builder, from
+                    * lib/places, so both searches use the full name rather
+                    * than the shortened one the row shows.
+                    */}
                   <ul className="rows">
                     {guide.eats.map((p) => (
                       <li className="row" key={`${p.name}-${p.alt}`}>
-                        <span>{shortName(p.name)}</span>
-                        <span className="row__v">{describe(p.name, p.kind, p.alt)}</span>
+                        <a
+                          className="row__link"
+                          href={mapsLink({ full: p.name, lat: p.lat, lon: p.lon })}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          <span className="row__linknm">{shortName(p.name)}</span>
+                          <span className="row__v">{describe(p.name, p.kind, p.alt)}</span>
+                          <Arrow className="row__out" width="14" height="14" />
+                        </a>
                       </li>
                     ))}
                   </ul>
@@ -242,8 +258,16 @@ export default function ResortGuide({ resort, onClose, onChoose }) {
                   <ul className="rows">
                     {guide.services.rental.map((p) => (
                       <li className="row" key={p.name}>
-                        <span>{shortName(p.name)}</span>
-                        <span className="row__v">{metres(p.alt)}</span>
+                        <a
+                          className="row__link"
+                          href={mapsLink({ full: p.name, lat: p.lat, lon: p.lon })}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          <span className="row__linknm">{shortName(p.name)}</span>
+                          <span className="row__v">{metres(p.alt)}</span>
+                          <Arrow className="row__out" width="14" height="14" />
+                        </a>
                       </li>
                     ))}
                   </ul>

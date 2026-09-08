@@ -133,3 +133,25 @@ export function describe(name, kind, alt) {
     : implied?.[1] ?? BY_KIND[kind] ?? "Mountain restaurant";
   return Number.isFinite(alt) ? `${what}, ${alt.toLocaleString()} m` : what;
 }
+
+/**
+ * Where to look this place up.
+ *
+ * Google's documented search URL takes free text, and text plus a centre is
+ * the only form that reliably lands on the right business: coordinates alone
+ * drop a pin in a snowfield with nothing attached to it, and a name alone
+ * finds the Rifugio Gabiet in somebody else's valley.
+ *
+ * The FULL name, not the shortened one. The map shortens because a marker is
+ * two centimetres wide; a search for "Belvedere" finds a thousand of them,
+ * and "Rifugio Belvedere" plus a coordinate finds this one.
+ *
+ * Lives here rather than in App.jsx because two screens link places now — the
+ * card you get from tapping a marker, and the resort guide's list — and two
+ * copies of a URL builder is how one of them ends up searching for the short
+ * name.
+ */
+export function mapsLink(place) {
+  const q = encodeURIComponent(place.full ?? place.name ?? "");
+  return `https://www.google.com/maps/search/${q}/@${place.lat},${place.lon},16z`;
+}

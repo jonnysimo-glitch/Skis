@@ -15,7 +15,7 @@ import Sheet from "./ui/Sheet.jsx";
 import MountainMap from "./map/MountainMap.jsx";
 import { hasMapKey, MAPTILER_KEY, SATELLITE_URL } from "./map/config.js";
 import { fieldBounds } from "./map/field.js";
-import { describe } from "./lib/places.js";
+import { describe, mapsLink } from "./lib/places.js";
 import { lunchStop, viaResolve } from "./lib/via.js";
 
 // MapLibre is ~800KB and not needed until the map is on screen, so it is split
@@ -228,19 +228,6 @@ const nowMinutes = () => {
  * why it lives here rather than inside either of them. The two disagreeing
  * would be the arrow pointing one way and the camera facing another.
  */
-/**
- * Where to look this place up.
- *
- * Google's documented search URL takes free text, and text plus a centre is
- * the only form that reliably lands on the right business: coordinates alone
- * drop a pin in a snowfield with nothing attached to it, and a name alone
- * finds the Rifugio Gabiet in somebody else's valley.
- */
-function mapsLink(place) {
-  const q = encodeURIComponent(place.full ?? place.name ?? "");
-  return `https://www.google.com/maps/search/${q}/@${place.lat},${place.lon},16z`;
-}
-
 function aimAlong(routeGeo, step, fallback = null) {
   const line = routeGeo?.features?.find((f) => f.properties.leg === step);
   const pts = line?.geometry?.coordinates ?? [];
