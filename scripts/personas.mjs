@@ -104,7 +104,7 @@ const plan = async (page, { t0, t1, ability, also, start, finish }) => {
  * know the markup of a disclosure row is a persona that breaks when the row
  * is restyled, which is not what these journeys are for.
  */
-async function swingBy(page, { key, withFood, eat } = {}) {
+async function swingBy(page, { key, withFood, eat, junction } = {}) {
   await toForm(page);
   const row = await page.$(".disclose");
   if (!row) return null;
@@ -113,8 +113,19 @@ async function swingBy(page, { key, withFood, eat } = {}) {
   const options = await page.$$eval("#p-via option", (ns) =>
     ns.filter((n) => n.value && !n.disabled).map((n) => ({ v: n.value, t: n.textContent })));
   if (!options.length) return null;
+  /*
+   * `junction` rather than a caller reading the options itself.
+   *
+   * The one caller that wanted a node key read `#p-via` to find one and
+   * passed the result as an argument to this function — which is evaluated
+   * before this function runs, and therefore before the row it lives in has
+   * been opened. It never found the element and the journey never ran. Asking
+   * for the kind you want is the version of that which cannot be ordered
+   * wrongly.
+   */
   const pick =
     (key && options.find((o) => o.v === key)) ||
+    (junction && options.find((o) => !o.v.startsWith("eat:"))) ||
     (eat && options.find((o) => o.v.startsWith("eat:"))) ||
     (withFood && options.find((o) => o.t.includes(" — "))) ||
     options[0];
@@ -161,6 +172,35 @@ async function toNav(page, url, index, resort, who) {
   await page.waitForSelector(".nav__head", { timeout: 25000 });
   await atRest(page, { quiet: 700, limit: 16000 });
   return true;
+}
+
+/**
+ * Tap zoom `n` times, reopening the map tools whenever they have closed.
+ *
+ * The tools panel collapses on its own — the map is the hero and the chrome
+ * gets out of the way — so a loop that grabs the zoom button once and clicks
+ * it eight times clicks a detached element. Every persona that wrote that loop
+ * had `if (!button) break` in it, so instead of failing it quietly stopped
+ * zooming and then reported whatever the opening framing showed. That is how
+ * "0 markers" was read as the car parks having gone from two resorts, when
+ * the camera had never left the view where the place tier is deliberately
+ * empty.
+ *
+ * A person taps the control again. So does this.
+ */
+async function zoomBy(page, n, way = "in") {
+  for (let i = 0; i < n; i++) {
+    let btn = await page.$(`.maptools .iconbtn[aria-label="Zoom ${way}"]`);
+    if (!btn) {
+      await openTools(page);
+      btn = await page.$(`.maptools .iconbtn[aria-label="Zoom ${way}"]`);
+    }
+    if (!btn) return i;
+    const done = await btn.click().then(() => true).catch(() => false);
+    if (!done) { await openTools(page); i--; continue; }
+    await page.waitForTimeout(220);
+  }
+  return n;
 }
 
 /** Take the first offered fix, if there is one. Returns what it led to. */
@@ -518,8 +558,7 @@ const PEOPLE = [
        * and the start picker offers node keys. An `eat:` id is not one — it
        * resolves to one — so asking for it there is asking the wrong question.
        */
-      const pick = await swingBy(page, { key: await page.$eval("#p-via", (n) =>
-        [...n.querySelectorAll("option")].map((o) => o.value).find((v) => v && !v.startsWith("eat:")) ?? "") });
+      const pick = await swingBy(page, { junction: true });
       if (!pick) { check(`${resort.id}: ${this.who} has somewhere to swing by`, false, "nothing offered"); return; }
       /*
        * Then she sets the start TO that place.
@@ -598,14 +637,27 @@ const PEOPLE = [
       check(`${resort.id}: ${this.who} still has a number while navigating`, navving.length > 0,
         navving.join(", "));
       /*
-       * And only the ones either side of her.
+       * The ones either side of her, and then a sequence.
        *
        * A ski day loops through its own base, so the first leg out of Stafal
-       * used to put seventeen numbers on the screen — 27 through 59, from
-       * three hours later — because that is where their geometry lands.
+       * puts legs 27 to 52 of the same day on the ground in front of her.
+       * This used to demand no more than three numbers in total, which was
+       * the old hard window — the leg behind, the leg on, the leg ahead — and
+       * that window was deliberately replaced: the numbers further up the day
+       * are the shape of what is coming, and a reader wants to see it.
+       *
+       * What must not happen is the pile: nineteen numbers in a 480 m frame,
+       * eighteen of them from three hours later, which is what the stride of 1
+       * at this framing produced before NAV_FAR_STRIDE. So the rule to check
+       * is the rule as built — everything near her, and anything past the
+       * lookahead only every fifth — and separately that the frame is not
+       * crowded whatever the arithmetic says.
        */
-      check(`${resort.id}: ${this.who} is not shown numbers from hours later`,
-        navving.length <= 3, `${navving.length} numbers: ${navving.join(", ")}`);
+      const later = navving.filter((n) => n > navving[0] + 2);
+      check(`${resort.id}: ${this.who} reads the ones from later as a sequence`,
+        later.every((n) => n % 5 === 0), navving.join(", "));
+      check(`${resort.id}: ${this.who} is not shown a pile of them`,
+        navving.length <= 8, `${navving.length} numbers: ${navving.join(", ")}`);
       // The instruction is the one thing read at arm's length in flat light.
       // Two lines are allowed; a cut-off name is not.
       const cut = await page.$eval(".nav__do", (h) => ({
@@ -634,15 +686,30 @@ const PEOPLE = [
        * and reported "0 markers" as though the pins had gone.
        */
       await openTools(page);
-      for (let i = 0; i < 8; i++) {
-        const zoom = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-        if (!zoom) break;
-        await zoom.click();
-        await page.waitForTimeout(220);
-      }
+      const zoomed = await zoomBy(page, 8, "in");
+      check(`${resort.id}: ${this.who} can actually zoom in`, zoomed === 8,
+        `${zoomed} of 8 taps landed`);
       await atRest(page, { quiet: 600, limit: 16000 });
-      const marks = await page.evaluate(() =>
+      /*
+       * And back off until there is something in shot.
+       *
+       * Eight taps of zoom-in from the opening framing lands on whatever
+       * happens to be under the middle of the screen, and on two of the four
+       * resorts that is empty ground: the check read "0 markers" about an app
+       * whose markers were fine and a few hundred metres off frame. A person
+       * looking for the car park does not stand there reading an empty
+       * screen, they pull back until they can see something — so that is what
+       * this does, and the claim is that the places are findable rather than
+       * that they are under one particular pixel.
+       */
+      const places = () => page.evaluate(() =>
         (window.__skisPlaces ?? []).map((p) => ({ full: p.full, x: Math.round(p.x), y: Math.round(p.y) })));
+      let marks = await places();
+      for (let i = 0; i < 5 && !marks.length; i++) {
+        if (!(await zoomBy(page, 1, "out"))) break;
+        await atRest(page, { quiet: 600, limit: 16000 });
+        marks = await places();
+      }
       check(`${resort.id}: ${this.who} finds something to tap`, marks.length > 0, `${marks.length} markers`);
       if (!marks.length) return;
 
@@ -871,8 +938,8 @@ const PEOPLE = [
       check(`${resort.id}: ${this.who} sees the leg she is on`, near.steps.includes(1),
         near.steps.join(", ") || "no numbers");
       await openTools(page);
-      const out = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
-      for (let i = 0; i < 5 && out; i++) { await out.click(); await page.waitForTimeout(320); }
+      const pulled = await zoomBy(page, 5, "out");
+      check(`${resort.id}: ${this.who} can pull back`, pulled === 5, `${pulled} of 5 taps landed`);
       await atRest(page, { quiet: 700, limit: 16000 });
       const far = await read();
       /*
@@ -1085,16 +1152,15 @@ const PEOPLE = [
       if (!(await page.$(".nav__head"))) return;
       const view = () => page.evaluate(() => ({ ...window.__skisView }));
       // A gloved hand does not deliver a tidy gesture. Long, off-axis, fast.
+      // No empty last frame: multiTouch sends a touchMove for every frame it
+      // is given and then its own touchEnd, and Chrome rejects a touchMove
+      // with no points in it.
       await multiTouch(page, [
         [[200, 260]],
         [[240, 340]], [[290, 430]], [[330, 520]], [[350, 610]], [[360, 700]],
-        [],
       ]);
       await openTools(page);
-      for (let i = 0; i < 3; i++) {
-        const zin = await page.$('.maptools .iconbtn[aria-label="Zoom in"]');
-        if (zin) { await zin.click(); await page.waitForTimeout(200); }
-      }
+      await zoomBy(page, 3, "in");
       await atRest(page, { quiet: 600, limit: 14000 });
       const bad = await view();
       /*
@@ -1219,15 +1285,27 @@ const PEOPLE = [
        */
       const samples = [];
       for (let i = 0; i < 3; i++) {
-        const out = await page.$('.maptools .iconbtn[aria-label="Zoom out"]');
-        if (!out) break;
-        await out.click();
+        if (!(await zoomBy(page, 1, "out"))) break;
         for (let j = 0; j < 10; j++) { samples.push(await badges()); await page.waitForTimeout(50); }
       }
       const easing = samples.filter((s) => s.some((b) => b.fade > 0.05 && b.fade < 0.95)).length;
+      /*
+       * A fade needs something to fade.
+       *
+       * Where the day is short or the mountain small, pulling back does not
+       * change which numbers are on screen — and a set that does not change
+       * has nothing to ease, which is the map being right rather than the map
+       * popping. So the claim is conditional on the set actually moving, and
+       * the sets are compared to find out.
+       */
+      const shapes = new Set(samples.map((s) =>
+        s.filter((b) => !b.going).map((b) => b.step).sort((a, c) => a - c).join(",")));
+      const changed = shapes.size > 1;
       check(`${resort.id}: ${this.who} sees the numbers ease rather than blink`,
-        samples.length === 0 || easing > 0,
-        `${easing} of ${samples.length} samples caught one part way`);
+        !changed || easing > 0,
+        changed
+          ? `${easing} of ${samples.length} samples caught one part way`
+          : `the same numbers throughout, nothing to fade`);
       await atRest(page, { quiet: 700, limit: 16000 });
       const far = (await badges()).filter((b) => !b.going).map((b) => b.step);
       check(`${resort.id}: ${this.who} still has numbers to read`, far.length > 0,
@@ -1307,13 +1385,28 @@ const PEOPLE = [
       if (!n) { const f = await takeAFix(page); n = f?.routes ?? 0; }
       check(`${resort.id}: ${this.who} gets a day out of it`, n > 0, `${n} routes`);
       if (!n) return;
-      // Double-tapping the card must open one route, not two screens.
-      const card = (await page.$$(".routecard"))[0];
-      await card.click();
-      await card.click().catch(() => {});
+      /*
+       * Opening a route is two taps, and the thumb hazard is on the second.
+       *
+       * Tapping the card body expands it; the button inside the expanded card
+       * is what opens the route. Tapping the body twice just expands and
+       * collapses it, which is the card working and was this journey waiting
+       * fifteen seconds for a screen it had never asked for.
+       */
+      const body = (await page.$$(".routecard__body"))[0];
+      await body.click();
+      await page.waitForTimeout(260);
+      const go = (await page.$$(".routecard__act .btn"))[0];
+      check(`${resort.id}: ${this.who} finds the way in after one tap`, Boolean(go));
+      if (!go) return;
+      await go.click();
+      // The second tap of a double: it lands after the screen has changed, so
+      // it must hit nothing rather than open a second one.
+      await go.click().catch(() => {});
       await page.waitForSelector(".detail__legs", { timeout: 15000 });
       check(`${resort.id}: ${this.who} opens one route, not two`,
-        (await page.$$(".detail__legs")).length === 1);
+        (await page.$$(".detail__legs")).length === 1,
+        `${(await page.$$(".detail__legs")).length} detail screens`);
       await screen(page, this.who, "one-handed");
     },
   },

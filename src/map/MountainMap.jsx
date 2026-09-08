@@ -754,6 +754,25 @@ const NAV_ZOOM_MIN = 0.03;
  * know which way you leave the junction ahead.
  */
 const NAV_LOOKAHEAD = 1;
+/*
+ * The coarsest the numbers from later in the day ever get.
+ *
+ * A ski day loops through its own base, so on the first leg out of Stafal the
+ * ground in front of you also holds legs 27 to 52 of the same day. At the
+ * framing navigation places you in, the stride is 1 — every stop, which is
+ * what was asked for — and every one of those distant legs is geometrically
+ * in shot. Measured at Monterosa: nineteen numbers in a 480 m frame, eighteen
+ * of them from three hours later. That is the crowding the zoom hierarchy was
+ * supposed to fix, arriving from the other direction: not too far out, too far
+ * along.
+ *
+ * So the stride the zoom asks for governs the legs around you, and anything
+ * past the lookahead is on at least this stride however close in you are. The
+ * near legs are still all there, which is the ask; what thins is the pile from
+ * later, which is the part nobody was reading. Pulled back the zoom already
+ * asks for 5 or more, so this changes nothing there.
+ */
+const NAV_FAR_STRIDE = 5;
 
 /**
  * Is this the navigate screen?
@@ -3045,7 +3064,25 @@ export default function MountainMap({
 
     const drawRoute = (v, cam) => {
       const r = propsRef.current.route;
-      if (!r?.features?.length) return;
+      /*
+       * No route means no route DRAWN, and the hook has to say so.
+       *
+       * `__skisRouteDrawn` is written at the end of this function, so a frame
+       * that leaves early left the last frame's value sitting on `window` —
+       * and every check that reads it was then being told about a route that
+       * had gone. The screenshot pass reported "the last day is still on the
+       * map, 603 route points" on a screen whose red lines were the red
+       * pistes, and a persona agreed with it, because both were reading the
+       * same stale global.
+       *
+       * A test hook that describes the last interesting frame rather than
+       * this one is worse than no hook: it turns a correct app into a
+       * reproducible failure and sends somebody looking for the wrong bug.
+       */
+      if (!r?.features?.length) {
+        if (mapTest) window.__skisRouteDrawn = [];
+        return;
+      }
       const done = propsRef.current.camera?.doneThrough ?? -1;
       // Scale the route line with the framing so it stays a first-class object
       // when zoomed out and does not become a stripe when zoomed in.
@@ -3144,7 +3181,17 @@ export default function MountainMap({
      */
     const stepBadges = (v, cam, placed) => {
       const r = propsRef.current.route;
-      if (!r?.features?.length) return placed;
+      // Same as drawRoute: the hook describes this frame or it lies. And the
+      // fades go with it, so a route that comes back does not inherit the
+      // last one's half-finished eases.
+      if (!r?.features?.length) {
+        if (mapTest) window.__skisStepBadges = [];
+        if (badgeAt.size) {
+          for (const leg of badgeAt.keys()) fades.delete(`s:${leg}`);
+          badgeAt.clear();
+        }
+        return placed;
+      }
 
       // Group the drawn segments back into legs, in leg order.
       const byLeg = new Map();
@@ -3226,12 +3273,16 @@ export default function MountainMap({
       const z = labelZoom(v);
       const stride = z >= 2.0 ? 1 : z >= 1.4 ? 2 : z >= 0.8 ? 3 : 5;
       const onStride = (leg) => (leg + 1) % stride === 0;
+      // Legs from later in the day never denser than NAV_FAR_STRIDE, whatever
+      // the zoom asks for. See the constant.
+      const farStride = Math.max(stride, NAV_FAR_STRIDE);
+      const onFarStride = (leg) => (leg + 1) % farStride === 0;
       const inWindow = (leg) => {
         if (!flat) return leg === 0 || onStride(leg);
         // Yours and the next, whatever the stride says. Behind you is not
         // numbered: you know where you have been.
         if (leg >= done && leg <= ahead) return true;
-        return leg > done && onStride(leg);
+        return leg > ahead && onFarStride(leg);
       };
 
       /*
