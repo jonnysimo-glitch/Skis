@@ -124,9 +124,28 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
                   {LUNCH_MINUTES} minutes are already out of the skiing time above.
                 </>
               ) : (
+                /*
+                 * The route passes a rifugio — the solver throws away any
+                 * lunch route that does not — but nothing here could put a
+                 * name to it.
+                 *
+                 * Which means this branch must not say "passes a rifugio",
+                 * which is what it used to say: that is the one claim the
+                 * null result argues against, since the naming works off the
+                 * same flag the solver filters on. Measured across all four
+                 * resorts, every base and every ability — 81 lunch routes,
+                 * all 81 named their stop — so this is unreachable today. It
+                 * stays because `legsOf` reads a route's legs and the solver
+                 * filters on its segments, and a graph where those two
+                 * diverge would land here.
+                 *
+                 * What is true either way is the time, so that is what it
+                 * says.
+                 */
                 <>
-                  Passes a rifugio. The {LUNCH_MINUTES} minutes for lunch are already
-                  taken out of the skiing time above.
+                  The {LUNCH_MINUTES} minutes for lunch are already taken out of
+                  the skiing time above. Where to stop is on the map rather than
+                  in the plan.
                 </>
               )}
             </span>
