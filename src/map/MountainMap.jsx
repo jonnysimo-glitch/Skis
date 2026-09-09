@@ -3242,14 +3242,19 @@ export default function MountainMap({
        * navigating, yours first), so where the ground runs out it is the
        * later part of the day that goes short rather than the beginning.
        *
-       * The cost is known and was measured before this was taken out: a ski
-       * day loops through its own base, so the first leg out of Stafal has
-       * legs 27 to 52 on the ground in front of you, and at the navigation
-       * framing that put nineteen numbers in a 480 m frame with eighteen of
-       * them from three hours later. That pile is back. It is provisional —
-       * docs/plan-layout.md is the standing proposal for what replaces the
-       * numbers, and `git log -S NAV_FAR_STRIDE` is the stride if it is
-       * wanted again.
+       * The pile NAV_FAR_STRIDE existed to stop is smaller than expected,
+       * and the reason is the occlusion test below rather than anything here.
+       * A ski day loops through its own base, so the first leg out of Stafal
+       * has legs 27 to 52 on the ground in front of you — but most of that
+       * ground is over the back of a ridge, and a number is only drawn where
+       * its leg can be seen. Measured navigating out of Stafal: 1 number on
+       * leg 1, 8 on leg 5, and 20 pulled right out. The nineteen-in-a-480 m
+       * frame that the stride was built for was mostly numbers on terrain
+       * with no line under them, which is the fault reported from a phone.
+       *
+       * Provisional either way: docs/plan-layout.md is the standing proposal
+       * for what replaces the numbers, and `git log -S NAV_FAR_STRIDE` is the
+       * stride if it is ever wanted again.
        */
       /*
        * The point half way along the leg, by length rather than by index.
@@ -3350,9 +3355,38 @@ export default function MountainMap({
           const p = project(x, field.sample(x, z), z, v, cam);
           if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
           if (p.x < R || p.x > width - R || p.y < R || p.y > height - R) continue;
-          // Behind the mountain is behind the mountain: a number floating over
-          // a ridge the route does not cross is worse than no number.
-          if (!flat && !visible(p)) continue;
+          /*
+           * Behind the mountain is behind the mountain: a number floating over
+           * a ridge the route does not cross is worse than no number.
+           *
+           * This read `!flat && !visible(p)` — the test skipped outright while
+           * navigating, from the commit that added the numbers, with no reason
+           * recorded. The stride hid the cost: few distant legs were ever
+           * candidates at that framing. With every leg a candidate it is the
+           * first thing you see. Reported from a phone at Stafal, leg 8 of 74:
+           * eight numbers — 1, 2, 4, 6, 7, 10, 69, 74 — on bare green terrain
+           * with no line under any of them, because those legs are over the
+           * back of the ridge.
+           *
+           * Applying it unconditionally was tried first and is worse, which is
+           * presumably the unrecorded reason. Measured leg by leg out of
+           * Stafal, every candidate point of the leg you are ON reads occluded
+           * for the first three legs — the follow camera sits in the valley
+           * with a ridge between it and the ground under the lift, and the
+           * route drawing agrees (18, 12 and 2 hidden segments). So the whole
+           * navigate screen went to zero numbers, which is worse than the
+           * ghosts by some distance: it is the one screen whose job is to say
+           * which leg you are on.
+           *
+           * What separates the two cases is not visibility, it is anchoring. A
+           * number beside your own puck is unambiguous whatever the terrain
+           * behind it is doing — it is four per cent along, which is why
+           * NEAR_SPOTS exists — while a lone 69 out on a snowfield is a claim
+           * about ground you cannot see. So yours and the next are exempt and
+           * everything else is tested.
+           */
+          const anchored = flat && leg >= done && leg <= ahead;
+          if (!anchored && !visible(p)) continue;
           const box = { l: p.x - R - 2, r: p.x + R + 2, t: p.y - R - 2, b: p.y + R + 2 };
           if (placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t)) continue;
           placed.push(box);
@@ -3406,7 +3440,23 @@ export default function MountainMap({
       for (const b of drawn) {
         const fade = b.fade ?? fadeOf(`s:${b.leg}`, true, frameDt);
         if (fade <= 0.02) continue;
-        ctx.globalAlpha = fade * (b.past ? 0.4 : b.soon ? 1 : 0.82);
+        /*
+         * Three weights, and all three have to be readable.
+         *
+         * Behind you was four tenths, which is the value this file already
+         * records as too faint: drawing the legs AHEAD at 0.4 "made them grey
+         * smudges nobody could read a digit off", and that finding applies to
+         * the same disc on the same terrain whichever direction it is in. It
+         * survived because `past` was unreachable — the old window returned
+         * false for anything below the leg you were on, so nothing was ever
+         * drawn at it. The moment behind-you became a real case, four tenths
+         * put pale rings on the mountain, which is "gone" by any reading a
+         * skier would give it and the opposite of keeping them all there.
+         *
+         * Six tenths reads at arm's length and still sits clearly behind the
+         * 0.85 of later today and the full weight of yours and the next.
+         */
+        ctx.globalAlpha = fade * (b.past ? 0.6 : b.soon ? 1 : 0.85);
         ctx.beginPath();
         ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
         // White ring so it holds over the route line it sits on, and over snow.

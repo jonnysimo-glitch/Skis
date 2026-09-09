@@ -11,11 +11,15 @@ out whether anybody else does it that way.
 > every leg is a candidate at every zoom now and the only things that drop a
 > number are geometric: off the screen, behind the mountain, or no room along
 > the leg. Measured on a 59-leg day at Monterosa, the route detail reads 1, 2,
-> 3, 4, 5, 7, 10, 13, 14, 15, 16, 17, 21… The crowding this document describes
-> in point two below is therefore real and current: nineteen numbers in the
-> 480 m navigation frame, eighteen of them from later in the day. Everything
-> proposed below still stands, and the case for it is now stronger rather than
-> weaker.
+> 3, 4, 5, 7, 10, 13, 14, 15, 16, 17, 21…
+>
+> The crowding this document worries about in point two turned out to be
+> smaller than the stride implied, because the same pass found the occlusion
+> test was being skipped entirely while navigating — so the "nineteen numbers
+> in a 480 m frame" the stride was built to fix were largely numbers drawn on
+> terrain with no line under them, over the back of a ridge. With that fixed,
+> navigating out of Stafal reads 1 number on leg 1, 8 on leg 5 and 20 pulled
+> right out. Everything proposed below still stands on its own merits.
 
 Nobody does. Not Strava, not Komoot, not Ride with GPS, not Gaia. That is
 worth taking seriously: four planners with a decade of iteration each have all

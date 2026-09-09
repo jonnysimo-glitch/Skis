@@ -6465,20 +6465,38 @@ if (feature("48. The day is numbered, in the order you ski it")) {
    */
   await openTools(page);
   const caught = [];
-  for (let i = 0; i < 3; i++) {
-    await page.click('.maptools .iconbtn[aria-label="Zoom out"]');
-    for (let j = 0; j < 12; j++) {
-      caught.push(await badges());
-      await page.waitForTimeout(45);
+  const sweep = async (way) => {
+    for (let i = 0; i < 3; i++) {
+      await page.click(`.maptools .iconbtn[aria-label="Zoom ${way}"]`);
+      for (let j = 0; j < 12; j++) {
+        caught.push(await badges());
+        await page.waitForTimeout(45);
+      }
     }
-  }
+  };
+  /*
+   * Out and then back in, and the second half is not padding.
+   *
+   * Zooming out used to take numbers away: it crossed a stride threshold and
+   * a third of them switched off, which is the pop this check was written
+   * for. With the stride gone, zooming out only ever ADDS — more ground in
+   * frame, more room between the discs — so the fade-OUT path is no longer
+   * reachable in that direction and the check for it went from passing to
+   * intermittent to failing as the culling got stricter. Zooming back in is
+   * where a number leaves now: the frame tightens, legs fall off the edge and
+   * the survivors collide. Same assertion, exercised where the behaviour
+   * actually lives.
+   */
+  await sweep("out");
+  await sweep("in");
   const middling = caught.filter((set) =>
     set.some((b) => b.fade > 0.05 && b.fade < 0.95)).length;
   check("the numbers fade rather than pop", middling > 0,
     `${middling} of ${caught.length} samples caught one part way`);
   // Both directions: a set that only fades in still pops on the way out.
-  const going = caught.some((set) => set.some((b) => b.going && b.fade < 0.95));
-  check("and they fade out as well as in", going);
+  const leaving = caught.filter((set) => set.some((b) => b.going && b.fade < 0.95)).length;
+  check("and they fade out as well as in", leaving > 0,
+    `${leaving} of ${caught.length} samples caught one leaving`);
   await atRest(page, { quiet: 700, limit: 16000 });
 
 
@@ -6524,15 +6542,23 @@ if (feature("48. The day is numbered, in the order you ski it")) {
     near.includes(onNow) && far.includes(onNow),
     `on leg ${onNow}; [${near.slice(0, 6).join(", ")}] close in, [${far.slice(0, 6).join(", ")}] far out`);
   /*
-   * And no stride at either zoom.
+   * And no stride, pulled back.
    *
    * Three consecutive steps somewhere in the set. Under the old rule this was
    * impossible past the first two — everything from later in the day was a
-   * multiple of five by construction — so this is the check that says the
-   * thinning is actually gone rather than merely widened.
+   * multiple of five by construction, at this zoom above all — so it is the
+   * check that says the thinning is gone rather than merely widened.
+   *
+   * Pulled back only, and the close-in set is deliberately not asserted on.
+   * Navigating out of Stafal the follow camera sits in the valley and the
+   * route drawing reports eighteen hidden segments: what survives close in is
+   * [1, 2, 52], which has no run of three in it for a reason that is terrain
+   * rather than a rule. Demanding one there would be asserting the mountain
+   * away. Close in has its own check above — the leg you are on is numbered —
+   * and the route detail screen, where nothing is hidden, is checked for a
+   * run of three separately.
    */
-  check("and the numbers count rather than stride, at either zoom",
-    runOf3(near) && runOf3(far),
+  check("and pulled back the numbers count rather than stride", runOf3(far),
     `[${near.join(", ")}] close in, [${far.join(", ")}] far out`);
   /*
    * The pile is back, and this is it measured rather than asserted away.
@@ -6569,7 +6595,22 @@ if (feature("48. The day is numbered, in the order you ski it")) {
    * because navigation opens on leg 1 and there is nothing behind you there —
    * which is why the check above passes on a set with no `past` in it at all.
    */
-  const advanced = await reachNext(page);
+  /*
+   * Four legs, not one, and the number is measured rather than assumed.
+   *
+   * One was enough before the occlusion test came back and is not now: out of
+   * Stafal the first three legs are behind a ridge from the follow camera's
+   * own position, so leg 1 is culled once you leave it whatever the ordering
+   * says, and the check would be asserting against terrain. By leg 5 the
+   * ridge is behind you — the route drawing reports zero hidden segments —
+   * and what is left is the ordering, which is the thing under test.
+   */
+  let advanced = false;
+  for (let i = 0; i < 4; i++) {
+    if (!(await reachNext(page))) break;
+    advanced = true;
+    await page.waitForTimeout(200);
+  }
   if (advanced) {
     /*
      * Pulled back again after advancing, because finishing a leg re-frames
