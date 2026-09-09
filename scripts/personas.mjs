@@ -935,10 +935,37 @@ const PEOPLE = [
         far.runs <= near.runs, `${far.runs} against ${near.runs} close in`);
       check(`${resort.id}: ${this.who} still sees where the day goes`,
         far.steps.length >= near.steps.length, `${far.steps.length} numbers against ${near.steps.length}`);
-      // Every fifth, which is the point: 1, 5, 10, 15 says which way round it runs.
-      const beyond = far.steps.filter((n) => n > 2);
-      check(`${resort.id}: ${this.who} reads them as a sequence, not a crowd`,
-        beyond.length === 0 || beyond.every((n) => n % 5 === 0), far.steps.join(", "));
+      /*
+       * A sequence, and it counts rather than striding.
+       *
+       * This asked for every fifth — 1, 5, 10, 15 — which was the rule until
+       * the stride came out. What replaces it is the shape she can actually
+       * read a direction off: three consecutive numbers somewhere in the set,
+       * which the old rule made impossible past the first two. Measured
+       * pulled back at each resort: 9, 10, 11 at Monterosa, 6, 7, 8 at
+       * Kronplatz, 13, 14, 15, 16 at Latemar, and most of the day at
+       * Paganella.
+       *
+       * "Not a crowd" is now asserted directly rather than through a stride:
+       * the discs may be many, and none of them may sit on another.
+       */
+      const runs3 = far.steps.slice().sort((a, b) => a - b)
+        .some((n, i, l) => l[i + 1] === n + 1 && l[i + 2] === n + 2);
+      check(`${resort.id}: ${this.who} reads them as a sequence, not a stride`,
+        runs3, far.steps.slice().sort((a, b) => a - b).join(", "));
+      const discs = await page.evaluate(() =>
+        (window.__skisStepBadges ?? []).filter((b) => !b.going));
+      const stacked = [];
+      for (let i = 0; i < discs.length; i++) {
+        for (let j = i + 1; j < discs.length; j++) {
+          if (Math.hypot(discs[i].x - discs[j].x, discs[i].y - discs[j].y) < 19) {
+            stacked.push(`${discs[i].step}/${discs[j].step}`);
+          }
+        }
+      }
+      check(`${resort.id}: ${this.who} is not shown two in one place`,
+        stacked.length === 0,
+        stacked.slice(0, 4).join(", ") || `${discs.length} numbers, all clear`);
       await screen(page, this.who, "navigating, pulled back");
     },
   },
@@ -1303,8 +1330,34 @@ const PEOPLE = [
         shown.join(", "));
       check(`${resort.id}: ${this.who} can see the order without zooming`,
         shown.length >= 3, `${shown.length} numbers: ${shown.join(", ")}`);
-      check(`${resort.id}: ${this.who} is not shown so many they stop meaning anything`,
-        shown.length <= 16, `${shown.length} numbers`);
+      /*
+       * Not crowded, measured on the discs rather than capped at a count.
+       *
+       * Sixteen was a stride-era number: with a stride of 5 on a sixty-leg
+       * day, sixteen was already generous. Every leg is a candidate now and
+       * the route detail screen reads 18 at Monterosa, 26 at Kronplatz, 19 at
+       * Paganella and 19 at Latemar, so the cap fails at every resort while
+       * describing nothing that is wrong.
+       *
+       * The thing it was a proxy for is legibility, and that has a direct
+       * measure: no two discs within their own diameter of each other. That
+       * is what makes a number readable, it is what actually bounds the
+       * density on a phone, and unlike a count it cannot be satisfied by a
+       * rule that throws away numbers a reader wanted.
+       */
+      const discs = await page.evaluate(() =>
+        (window.__skisStepBadges ?? []).filter((b) => !b.going));
+      const stacked = [];
+      for (let i = 0; i < discs.length; i++) {
+        for (let j = i + 1; j < discs.length; j++) {
+          if (Math.hypot(discs[i].x - discs[j].x, discs[i].y - discs[j].y) < 19) {
+            stacked.push(`${discs[i].step}/${discs[j].step}`);
+          }
+        }
+      }
+      check(`${resort.id}: ${this.who} can read every one of them`,
+        stacked.length === 0,
+        stacked.slice(0, 4).join(", ") || `${discs.length} numbers, none stacked`);
       // And the list says the same thing in words, in the same order.
       await openLegs(page);
       const numbers = await page.$$eval(".leg__n", (ns) => ns.map((n) => n.textContent.trim()));
