@@ -608,27 +608,37 @@ const PEOPLE = [
       check(`${resort.id}: ${this.who} still has a number while navigating`, navving.length > 0,
         navving.join(", "));
       /*
-       * The ones either side of her, and then a sequence.
+       * Hers, and then whatever the ground has room for.
        *
-       * A ski day loops through its own base, so the first leg out of Stafal
-       * puts legs 27 to 52 of the same day on the ground in front of her.
-       * This used to demand no more than three numbers in total, which was
-       * the old hard window — the leg behind, the leg on, the leg ahead — and
-       * that window was deliberately replaced: the numbers further up the day
-       * are the shape of what is coming, and a reader wants to see it.
+       * This asked for two things and both were replaced. It used to demand a
+       * hard window — the leg behind, the leg on, the leg ahead — and then,
+       * after that was judged too mean, that everything past the lookahead
+       * ran in fives and that no more than eight numbers were on screen. Both
+       * were the stride, and the stride is gone: reported as the numbers
+       * disappearing, and asked for as "keep them all there for now".
        *
-       * What must not happen is the pile: nineteen numbers in a 480 m frame,
-       * eighteen of them from three hours later, which is what the stride of 1
-       * at this framing produced before NAV_FAR_STRIDE. So the rule to check
-       * is the rule as built — everything near her, and anything past the
-       * lookahead only every fifth — and separately that the frame is not
-       * crowded whatever the arithmetic says.
+       * So the pile is back, deliberately. On the first leg out of Stafal the
+       * ground in front of her holds legs 27 to 52 of her own day, and this
+       * run measures nineteen numbers in the navigation frame. What still has
+       * to hold is the pair of things she actually reads: the leg under her
+       * skis is one of them, and no two discs sit on top of each other.
        */
-      const later = navving.filter((n) => n > navving[0] + 2);
-      check(`${resort.id}: ${this.who} reads the ones from later as a sequence`,
-        later.every((n) => n % 5 === 0), navving.join(", "));
-      check(`${resort.id}: ${this.who} is not shown a pile of them`,
-        navving.length <= 8, `${navving.length} numbers: ${navving.join(", ")}`);
+      const onNow = await page.evaluate(() => (window.__skisNavLeg?.i ?? 0) + 1);
+      check(`${resort.id}: ${this.who} can see the number of the leg she is on`,
+        navving.includes(onNow), `on ${onNow}, showing ${navving.join(", ")}`);
+      const discs = await page.evaluate(() =>
+        (window.__skisStepBadges ?? []).filter((b) => !b.going));
+      const stacked = [];
+      for (let i = 0; i < discs.length; i++) {
+        for (let j = i + 1; j < discs.length; j++) {
+          if (Math.hypot(discs[i].x - discs[j].x, discs[i].y - discs[j].y) < 19) {
+            stacked.push(`${discs[i].step}/${discs[j].step}`);
+          }
+        }
+      }
+      check(`${resort.id}: ${this.who} sees no two of them stacked`,
+        stacked.length === 0,
+        stacked.slice(0, 4).join(", ") || `${discs.length} numbers, all clear`);
       // The instruction is the one thing read at arm's length in flat light.
       // Two lines are allowed; a cut-off name is not.
       const cut = await page.$eval(".nav__do", (h) => ({

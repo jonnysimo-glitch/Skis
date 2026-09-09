@@ -4,6 +4,19 @@ Written because the numbers on the route were reported as reading oddly — "the
 1, 5, 10, 15 stuff, it's a bit weird" — and the right first move was to find
 out whether anybody else does it that way.
 
+> **Since this was written, the thinning has been taken out.** Not the
+> proposal below — the stride. The 1, 5, 10, 15 sequence was reported again,
+> this time as the numbers *disappearing* as you move the map, and the ask was
+> "keep them all there for now, like the old one, two, three, four, five." So
+> every leg is a candidate at every zoom now and the only things that drop a
+> number are geometric: off the screen, behind the mountain, or no room along
+> the leg. Measured on a 59-leg day at Monterosa, the route detail reads 1, 2,
+> 3, 4, 5, 7, 10, 13, 14, 15, 16, 17, 21… The crowding this document describes
+> in point two below is therefore real and current: nineteen numbers in the
+> 480 m navigation frame, eighteen of them from later in the day. Everything
+> proposed below still stands, and the case for it is now stronger rather than
+> weaker.
+
 Nobody does. Not Strava, not Komoot, not Ride with GPS, not Gaia. That is
 worth taking seriously: four planners with a decade of iteration each have all
 landed on the same three-part idiom, and none of the three parts is a number
@@ -51,7 +64,10 @@ The numbers answer that. What they cost:
   a stride off the zoom, a lookahead window, a separate stride for legs from
   later in the day, a fade so a third of them do not appear between two frames
   — is machinery in service of a label nobody asked for. Four rounds of
-  reports were about that machinery.
+  reports were about that machinery, and the fifth removed the strides
+  entirely (see the note at the top). What is left is the lookahead, which
+  only decides emphasis, and the fade, which is now doing the one job it is
+  good at: easing a number out when it leaves the screen.
 - **The number is not the interesting thing about a leg.** "17" tells you
   nothing. "Red, 2.3 km, 400 m down" tells you whether you want it.
 
@@ -85,11 +101,12 @@ navigation screen is.
 
 ## What this deletes
 
-`stepBadges` and everything it grew: `NAV_LOOKAHEAD`, `NAV_FAR_STRIDE`,
-`NEAR_SPOTS`, `SPOTS`, the stride ladder, the badge fades and `badgeAt`. About
-200 lines of the map renderer and four constants, plus the features section
-that tests them. The chevron replacement is perhaps 30 lines: walk the line,
-place a glyph every N pixels, rotate to the local tangent.
+`stepBadges` and everything it grew: `NAV_LOOKAHEAD`, `NEAR_SPOTS`, `SPOTS`,
+the badge fades and `badgeAt`. (`NAV_FAR_STRIDE` and the stride ladder are
+already gone — see the note at the top.) About 200 lines of the map renderer
+and three constants, plus the features section that tests them. The chevron
+replacement is perhaps 30 lines: walk the line, place a glyph every N pixels,
+rotate to the local tangent.
 
 ## The honest counter-argument
 
@@ -108,7 +125,7 @@ at Kronplatz, and look at it.
    it is the thing that makes the numbers redundant rather than merely
    unpopular.
 2. Add chevrons to the route line, behind a flag, and measure the crowding.
-3. If the chevrons hold up, delete `stepBadges` and its four constants.
+3. If the chevrons hold up, delete `stepBadges` and its three constants.
 4. Keep the legs list exactly as it is. It is a good cue sheet and the numbers
    in a *list* are unobjectionable — they are positions in a list, which is
    what a list is.

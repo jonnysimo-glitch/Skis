@@ -6417,11 +6417,26 @@ if (feature("48. The day is numbered, in the order you ski it")) {
     overlaps.slice(0, 4).join(", ") || `${shown.length} numbers, all clear`);
 
   // Decluttered rather than exhaustive: a fifty leg day does not put fifty
-  // discs on a phone screen.
+  // discs on a phone screen. What thins it is geometry — off screen, behind
+  // the mountain, or no room along the leg — and not a stride.
   const legs = await page.evaluate(() =>
     new Set((window.__skisRouteDrawn ?? []).map((d) => d.leg)).size);
   check("and a long day shows a readable subset, not all of it",
     legs === 0 || shown.length <= legs, `${shown.length} numbers for ${legs} legs`);
+
+  /*
+   * And the subset counts, rather than striding.
+   *
+   * This is the check that would have failed under the stride, which is the
+   * point of it: past the first two every number was a multiple of five, so
+   * three in a row was impossible. Now every leg is a candidate and what a
+   * reader gets is 1, 2, 3, 4, 5 — measured on this day at this framing —
+   * with holes only where two discs wanted the same pixels.
+   */
+  const runOf3 = (list) => list.some((n, i) => list[i + 1] === n + 1 && list[i + 2] === n + 2);
+  const ascending = [...steps].sort((a, b) => a - b);
+  check("and they count, rather than running in fives", runOf3(ascending),
+    ascending.slice(0, 10).join(", "));
 
   // Navigating: the leg you are on is the one question this screen answers, so
   // its number is drawn at full weight and the ones behind you step back.
@@ -6466,23 +6481,27 @@ if (feature("48. The day is numbered, in the order you ski it")) {
   check("and they fade out as well as in", going);
   await atRest(page, { quiet: 700, limit: 16000 });
 
+
   /*
-   * Pulled back, the sequence has to read as a sequence.
+   * Pulled back, nothing switches off.
    *
-   * This is the ask in the words it arrived in: "when you are zoomed out you
-   * see one, five, ten, fifteen, twenty, twenty five, and then the more you
-   * zoom in you see the next numbers". So the check is on the SHAPE — the
-   * first number, the stride between the ones that follow, and that there are
-   * enough of them to read a direction off.
+   * The ask this replaces arrived as "when you are zoomed out you see one,
+   * five, ten, fifteen" and was built as a stride off the zoom. What it did
+   * in the hand was make numbers vanish and come back as you moved the map,
+   * reported as: "they just disappear — keep them all there for now, like the
+   * old one, two, three, four, five."
+   *
+   * So the shape being checked is the opposite of the one that was here. Not
+   * a stride, not a count, but: every leg is offered at every zoom, and the
+   * only reason a number is missing is that its disc had nowhere to go.
    */
   const shownNow = async () =>
     (await badges()).filter((b) => !b.going).map((b) => b.step).sort((a, b) => a - b);
   const near = await shownNow();
   /*
-   * Pulled back until the stride is meant to be five, read off the view
-   * rather than counted in clicks. The zoom button steps by a ratio, the
-   * follow camera scales the label zoom by NAV_LABEL_ZOOM, and three clicks
-   * lands on stride three — which is a correct map and a wrong test.
+   * Pulled back the same way as before — read off the view rather than
+   * counted in clicks, because the zoom button steps by a ratio and the
+   * follow camera scales the label zoom by NAV_LABEL_ZOOM.
    */
   for (let i = 0; i < 10; i++) {
     const z = await page.evaluate(() => (window.__skisView?.zoom ?? 1) * 2.2);
@@ -6493,43 +6512,86 @@ if (feature("48. The day is numbered, in the order you ski it")) {
   await atRest(page, { quiet: 700, limit: 16000 });
   const far = await shownNow();
   check("zoomed out, the day still starts at 1", far[0] === 1, far.join(", "));
-  check("and the numbers thin out to a readable few", far.length >= 3 && far.length <= 14,
-    `${far.length} numbers: ${far.join(", ")}`);
   /*
-   * Every number past the second is a multiple of five. Step 1 and the leg
-   * under your skis are there whatever the stride says, which is deliberate:
-   * one is what a person looks for and the other is what the screen is for.
+   * The leg under your skis, at either zoom. It was true under the stride and
+   * it has to stay true: it is the question the navigate screen exists to
+   * answer, and the one number that must never lose its box to a leg from
+   * three hours later. The order the badges claim their boxes in is what
+   * guarantees it.
    */
-  const offStride = far.slice(2).filter((s) => s % 5 !== 0);
-  check("and past the first two they run in fives", offStride.length === 0,
-    offStride.join(", ") || far.join(", "));
+  const onNow = await page.evaluate(() => (window.__skisNavLeg?.i ?? 0) + 1);
+  check("your own leg is numbered at either zoom",
+    near.includes(onNow) && far.includes(onNow),
+    `on leg ${onNow}; [${near.slice(0, 6).join(", ")}] close in, [${far.slice(0, 6).join(", ")}] far out`);
   /*
-   * And the guarantee that came out of the crowding, at BOTH zooms.
+   * And no stride at either zoom.
    *
-   * "Zooming in closes the gap between them" was asserted here, and it was
-   * the behaviour until NAV_FAR_STRIDE: close in the stride was 1, so every
-   * remaining leg whose geometry landed in frame got a number, and on the
-   * first leg out of a base that is nineteen of them from three hours later
-   * in a 480 m frame. Measured after the fix, on the same day: close in
-   * 1, 2, 30, 35, 45 and pulled back 1, 2, 10, 20, 25, 30, 35, 45.
-   *
-   * So the gap does not close any more, on purpose. What holds at every zoom
-   * is the pair of things a reader needs: the leg under your skis and the
-   * next one are always numbered, and everything from later in the day runs
-   * in fives however close in you are. Pulling back then shows more of that
-   * sequence rather than a denser one, which is the difference between
-   * seeing the shape of the day and being handed the whole day at once.
+   * Three consecutive steps somewhere in the set. Under the old rule this was
+   * impossible past the first two — everything from later in the day was a
+   * multiple of five by construction — so this is the check that says the
+   * thinning is actually gone rather than merely widened.
    */
-  const nearPair = (list) => list.slice(0, 2);
-  check("your own leg and the next are numbered at either zoom",
-    nearPair(near).join() === nearPair(far).join() && near[0] === 1,
-    `${nearPair(near).join(", ")} close in, ${nearPair(far).join(", ")} far out`);
-  const strideOf = (list) => list.slice(2).filter((s) => s % 5 !== 0);
-  check("and the ones from later run in fives at either zoom",
-    strideOf(near).length === 0 && strideOf(far).length === 0,
+  check("and the numbers count rather than stride, at either zoom",
+    runOf3(near) && runOf3(far),
     `[${near.join(", ")}] close in, [${far.join(", ")}] far out`);
-  check("and pulling back shows more of the day, not a denser crowd",
-    far.length >= near.length, `${near.length} close in, ${far.length} far out`);
+  /*
+   * The pile is back, and this is it measured rather than asserted away.
+   *
+   * A ski day loops through its own base, so the first leg out of Stafal has
+   * legs 27 to 52 on the ground in front of you. NAV_FAR_STRIDE existed to
+   * stop that and is gone on request, so what is checked now is the honest
+   * floor: the discs may be many, but no two of them sit on each other, which
+   * is the failure that reads as a bug rather than as a busy map.
+   */
+  const farBadges = (await badges()).filter((b) => !b.going);
+  const stacked = [];
+  for (let i = 0; i < farBadges.length; i++) {
+    for (let j = i + 1; j < farBadges.length; j++) {
+      const a = farBadges[i];
+      const b = farBadges[j];
+      if (Math.hypot(a.x - b.x, a.y - b.y) < 19) stacked.push(`${a.step}/${b.step}`);
+    }
+  }
+  check("and pulled back they still do not sit on each other", stacked.length === 0,
+    stacked.slice(0, 4).join(", ") || `${farBadges.length} numbers, all clear`);
+
+  /*
+   * And a leg you have finished keeps its number.
+   *
+   * It did not, until the stride came out: the window returned false for
+   * anything below the leg you were on, so `past` was set on a record that
+   * could never be built and the dimming it selects was dead code. Now
+   * behind-you is a candidate like everything else and draws back at four
+   * tenths, which is what "keep them all there" has to mean on the one screen
+   * where the day is half over.
+   *
+   * Checked by actually finishing a leg rather than by reading the flag,
+   * because navigation opens on leg 1 and there is nothing behind you there —
+   * which is why the check above passes on a set with no `past` in it at all.
+   */
+  const advanced = await reachNext(page);
+  if (advanced) {
+    /*
+     * Pulled back again after advancing, because finishing a leg re-frames
+     * the follow camera on the new one and the wide view above is undone by
+     * it. Close in, the middle of the leg you have just skied is genuinely
+     * off the top of the screen, which is a fair reason not to draw it and
+     * not the one being checked here.
+     */
+    for (let i = 0; i < 10; i++) {
+      const z = await page.evaluate(() => (window.__skisView?.zoom ?? 1) * 2.2);
+      if (z < 0.8) break;
+      await page.click('.maptools .iconbtn[aria-label="Zoom out"]');
+      await page.waitForTimeout(160);
+    }
+    await atRest(page, { quiet: 700, limit: 16000 });
+    const after = await badges();
+    const onLeg = await page.evaluate(() => (window.__skisNavLeg?.i ?? 0) + 1);
+    check("and finishing one leaves its number on the map, drawn back",
+      onLeg > 1 && after.some((b) => b.past && b.step < onLeg),
+      `on leg ${onLeg}; behind you ${after.filter((b) => b.past).map((b) => b.step).join(", ") || "none"};` +
+      ` showing ${after.filter((b) => !b.going).map((b) => b.step).sort((a, b) => a - b).join(", ")}`);
+  }
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();

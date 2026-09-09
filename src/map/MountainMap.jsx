@@ -770,25 +770,6 @@ const NAV_ZOOM_MIN = 0.03;
  * know which way you leave the junction ahead.
  */
 const NAV_LOOKAHEAD = 1;
-/*
- * The coarsest the numbers from later in the day ever get.
- *
- * A ski day loops through its own base, so on the first leg out of Stafal the
- * ground in front of you also holds legs 27 to 52 of the same day. At the
- * framing navigation places you in, the stride is 1 — every stop, which is
- * what was asked for — and every one of those distant legs is geometrically
- * in shot. Measured at Monterosa: nineteen numbers in a 480 m frame, eighteen
- * of them from three hours later. That is the crowding the zoom hierarchy was
- * supposed to fix, arriving from the other direction: not too far out, too far
- * along.
- *
- * So the stride the zoom asks for governs the legs around you, and anything
- * past the lookahead is on at least this stride however close in you are. The
- * near legs are still all there, which is the ask; what thins is the pile from
- * later, which is the part nobody was reading. Pulled back the zoom already
- * asks for 5 or more, so this changes nothing there.
- */
-const NAV_FAR_STRIDE = 5;
 
 /**
  * Is this the navigate screen?
@@ -3244,83 +3225,32 @@ export default function MountainMap({
       const done = propsRef.current.camera?.doneThrough ?? 0;
       const ahead = flat ? done + NAV_LOOKAHEAD : Infinity;
       /*
-       * Every fifth number far out, every one of them close in.
+       * Every number, at every zoom. No stride.
        *
-       * A sixty-leg day cannot put sixty numbers on a phone, and the first
-       * attempt at that problem was a hard window — the leg behind, the leg
-       * you are on, the leg ahead — which fixed the crowding and threw away
-       * what the numbers are for. Zoomed out you want to see the SHAPE of the
-       * order: 1, 5, 10, 15 tells you the day runs clockwise and where it
-       * turns round, and no window can say that.
+       * There was one: the zoom picked a stride of 1, 2, 3 or 5, and anything
+       * past the lookahead was on at least NAV_FAR_STRIDE however close in you
+       * were, so pulling back read 1, 5, 10, 15. It was built to answer real
+       * crowding and it did — and what a reader saw was numbers vanishing and
+       * reappearing as they moved the map, which was reported as the numbers
+       * disappearing. Asked for directly: keep them all there for now.
        *
-       * So the stride comes from the zoom, on the same scale the label tiers
-       * read, which means the numbers thin out at the same moment the run
-       * names do rather than on a rule of their own. Step 1 is always there —
-       * it is the one a person looks for — and while navigating so is the leg
-       * under your skis, whatever the stride says, because that is the
-       * question the screen exists to answer.
+       * So every leg is a candidate now and the only things that drop one are
+       * honest: its middle is off the screen, it is behind the mountain, or
+       * the disc has nowhere along the leg that is not already taken. Those
+       * are all further down, and they are geometry rather than a rule about
+       * which numbers deserve to exist. Ordered from 1 up (and while
+       * navigating, yours first), so where the ground runs out it is the
+       * later part of the day that goes short rather than the beginning.
        *
-       * Counted on the STEP, not the leg index, so the sequence a reader sees
-       * is 1, 5, 10, 15 and not 1, 6, 11, 16.
+       * The cost is known and was measured before this was taken out: a ski
+       * day loops through its own base, so the first leg out of Stafal has
+       * legs 27 to 52 on the ground in front of you, and at the navigation
+       * framing that put nineteen numbers in a 480 m frame with eighteen of
+       * them from three hours later. That pile is back. It is provisional —
+       * docs/plan-layout.md is the standing proposal for what replaces the
+       * numbers, and `git log -S NAV_FAR_STRIDE` is the stride if it is
+       * wanted again.
        */
-      /*
-       * Every stop close in, every fifth far out, and nothing else deciding.
-       *
-       * The stride is the whole rule now. It had a companion — a reach, in
-       * legs of the day — and that reach was the thing that made a reader
-       * count two numbers on a screen and stop: at the placed navigation
-       * framing it allowed six legs ahead while the stride skipped every
-       * other one, and only one or two legs of a day fit in four hundred and
-       * eighty metres of ground anyway. So what arrived was 1 and 2, on a
-       * day of sixty-two.
-       *
-       * Geometry is the honest limit here and it is already applied further
-       * down: a number is drawn only where its leg is actually on the screen
-       * and there is room for it. Zoomed right in that is the leg under your
-       * skis and the next; pulled back it is the whole mountain, and the
-       * stride thins it to a sequence you can read — 1, 5, 10, 15, which is
-       * what says which way round the day runs.
-       *
-       * Thresholds set so the framing navigation PLACES you at shows every
-       * stop. That is the view a skier spends the day in, and "some of the
-       * stops" is not a thing anybody asked for.
-       */
-      /*
-       * Five is the bottom of the ladder, and a wider stride was tried and
-       * measured worse.
-       *
-       * The reasoning for going further looked sound: pulled right out,
-       * navigation frames sixteen kilometres, an eighty-three leg day that
-       * laps the same runs stacks its numbers, and what survives the
-       * collision test there is gappy — 1, 2, 5, 10, 30, 35, 40, 55, 60. So
-       * strides of ten and twenty were added below.
-       *
-       * They made the band a skier actually uses worse. At five and a half
-       * kilometres across, stride five puts nine numbers on the mountain
-       * starting 1, 2, 5, 10, 20; stride twenty asks for four and gets 1, 2,
-       * 40, 60 — because widening the stride does not stop the discs
-       * colliding, it just brings fewer candidates to the collision. Fewer
-       * asked, fewer placed, same gaps.
-       *
-       * The gaps at the very bottom of the zoom are geometry: two legs a
-       * hundred metres apart are one pixel apart at that range, and no stride
-       * fixes that. Nine numbers with holes in beats four with the same holes.
-       */
-      const z = labelZoom(v);
-      const stride = z >= 2.0 ? 1 : z >= 1.4 ? 2 : z >= 0.8 ? 3 : 5;
-      const onStride = (leg) => (leg + 1) % stride === 0;
-      // Legs from later in the day never denser than NAV_FAR_STRIDE, whatever
-      // the zoom asks for. See the constant.
-      const farStride = Math.max(stride, NAV_FAR_STRIDE);
-      const onFarStride = (leg) => (leg + 1) % farStride === 0;
-      const inWindow = (leg) => {
-        if (!flat) return leg === 0 || onStride(leg);
-        // Yours and the next, whatever the stride says. Behind you is not
-        // numbered: you know where you have been.
-        if (leg >= done && leg <= ahead) return true;
-        return leg > ahead && onFarStride(leg);
-      };
-
       /*
        * The point half way along the leg, by length rather than by index.
        *
@@ -3373,12 +3303,26 @@ export default function MountainMap({
        */
       const NEAR_SPOTS = [0.04, 0.08, 0.14, 0.22, 0.3];
 
-      const order = [...byLeg.keys()].filter(inWindow).sort((a, b) => {
+      const order = [...byLeg.keys()].sort((a, b) => {
         if (flat) {
-          // Yours first, then what is coming, then what is behind you: the
-          // boxes are claimed in this order, so the number that matters most
-          // cannot lose its place to one from three hours later.
-          const mine = (n) => (n === done ? -1 : n < done ? 1e6 + n : n);
+          /*
+           * Yours first, then the day in order — the past included.
+           *
+           * The boxes are claimed in this order, so the leg under your skis
+           * cannot lose its place to one from three hours later, which is the
+           * thing worth protecting and is unchanged.
+           *
+           * What changed is the rest of it. Legs behind you used to sort to
+           * 1e6 + n, which is not "last among equals" but below every other
+           * leg of the day: on a mountain a ski day laps, that meant finishing
+           * leg 1 made its number vanish outright, because leg 2 and legs 53
+           * and 54 pass through the same ground and all asked first. Measured
+           * pulled right out on leg 2 at Monterosa: 2, 3, 4, 5, 6, 7, 8, 9,
+           * 10, 13, 15, 16, 17, 21, 22, 24, 27, 53, 54 — nineteen numbers and
+           * no 1. That is the disappearing this pass was asked to remove,
+           * surviving in the one place a stride never reached.
+           */
+          const mine = (n) => (n === done ? -1 : n);
           return mine(a) - mine(b);
         }
         return a - b;
@@ -3491,8 +3435,8 @@ export default function MountainMap({
         /*
          * `fade` is here so a check can tell "on the map" from "leaving it".
          * A number easing out over nine hundred milliseconds is genuinely on
-         * screen, so it belongs in the list; a check counting what a stride
-         * chose wants the ones that are staying.
+         * screen, so it belongs in the list; a check counting what the map is
+         * settling on wants the ones that are staying.
          */
         window.__skisStepBadges = drawn.map((b) => ({
           step: b.leg + 1, x: Math.round(b.x), y: Math.round(b.y), past: b.past,
