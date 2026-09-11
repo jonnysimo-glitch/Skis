@@ -401,8 +401,8 @@ export const META = {
     "p82"
   ],
   "defaultBase": "stafal",
-  "firstLift": 510,
-  "lastDown": 990,
+  "firstLift": 480,
+  "lastDown": 1005,
   "stats": {
     "lifts": 22,
     "runs": 118,

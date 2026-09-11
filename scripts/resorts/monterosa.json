@@ -7,7 +7,7 @@
   "bbox": [
     7.64,
     45.74,
-    8.0,
+    8,
     45.94
   ],
   "tolerance": 75,
@@ -29,15 +29,15 @@
     "Alagna": "Alagna",
     "Alagna Valsesia": "Alagna"
   },
-  "firstLift": 510,
-  "lastDown": 990,
+  "firstLift": 480,
+  "lastDown": 1005,
   "lifts": {
     "default": {
       "lastUp": 960,
       "queue": 5
     }
   },
-  "operationsProvenance": "PLACEHOLDER, carried over from the hand-typed graph this replaces. Must be replaced with published lift hours.",
+  "operationsProvenance": "Hours are the resort's own published figures, reached through search on 11 Sep 2026 rather than from monterosaski.eu directly, which is blocked by this machine's egress proxy — so they are a third party's summary of the resort's schedule, not the schedule read off the resort's page. Treat them as better than the estimate they replace and not yet as a data agreement. What they say: lifts run 08:00 to 16:45, and the last ride up from Alagna towards Gressoney is 16:00. firstLift moves from 08:30 to 08:00, which matters — the app would not previously let anyone plan a first-lift start here. lastDown moves to 16:45. lastUp stays at 16:00 and is now sourced rather than guessed. The queue estimate of five minutes is still the app's own and has no source at all.",
   "sources": [],
   "defaultBase": "Stafal",
   "defaultBaseWhy": "OSM writes it with one f. The config used to say Staffal, which matched nothing, so the app opened its default day at whichever base happened to be lowest.",

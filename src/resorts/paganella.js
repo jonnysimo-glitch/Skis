@@ -77,21 +77,21 @@ export const NODES = {
 
 /** [from, to, name, type, rideMinutes, lastUpMinuteOfDay, typicalQueueMinutes] */
 export const LIFTS = [
-  ["rindoledosdeleva", "rindoledosdeleva2", "Rindole - Dos de Leva", "chair", 2, 1000, 3],
-  ["andalo", "p6", "Andalo - Doss Pelà", "gondola", 9, 1000, 2],
-  ["laselletta", "paganella", "La Selletta - Cima Paganella", "chair", 5, 1000, 3],
-  ["albidemez", "paganella", "Albi de Mez - Cima Paganella", "chair", 9, 1000, 2],
-  ["meriz", "laselletta", "Meriz - La Selletta", "chair", 14, 1000, 2],
-  ["meriz2", "meriz3", "Meriz", "chair", 5, 1000, 2],
-  ["santel", "meriz2", "Santel - Meriz", "chair", 10, 1000, 4],
-  ["pratidigaggia", "teresat", "Teresat", "chair", 3, 1000, 3],
-  ["salareconca", "salareconca2", "Salare Conca", "chair", 7, 1000, 3],
-  ["pratidigaggia", "paganella2", "Prati di Gaggia - Paganella 2", "chair", 13, 1000, 3],
-  ["laghet", "pratidigaggia", "Laghet - Prati di Gaggia", "gondola", 5, 1000, 3],
-  ["laghet", "laghetdoss", "Laghet - Doss", "chair", 2, 1000, 5],
-  ["santantonio", "santantonio2", "Sant'Antonio", "chair", 9, 1000, 3],
-  ["piandosson", "laselletta", "Pian Dosson - Selletta", "gondola", 6, 1000, 2],
-  ["laghet", "p24", "Laghet  Ferna", "gondola", 3, 1000, 4],
+  ["rindoledosdeleva", "rindoledosdeleva2", "Rindole - Dos de Leva", "chair", 2, 960, 3],
+  ["andalo", "p6", "Andalo - Doss Pelà", "gondola", 9, 960, 2],
+  ["laselletta", "paganella", "La Selletta - Cima Paganella", "chair", 5, 960, 3],
+  ["albidemez", "paganella", "Albi de Mez - Cima Paganella", "chair", 9, 960, 2],
+  ["meriz", "laselletta", "Meriz - La Selletta", "chair", 14, 960, 2],
+  ["meriz2", "meriz3", "Meriz", "chair", 5, 960, 2],
+  ["santel", "meriz2", "Santel - Meriz", "chair", 10, 960, 4],
+  ["pratidigaggia", "teresat", "Teresat", "chair", 3, 960, 3],
+  ["salareconca", "salareconca2", "Salare Conca", "chair", 7, 960, 3],
+  ["pratidigaggia", "paganella2", "Prati di Gaggia - Paganella 2", "chair", 13, 960, 3],
+  ["laghet", "pratidigaggia", "Laghet - Prati di Gaggia", "gondola", 5, 960, 3],
+  ["laghet", "laghetdoss", "Laghet - Doss", "chair", 2, 960, 5],
+  ["santantonio", "santantonio2", "Sant'Antonio", "chair", 9, 960, 3],
+  ["piandosson", "laselletta", "Pian Dosson - Selletta", "gondola", 6, 960, 2],
+  ["laghet", "p24", "Laghet  Ferna", "gondola", 3, 960, 4],
 ];
 
 /**
@@ -274,7 +274,7 @@ export const META = {
   ],
   "defaultBase": "andalo",
   "firstLift": 510,
-  "lastDown": 1020,
+  "lastDown": 990,
   "stats": {
     "lifts": 15,
     "runs": 73,

@@ -3386,7 +3386,33 @@ export default function MountainMap({
            * everything else is tested.
            */
           const anchored = flat && leg >= done && leg <= ahead;
-          if (!anchored && !visible(p)) continue;
+          /*
+           * Held, the way every other tier on this map holds: a number is only
+           * really behind the mountain once it has been behind it for a while.
+           *
+           * Reported from a phone at Bettaforca, leg 3 of 35 — a whole field of
+           * half-faded numbers up the Colle Salati face, none of them settling.
+           * That is what a bare `!visible(p)` does at the navigation framing.
+           * The follow camera never stops moving, the depth buffer is a
+           * downscaled raster, and a number out on a steep slope five
+           * kilometres away sits within a pixel of the occlusion boundary — so
+           * it is culled on one frame, restored on the next, and its fade
+           * restarts from wherever it had got to. It never reaches full
+           * strength and never leaves.
+           *
+           * Which is the same fault, from the same cause, that
+           * RUN_NAME_OCCLUSION_MS was added for: the run names and the base
+           * names both went through this and both ended up on `steady`. The
+           * numbers arrived after that work and never got it, and turning the
+           * occlusion test on for navigation is what exposed the gap.
+           *
+           * Keyed per leg AND per spot, because a leg offers five places along
+           * itself and they are not equally visible — one key for the leg
+           * would have each spot overwriting the previous one's timestamp and
+           * accumulate nothing.
+           */
+          const buried = steady(`sb:${leg}:${frac}`, !visible(p), frameNow, RUN_NAME_OCCLUSION_MS);
+          if (!anchored && buried) continue;
           const box = { l: p.x - R - 2, r: p.x + R + 2, t: p.y - R - 2, b: p.y + R + 2 };
           if (placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t)) continue;
           placed.push(box);
@@ -3441,22 +3467,30 @@ export default function MountainMap({
         const fade = b.fade ?? fadeOf(`s:${b.leg}`, true, frameDt);
         if (fade <= 0.02) continue;
         /*
-         * Three weights, and all three have to be readable.
+         * One weight: solid. The only alpha left is the fade in and out.
          *
-         * Behind you was four tenths, which is the value this file already
-         * records as too faint: drawing the legs AHEAD at 0.4 "made them grey
-         * smudges nobody could read a digit off", and that finding applies to
-         * the same disc on the same terrain whichever direction it is in. It
-         * survived because `past` was unreachable — the old window returned
-         * false for anything below the leg you were on, so nothing was ever
-         * drawn at it. The moment behind-you became a real case, four tenths
-         * put pale rings on the mountain, which is "gone" by any reading a
-         * skier would give it and the opposite of keeping them all there.
+         * This tier has been dimmed three ways and every one of them was
+         * reported as the numbers looking wrong. Behind you at four tenths
+         * were "pale rings"; at six tenths, with everything ahead of the
+         * lookahead at 0.85, a phone at Bettaforca showed a whole face of
+         * washed-out discs and the report was "make sure the fading icons for
+         * the plan doesn't happen".
          *
-         * Six tenths reads at arm's length and still sits clearly behind the
-         * 0.85 of later today and the full weight of yours and the next.
+         * The mistake was treating opacity as emphasis. A badge is a small
+         * saturated disc with a white ring drawn over bright satellite snow,
+         * and against that background anything under full strength does not
+         * read as "less important", it reads as broken — while the place
+         * names beside it, which are solid white with a dark outline, look
+         * fine. Same screen, same distance, and only the tier with the alpha
+         * on it looked faulty.
+         *
+         * Nothing is lost by dropping it. The leg you are on does not need
+         * alpha to stand out: the position puck is drawn on top of it and the
+         * panel above says "3 of 35". `past` and `soon` are still on the
+         * record for a check to read, they just no longer decide how solid a
+         * number is.
          */
-        ctx.globalAlpha = fade * (b.past ? 0.6 : b.soon ? 1 : 0.85);
+        ctx.globalAlpha = fade;
         ctx.beginPath();
         ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
         // White ring so it holds over the route line it sits on, and over snow.
