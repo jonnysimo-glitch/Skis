@@ -1,7 +1,7 @@
-checked   2026-09-11T18:16:15Z
-run       34632233562
+checked   2026-09-11T19:13:01Z
+run       34637536619
 url       https://jonnysimo-glitch.github.io/Skis/
-expected  3b86334de349e99f34f2caa11ec105f366f8c1d4
-live says 3b86334de349e99f34f2caa11ec105f366f8c1d4
+expected  11136c93e28cff7735223cc9cfd23c3b09e41ce9
+live says 11136c93e28cff7735223cc9cfd23c3b09e41ce9
 title     <title>Slalom, route planner</title>
 verdict   CURRENT
