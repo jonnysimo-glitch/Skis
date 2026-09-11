@@ -61,6 +61,35 @@ const COMING = [
     available: false,
     stats: { lifts: 18, runs: 48, top: 2400, bottom: 1000 },
   },
+  /*
+   * The first two outside Italy, and the first two with a config waiting on a
+   * fetch rather than on someone writing a config.
+   *
+   * Both are glaciers, which is why these two and not the Aosta valley ones
+   * below: Hintertux runs all year and Sölden's glacier opens in September, so
+   * they are the only entries here anybody could ski before December. The
+   * figures are the resorts' own published ones and nothing else — no
+   * altitudes are invented, so the cards draw a generic ridgeline until their
+   * graphs exist. Both configs are in scripts/resorts/; the graphs come from a
+   * run of .github/workflows/resort-data.yml, because Overpass is not
+   * reachable from where this is developed.
+   */
+  {
+    id: "soelden",
+    name: "Sölden",
+    region: "Tyrol",
+    country: "Austria",
+    available: false,
+    stats: { lifts: 31, top: 3340, bottom: 1350 },
+  },
+  {
+    id: "hintertux",
+    name: "Hintertux Glacier",
+    region: "Zillertal, Tyrol",
+    country: "Austria",
+    available: false,
+    stats: { lifts: 21, top: 3250, bottom: 1500 },
+  },
   { id: "courmayeur", name: "Courmayeur", region: "Valle d'Aosta", country: "Italy", available: false },
   { id: "cervinia", name: "Cervinia / Zermatt", region: "Valle d'Aosta", country: "Italy / Switzerland", available: false },
   { id: "lathuile", name: "La Thuile / La Rosière", region: "Valle d'Aosta", country: "Italy / France", available: false },

@@ -1,0 +1,66 @@
+{
+  "id": "soelden",
+  "name": "Sölden",
+  "region": "Tyrol",
+  "country": "Austria",
+  "note": "Three mountains above the Ötztal. Giggijoch and Gaislachkogl rise straight out of the village; the two glaciers, Rettenbach and Tiefenbach, sit at the top of the glacier road and link back over the Schwarze Schneid.",
+  "bbox": [
+    10.88,
+    46.9,
+    11.04,
+    47
+  ],
+  "tolerance": 60,
+  "bases": [
+    "Sölden",
+    "Gaislachkogl",
+    "Gaislachkoglbahn",
+    "Giggijoch",
+    "Giggijochbahn",
+    "Innerwald",
+    "Stabele",
+    "Gletscherexpress",
+    "Hochsölden",
+    "Rettenbach",
+    "Tiefenbach"
+  ],
+  "basesWhy": "A first pass, and deliberately generous. The village plus the names of the lifts that leave it, because OSM names an Austrian valley station after the lift at least as often as after the place — the same reason Kronplatz's config asks for 'Kronplatz 2000' and 'Korer'. Nothing here can mark a summit: scripts/osm/operations.mjs only considers nodes in the lower part of the resort's own altitude range, so asking for 'Gaislachkogl' cannot flag the 3,040 m top station as somewhere to park. The run report says how many matched and how many same-named nodes it left alone; tune this from that rather than from this list.",
+  "areas": {
+    "Sölden": "Sölden",
+    "Gaislachkogl": "Gaislachkogl",
+    "Gaislachkoglbahn": "Gaislachkogl",
+    "Giggijoch": "Giggijoch",
+    "Giggijochbahn": "Giggijoch",
+    "Innerwald": "Giggijoch",
+    "Stabele": "Giggijoch",
+    "Hochsölden": "Giggijoch",
+    "Gletscherexpress": "Glacier",
+    "Rettenbach": "Glacier",
+    "Tiefenbach": "Glacier"
+  },
+  "firstLift": 510,
+  "lastDown": 990,
+  "lifts": {
+    "default": {
+      "lastUp": 960,
+      "queue": 5
+    }
+  },
+  "operationsProvenance": "PLACEHOLDER. lastUp and queue are not in OpenStreetMap and are not from the resort either. 08:30 to 16:30 with last lifts at 16:00 is the shape of a Tyrolean winter day and nothing more; the glacier in autumn runs earlier than the village does in February, which this cannot express. Five minutes of queue is a guess informed by Sölden being busy — the Giggijochbahn alone is rated at 4,500 people an hour — and it must be replaced with published hours before anyone plans a real day on it.",
+  "sources": [
+    "https://www.soelden.com/en/activities/winter/skiing-snowboarding/ski-area-information/ski-area-map-lifts-slopes",
+    "https://www.skiresort.com/en/ski-resort/soelden/",
+    "https://www.oetztal.com/en/activities/winter/skiing-snowboarding/soelden-ski-area"
+  ],
+  "defaultBase": "Sölden",
+  "defaultBaseWhy": "The village is where the road ends and where both of the big gondolas start, so it is where almost everyone begins. The glacier is reached from it, up the Gletscherexpress or the road, rather than parked at.",
+  "toleranceWhy": "UNMEASURED. 60 is the starting value because it is what Latemar settled on and it is the more conservative of the two in use — it stitches less and therefore invents less. Sölden is the case where this most needs measuring: the two glaciers and the village mountain are one ski area in the brochure and may well be three components in OSM, joined only by a road that is not a piste. Run npm run resort:tune -- soelden after the first fetch and record the numbers here the way kronplatz.json does.",
+  "published": {
+    "lifts": 31,
+    "top": 3340,
+    "bottom": 1350
+  },
+  "publishedSource": "Sölden's own ski area pages and skiresort.com, read 11 Sep 2026: 31 lifts, 147 km of piste, 1,350 to 3,340 m. The kilometres are recorded here in prose rather than as a field because `published` compares lifts, runs, top and bottom — see scripts/verify-resort.mjs — and 147 km is the figure to hold the graph's own total against by hand.",
+  "bboxWhy": "Sized from coordinates and then checked against the elevation tiles, which are reachable from here even though Overpass is not. Scanned on a 140 x 140 grid the ground inside this box runs 1,289 to 3,353 m against a published 1,350 to 3,340, so it contains both ends of the resort: the highest point lands at 46.9243/10.9223, which is the Tiefenbach and Schwarze Schneid ground, and the floor is the Ötztal below the village. The south edge is at 46.90 on purpose — Obergurgl-Hochgurgl is further up the valley at about 46.87 and is a separate resort, so letting the box reach it would haul in a network this graph should not contain. Still unmeasured against OSM: expect to widen if the first run comes back short of 31 lifts, the way Kronplatz held 19 of its 32 until its box grew.",
+  "coordinatesWhy": "Recorded because two of the five coordinates this box was first sketched from were wrong, and the elevation tiles caught it. Sölden village reads 1,350 m and the two glacier points 2,955 and 3,116, all as expected — but the point taken for the Gaislachkogl summit reads 2,126 m against a real 3,040, and the one taken for Hochsölden reads 1,571 against about 2,090. Both were off by enough to be on a different part of the mountain. The box is anchored on the points that checked out, and no coordinate in this file is quoted as a fact unless the DEM agreed with it. The lift stations come from OSM at fetch time and are not guessed here at all."
+}

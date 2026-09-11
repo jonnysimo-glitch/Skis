@@ -1,0 +1,60 @@
+{
+  "id": "hintertux",
+  "name": "Hintertux Glacier",
+  "region": "Zillertal, Tyrol",
+  "country": "Austria",
+  "note": "Austria's only year-round glacier. One road, one valley station, and three funitels stacked up the Tuxer Ferner to 3,250 m.",
+  "bbox": [
+    11.59,
+    47,
+    11.74,
+    47.12
+  ],
+  "tolerance": 60,
+  "bases": [
+    "Hintertux",
+    "Gletscherbus",
+    "Tuxer Ferner",
+    "Tuxer Fernerhaus",
+    "Sommerbergalm",
+    "Tuxerjoch",
+    "Hintertuxer Gletscher"
+  ],
+  "basesWhy": "There is only one base and that is the point of including this resort. The road up the Tuxertal ends at the Hintertux valley station at 1,500 m and every lift in the area is above it, so unlike the other four this is a single-base mountain — which exercises the part of the app that asks where your car is with exactly one answer. The rest of the names are here because the valley station may be tagged after the Gletscherbus rather than the place, and because the altitude floor in operations.mjs will refuse the ones that are up the hill.",
+  "areas": {
+    "Hintertux": "Hintertux",
+    "Gletscherbus": "Gletscher",
+    "Sommerbergalm": "Gletscher",
+    "Tuxer Ferner": "Gletscher",
+    "Tuxer Fernerhaus": "Gletscher",
+    "Tuxerjoch": "Tuxerjoch",
+    "Hintertuxer Gletscher": "Gletscher"
+  },
+  "firstLift": 495,
+  "lastDown": 1005,
+  "lifts": {
+    "default": {
+      "lastUp": 975,
+      "queue": 4
+    }
+  },
+  "operationsProvenance": "PLACEHOLDER. lastUp and queue are not in OpenStreetMap and are not from the resort either. A glacier that runs all year does not have one timetable — Hintertux starts earlier in summer than in midwinter and the published hours differ by month — so 08:15 to 16:45 is a plausible winter shape and nothing more. Four minutes of queue is a guess: the three Gletscherbus stages are funitels and move a lot of people, which argues lower than Sölden, but the area is compact and everything funnels through one valley station, which argues higher. Replace with published hours before anyone plans a real day on it.",
+  "sources": [
+    "https://www.hintertuxergletscher.at/en/",
+    "https://www.skiresort.info/ski-resort/hintertux-glacier-hintertuxer-gletscher/",
+    "https://en.wikipedia.org/wiki/Hintertux_Glacier"
+  ],
+  "defaultBase": "Hintertux",
+  "defaultBaseWhy": "It is the only one.",
+  "toleranceWhy": "UNMEASURED. 60 to start, the same conservative value as Latemar and Sölden. This graph should need the least stitching of the five: it is one valley, one lift spine and a glacier, rather than villages on separate roads. Run npm run resort:tune -- hintertux after the first fetch and record the numbers here.",
+  "published": {
+    "lifts": 21,
+    "top": 3250,
+    "bottom": 1500
+  },
+  "publishedSource": "skiresort.info, the resort's own pages and Wikipedia, read 11 Sep 2026: 21 lifts, 64 km of piste in winter (20 km and about 10 lifts in summer), 1,500 to 3,250 m. The published stage altitudes are worth keeping because they are checkable against the graph: Gletscherbus I runs 1,501 to 2,028 m, II 2,031 to 2,609 m, III 2,600 to 3,235 m.",
+  "bboxWhy": "Sized from coordinates and then checked against the elevation tiles, which are reachable from here even though Overpass is not. Scanned on a 140 x 140 grid the ground inside this box runs 1,379 to 3,462 m against a published 1,500 to 3,250, so it contains the resort with room to spare at both ends. The 3,462 m is not a lift: the highest ground lands at 47.0531/11.6586 on the Olperer ridge above the ski area, which is what a box that holds the whole glacier should look like. Small by the standards of the other four, at roughly eleven by thirteen kilometres, because this is deliberately the glacier and not the Zillertal 3000 network — see scopeWhy. Still unmeasured against OSM: expect to widen if the first run comes back short of 21 lifts.",
+  "scopeWhy": "Why the glacier alone and not Zillertal 3000. Two of the five resorts in here are big multi-village networks and the solver is already exercised on those. What it is not exercised on is a small mountain with one base and a single spine of lifts, which is the shape where a day has to lap the same runs — the case CLAUDE.md's per-run repeat cap exists for, and the case that makes routes come back flagged `similar: true`. A 64 km glacier is that shape, and it is open in September, which none of the others are.",
+  "extraPlaces": [],
+  "extraPlacesWhy": "Empty until the first export says what is missing. Places that are real and are not in OpenStreetMap go here; see scripts/sources/manual.mjs for the rules and kronplatz.json for six worked examples. The likely gap at a glacier is ski hire and depots at the valley station, which is exactly where OSM's coverage was thin at three of Kronplatz's four bases."
+}
