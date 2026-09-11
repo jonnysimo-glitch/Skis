@@ -10,9 +10,10 @@ import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { LegList, StatRow, detailStats, hours, ridesDown } from "../ui/RouteBits.jsx";
 import { lunchStop } from "../lib/via.js";
 import { backAt, legClocks, LUNCH_MINUTES } from "../lib/plan.js";
-import { minutesToClock, legsOf } from "../solver.js";
+import { legsOf } from "../solver.js";
 import { NODES, PLACES } from "../active-resort.js";
 import { Back, Warning, Check, Clock, Lift } from "../ui/Icons.jsx";
+import { showClock } from "../lib/clock.js";
 
 export default function LegsScreen({ route, opts, plan, onBack }) {
   const back = backAt(route, opts);
@@ -69,7 +70,7 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
         <div className="info">
           <Clock className="info__icon" width="17" height="17" />
           <span>
-            Down at <b>{finishName}</b> by <b>{minutesToClock(back)}</b>, on{" "}
+            Down at <b>{finishName}</b> by <b>{showClock(back)}</b>, on{" "}
             {hours(route.minutes)} on the hill.
           </span>
         </div>
@@ -81,7 +82,7 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
               <span className="warn__t">Tight</span>
               <span className="warn__p">
                 This lands {slack} minute{slack === 1 ? "" : "s"} before{" "}
-                {minutesToClock(plan.t1)}. One slow queue and you are cutting it fine.
+                {showClock(plan.t1)}. One slow queue and you are cutting it fine.
               </span>
             </span>
           </div>
@@ -119,7 +120,7 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
             <span>
               {lunch ? (
                 <>
-                  Lunch at <b>{lunch.name}</b>, about <b>{minutesToClock(eatAt)}</b>
+                  Lunch at <b>{lunch.name}</b>, about <b>{showClock(eatAt)}</b>
                   {lunch.all.length > 1 && ` — ${lunch.all.length} places there`}. The{" "}
                   {LUNCH_MINUTES} minutes are already out of the skiing time above.
                 </>

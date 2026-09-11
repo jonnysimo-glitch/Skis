@@ -20,11 +20,12 @@ import { useEffect, useRef, useState } from "react";
 import { useGeolocation, kmh } from "../lib/useGeolocation.js";
 import { evaluateArrival, DWELL_MS } from "../lib/progress.js";
 import { LUNCH_MINUTES } from "../lib/plan.js";
-import { minutesToClock, legsOf } from "../solver.js";
+import { legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
 import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Cross, Close, ChevronDown, ChevronUp } from "../ui/Icons.jsx";
 import { LegList } from "../ui/RouteBits.jsx";
 import { legClocks } from "../lib/plan.js";
+import { showClock } from "../lib/clock.js";
 
 /** Why the screen is not following along, in words a skier can act on. */
 function gpsExplanation(state) {
@@ -463,7 +464,7 @@ export default function NavigateScreen({
           </div>
         </div>
         <div className={`navmetric${overrun > 0 ? " navmetric--warn" : ""}`}>
-          <div className="navmetric__v">{minutesToClock(projectedFinish)}</div>
+          <div className="navmetric__v">{showClock(projectedFinish)}</div>
           <div className="navmetric__k">
             {overrun > 0 ? `${overrun} min over` : "due back"}
           </div>
@@ -549,8 +550,8 @@ export default function NavigateScreen({
             {/* Short enough to read on a chairlift. Where it re-plans from is
                 where you are, which the instruction above already says. */}
             <p>
-              <b>{overrun} min over.</b> Back at {minutesToClock(projectedFinish)},
-              past your {minutesToClock(plan.t1)}.
+              <b>{overrun} min over.</b> Back at {showClock(projectedFinish)},
+              past your {showClock(plan.t1)}.
             </p>
             <button
               className="nav__overx"

@@ -17,11 +17,10 @@ import { Close, Info } from "../ui/Icons.jsx";
 import { LIFTS, RUNS, NODES, PLACES } from "../active-resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { shortName, describe } from "../lib/places.js";
+// The second of two hand-rolled 24-hour formatters this file used to carry.
+// Both are now one locale-aware helper — see src/lib/clock.js.
+import { showClock } from "../lib/clock.js";
 
-
-
-const hhmm = (min) =>
-  `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
 
 const GRADES = [
   ["blue", "Blue"],
@@ -129,7 +128,7 @@ export default function ResortStatus({ resort, onClose }) {
                 <li className="row" key={name}>
                   <span>{name}</span>
                   <span className="row__v">
-                    {type}, last up {hhmm(lastUp)}
+                    {type}, last up {showClock(lastUp)}
                   </span>
                 </li>
               ))}
@@ -207,11 +206,11 @@ export default function ResortStatus({ resort, onClose }) {
               </li>
               <li className="row">
                 <span>First lift shuts</span>
-                <span className="row__v">{hhmm(firstToShut)}</span>
+                <span className="row__v">{showClock(firstToShut)}</span>
               </li>
               <li className="row">
                 <span>Last lift shuts</span>
-                <span className="row__v">{hhmm(lastToShut)}</span>
+                <span className="row__v">{showClock(lastToShut)}</span>
               </li>
             </ul>
             <p className="note" style={{ marginTop: "var(--s-3)" }}>

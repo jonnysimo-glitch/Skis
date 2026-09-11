@@ -5,10 +5,10 @@
  * a route that strands someone, and never dress a non-answer up as one.
  */
 import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
-import { minutesToClock } from "../lib/plan.js";
 import { NODES } from "../active-resort.js";
 import { viaLabel } from "../lib/via.js";
 import { Warning, Arrow } from "../ui/Icons.jsx";
+import { showClock } from "../lib/clock.js";
 
 /**
  * Each returns null when it would not actually change anything.
@@ -22,7 +22,7 @@ const FIXES = {
     const later = Math.min(plan.t1 + 45, resort.lastDown);
     if (later <= plan.t1 + 1) return null; // the mountain shuts first
     return {
-      title: `Give yourself until ${minutesToClock(later)}`,
+      title: `Give yourself until ${showClock(later)}`,
       sub: `${later - plan.t1} more minutes is usually the difference.`,
     };
   },
@@ -81,7 +81,7 @@ const FIXES = {
     const t1 = plan.t0 + (capacity.budget || capacity.minutes) + (plan.lunch ? 45 : 0);
     if (t1 >= plan.t1 - 5) return null; // not actually shorter
     return {
-      title: `Plan to ${minutesToClock(t1)} instead`,
+      title: `Plan to ${showClock(t1)} instead`,
       sub: "As long a day as this mountain supports.",
     };
   },

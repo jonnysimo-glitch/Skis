@@ -2,9 +2,10 @@
  * Pieces shared between the choose, detail, navigate and summary screens.
  */
 import { Fragment } from "react";
-import { minutesToClock, legsOf } from "../solver.js";
+import {legsOf} from "../solver.js";
 import { LUNCH_MINUTES as LUNCH_STOP_MINUTES } from "../lib/plan.js";
 import { Clock, Ruler, Descend, Runs, Lift } from "./Icons.jsx";
+import { showClock } from "../lib/clock.js";
 
 export const hours = (minutes) => {
   const h = Math.floor(minutes / 60);
@@ -130,7 +131,7 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1, lunch =
                 the clock here is only the pace implied by where you are now.
                 Blank beats a wrong time on a screen whose whole job is
                 getting you down before the lifts stop. */}
-            {clocks && <span className="leg__t">{done ? "" : minutesToClock(clocks[i])}</span>}
+            {clocks && <span className="leg__t">{done ? "" : showClock(clocks[i])}</span>}
           </li>
           {eating && (
             <li className="leg leg--stop">
@@ -146,7 +147,7 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1, lunch =
                   {lunch.all.length > 1 ? ` · ${lunch.all.length} places here` : ""}
                 </span>
               </span>
-              {clocks && <span className="leg__t">{minutesToClock(lunch.at)}</span>}
+              {clocks && <span className="leg__t">{showClock(lunch.at)}</span>}
             </li>
           )}
           </Fragment>

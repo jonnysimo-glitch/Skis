@@ -12,10 +12,11 @@
 import { SheetHead, SheetFoot } from "../ui/Sheet.jsx";
 import { detailStats, hours } from "../ui/RouteBits.jsx";
 import { backAt } from "../lib/plan.js";
-import { minutesToClock, legsOf } from "../solver.js";
+import { legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
 import { commitRoute } from "../lib/offline.js";
 import { Back, Download, Arrow } from "../ui/Icons.jsx";
+import { showClock } from "../lib/clock.js";
 
 export default function DetailScreen({ route, opts, plan, resortId, onStart, onBack, onLegs }) {
   const back = backAt(route, opts);
@@ -70,7 +71,7 @@ export default function DetailScreen({ route, opts, plan, resortId, onStart, onB
             </span>
           ))}
           <span className="detail__stat detail__stat--back">
-            <b>{minutesToClock(back)}</b>
+            <b>{showClock(back)}</b>
             <span>back at {finishName}</span>
           </span>
         </div>

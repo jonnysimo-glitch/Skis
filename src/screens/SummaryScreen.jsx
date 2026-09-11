@@ -5,9 +5,10 @@ import { SheetHead, SheetBody, SheetFoot } from "../ui/Sheet.jsx";
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { backAt } from "../lib/plan.js";
-import { minutesToClock } from "../solver.js";
+
 import { NODES } from "../active-resort.js";
 import { Mountain, Restart } from "../ui/Icons.jsx";
+import { showClock } from "../lib/clock.js";
 
 export default function SummaryScreen({ route, opts, plan, onAgain, onDone }) {
   const back = backAt(route, opts);
@@ -25,8 +26,8 @@ export default function SummaryScreen({ route, opts, plan, onAgain, onDone }) {
 
       <SheetBody>
         <p className="lede">
-          Down at {finish.name} by {minutesToClock(back)}
-          {spare > 0 ? `, ${spare} minutes inside your ${minutesToClock(plan.t1)}.` : "."}
+          Down at {finish.name} by {showClock(back)}
+          {spare > 0 ? `, ${spare} minutes inside your ${showClock(plan.t1)}.` : "."}
         </p>
 
         <div className="spacer" />

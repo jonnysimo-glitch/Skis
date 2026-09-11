@@ -9,7 +9,15 @@
 import { minutesToClock, clockToMinutes, legsOf } from "../solver.js";
 import { NODES } from "../active-resort.js";
 import { viaLabel, viaResolve } from "./via.js";
+import { showClock } from "./clock.js";
 
+/*
+ * Re-exported for the plan form's two `<input type="time">` fields and for
+ * nothing else. An input of that type takes and returns 24-hour "HH:MM" as its
+ * value by spec, whatever clock the browser then draws it in, so those two are
+ * the one place in the app that must NOT be localised. Every line of prose
+ * that shows a time goes through showClock in ./clock.js instead.
+ */
 export { minutesToClock, clockToMinutes };
 
 export const LUNCH_MINUTES = 45;
@@ -357,7 +365,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
         eyebrow: "Too far for the window",
         title: `${name} and back won't fit`,
         headline: `Getting to ${name} and back takes about ${first.need} minutes.`,
-        body: `You have ${opts.budget} minutes of skiing between ${minutesToClock(plan.t0)} and ${minutesToClock(plan.t1)}, and that is before you have skied anything else.`,
+        body: `You have ${opts.budget} minutes of skiing between ${showClock(plan.t0)} and ${showClock(plan.t1)}, and that is before you have skied anything else.`,
         fixes: ["dropVia", "laterFinish", ...(plan.lunch ? ["dropLunch"] : [])],
       };
     }
@@ -365,7 +373,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
       eyebrow: "Lifts have stopped",
       title: `Too late for ${name}`,
       headline: `The lifts that get you to ${name} have already stopped for the day.`,
-      body: `Setting off at ${minutesToClock(plan.t0)} is too late for them. Nothing later will help; an earlier start would, tomorrow.`,
+      body: `Setting off at ${showClock(plan.t0)} is too late for them. Nothing later will help; an earlier start would, tomorrow.`,
       fixes: ["dropVia"],
     };
   }
@@ -379,10 +387,10 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
     return {
       headline: "There isn't enough time between those two clocks.",
       body: roomToExtend
-        ? `${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)} is ${window} minutes. One lap here is closer to 20 minutes before you have queued for anything.`
+        ? `${showClock(plan.t0)} to ${showClock(plan.t1)} is ${window} minutes. One lap here is closer to 20 minutes before you have queued for anything.`
         // No fix to offer, so the copy names the constraint and stops. The
         // reader can draw the conclusion; spelling it out was editorialising.
-        : `${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)} is ${window} minutes, and the last lift is at ${minutesToClock(shutsAt)}. One lap here is closer to 20 minutes.`,
+        : `${showClock(plan.t0)} to ${showClock(plan.t1)} is ${window} minutes, and the last lift is at ${showClock(shutsAt)}. One lap here is closer to 20 minutes.`,
       fixes: [
         ...(roomToExtend ? ["laterFinish"] : []),
         ...(plan.lunch ? ["dropLunch"] : []),
@@ -416,7 +424,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
     return {
       eyebrow: "No day fits",
       title: names.length > 1 ? "Not all of those together" : `Nothing goes via ${names[0]}`,
-      headline: `No day from ${NODES[plan.start].name} takes in ${list(names)} and gets back by ${minutesToClock(plan.t1)}.`,
+      headline: `No day from ${NODES[plan.start].name} takes in ${list(names)} and gets back by ${showClock(plan.t1)}.`,
       // What is actually known, and no more. `viaTrouble` proved the way
       // there and the way back exist as separate shortest paths; the solver
       // proved no legal day strings them together with skiing in between. The
@@ -449,7 +457,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
     const asText = hours ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins} minutes`;
     return {
       title: "Longer than this resort",
-      headline: `There isn't enough here to fill ${minutesToClock(plan.t0)} to ${minutesToClock(plan.t1)}.`,
+      headline: `There isn't enough here to fill ${showClock(plan.t0)} to ${showClock(plan.t1)}.`,
       // No lecture about lapping. Skiing a good run three times is a normal
       // day out, and the solver will now plan one; this only fires when even
       // that does not reach the finish time.
@@ -480,7 +488,7 @@ export function diagnose(plan, ability, opts, resort, capacity = null, trouble =
 
   return {
     headline: "Nothing gets you back in time.",
-    body: `Every route from ${NODES[plan.start].name} either misses a last lift or overruns ${minutesToClock(plan.t1)}.`,
+    body: `Every route from ${NODES[plan.start].name} either misses a last lift or overruns ${showClock(plan.t1)}.`,
     fixes: ["laterFinish", ...(ability === "blue" ? ["harder"] : []), ...(plan.lunch ? ["dropLunch"] : [])],
   };
 }

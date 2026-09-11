@@ -19,9 +19,10 @@ import { useEffect, useRef, useState } from "react";
 import ElevationProfile, { DifficultyBar } from "../ui/ElevationProfile.jsx";
 import { StatRow, routeStats, hours } from "../ui/RouteBits.jsx";
 import { REFINEMENTS, refinementApplies, backAt, LUNCH_MINUTES } from "../lib/plan.js";
-import { minutesToClock } from "../solver.js";
+
 import { Info, Clock, Pin, Arrow, Back } from "../ui/Icons.jsx";
 import { NODES } from "../active-resort.js";
+import { showClock } from "../lib/clock.js";
 
 /** Above roughly six a list stops being a choice and becomes homework. */
 const SHOWN_BY_DEFAULT = 3;
@@ -213,7 +214,7 @@ export default function ChooseScreen({
                 </span>
                 <span className="routecard__back">
                   <Clock width="14" height="14" style={{ verticalAlign: -2, marginRight: 4, color: "var(--ink-4)" }} />
-                  back <b>{minutesToClock(back)}</b>
+                  back <b>{showClock(back)}</b>
                 </span>
               </span>
             </button>
