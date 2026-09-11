@@ -14,7 +14,7 @@
  * them, whether anything on screen is broken text, whether every image
  * actually loaded, and whether the page threw. Run with npm run personas.
  */
-import { serve, launch, newPage, toForm, solve, routeCount, openRoute, openLegs, reachNext, atRest, multiTouch, openTools, zoomBy } from "./harness.mjs";
+import { serve, launch, newPage, toForm, solve, routeCount, openRoute, openLegs, reachNext, atRest, multiTouch, openTools, zoomBy, clockMinutes } from "./harness.mjs";
 import { RESORTS } from "../src/resorts/index.js";
 
 const LIVE = RESORTS.filter((r) => r.available);
@@ -781,10 +781,17 @@ const PEOPLE = [
       })));
       const at = rows.findIndex((r) => r.stop);
       if (at > 0 && at < rows.length - 1) {
-        const mins = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-        const gap = mins(rows[at + 1].t) - mins(rows[at].t);
+        /*
+         * clockMinutes, not a split on the colon. The local `mins` here read
+         * "9:15 AM".split(":") as hour 9 and minute NaN, so the gap came out
+         * NaN at all four resorts and the check could neither pass nor say
+         * anything useful. Same fault as the six in e2e: a rendered time
+         * parsed as if the app only ever wrote 24-hour.
+         */
+        const gap = clockMinutes(rows[at + 1].t) - clockMinutes(rows[at].t);
         check(`${resort.id}: ${this.who} is not asked to eat in no time at all`,
-          gap >= 40, `${gap} minutes between the stop and the next leg`);
+          Number.isFinite(gap) && gap >= 40,
+          `${gap} minutes between ${rows[at].t} and ${rows[at + 1].t}`);
       }
       await screen(page, this.who, "legs with lunch");
     },

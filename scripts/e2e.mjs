@@ -168,7 +168,19 @@ try {
       check(`${label}: names the context`, got.eyebrow.startsWith(eyebrow), got.eyebrow);
       check(`${label}: labels the fields for it`, got.start === startLabel && got.finish === finishLabel, `${got.start} / ${got.finish}`);
       check(`${label}: it is still the plan screen`, /^Plan /i.test(got.screen), got.screen);
-      check(`${label}: finish time is before the last lift`, got.t1 <= "16:30", got.t1);
+      /*
+       * Against the resort's own lastDown, not a literal. This read
+       * `<= "16:30"`, which was Monterosa's lastDown written down twice — and
+       * the moment that became 16:45 from the resort's published hours, a
+       * correct default failed. The name was misleading too: "be down by" is
+       * legitimately AFTER the last lift, because you take the last lift and
+       * then ski down. What it can never be is later than the time the resort
+       * says the hill closes.
+       */
+      const closes = RESORTS.find((r) => r.available)?.lastDown ?? 16 * 60 + 30;
+      check(`${label}: the finish it offers is inside the resort's day`,
+        toMinutes(got.t1) <= closes,
+        `${got.t1} against a hill that closes at ${String(Math.floor(closes / 60)).padStart(2, "0")}:${String(closes % 60).padStart(2, "0")}`);
       check(`${label}: start is before finish`, got.t0 < got.t1, `${got.t0} → ${got.t1}`);
       check(`${label}: no page errors`, page.errors.length === 0, page.errors.join(" | "));
       await page.context_.close();
@@ -1210,7 +1222,17 @@ try {
         body.match(/\d+ min over/)?.[0] ?? "none, correct"
       );
       const due = await page.$$eval(".navmetric__v", (n) => n.map((e) => e.textContent));
-      check("due-back is a plausible ski time, not the middle of the night", due.some((d) => /^(0?9|1[0-6]):/.test(d)), due.join(" / "));
+      /*
+       * Parsed, not pattern-matched. This tested /^(0?9|1[0-6]):/ — a
+       * 24-hour shape — so on a twelve-hour phone a perfectly good "3:55 PM"
+       * failed for looking like neither 09: nor 16:. What the check is
+       * actually for is catching a due-back computed off the wrong clock, so
+       * it now asks whether any of the metrics lands in the part of the day
+       * somebody could be skiing.
+       */
+      const dueMins = due.map(clockMinutes).filter(Number.isFinite);
+      check("due-back is a plausible ski time, not the middle of the night",
+        dueMins.some((m) => m >= 7 * 60 && m <= 19 * 60), due.join(" / "));
       check("no page errors", page.errors.length === 0, page.errors.join(" | "));
       await page.context_.close();
     }

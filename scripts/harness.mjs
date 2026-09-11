@@ -346,13 +346,29 @@ export async function reachNext(page, selector = '.nav__foot .btn:has-text("Reac
  * only made it visible.
  */
 export const clockMinutes = (text) => {
-  const s = String(text ?? "").replace(/[\u202f\u2009\u00a0]/g, " ").trim();
-  const m = /^(\d{1,2}):(\d{2})\s*([AaPp])\.?\s?[Mm]\.?$/.exec(s);
-  if (m) {
-    const h = Number(m[1]) % 12 + (/[Pp]/.test(m[3]) ? 12 : 0);
-    return h * 60 + Number(m[2]);
+  const s = String(text ?? "").replace(/[\u202f\u2009\u00a0]/g, " ");
+  /*
+   * Searched, not anchored, and that distinction cost 64 checks.
+   *
+   * The first version demanded the whole string be a time. Half the call
+   * sites hand it a whole element's textContent — ".routecard__back" reads
+   * "back 4:07 PM", not "4:07 PM" — so every one of those parsed to NaN, the
+   * arrays came out empty, and the failures read "no return clock shown on
+   * any card" and "-Infinity min offered against a 420 min window" across
+   * every persona at every resort. The regex it replaced searched, which is
+   * why it had worked.
+   *
+   * The 12-hour branch is tried first: on "back 4:07 PM" the 24-hour pattern
+   * would otherwise match "4:07" and silently drop the PM, which is the
+   * original bug in a new place. First time in the string either way — none
+   * of these strings carries two.
+   */
+  const ampm = /(\d{1,2}):(\d{2})\s*([AaPp])\.?\s?[Mm]\.?/.exec(s);
+  if (ampm) {
+    const h = (Number(ampm[1]) % 12) + (/[Pp]/.test(ampm[3]) ? 12 : 0);
+    return h * 60 + Number(ampm[2]);
   }
-  const h24 = /^(\d{1,2}):(\d{2})$/.exec(s);
+  const h24 = /(\d{1,2}):(\d{2})/.exec(s);
   return h24 ? Number(h24[1]) * 60 + Number(h24[2]) : NaN;
 };
 
