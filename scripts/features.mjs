@@ -25,6 +25,7 @@ import {
   openRoute,
   routeCount,
   toMinutes,
+  clockMinutes,
   reachNext,
   openLegs,
   openTools,
@@ -3534,13 +3535,20 @@ if (feature("18. The rest of the day, without leaving navigation")) {
     })));
   check("legs behind you do not carry an invented clock time",
     times.slice(0, 3).every((r) => r.done && r.t === ""), JSON.stringify(times.slice(0, 3)));
-  check("legs ahead of you all carry one",
-    times.slice(3).every((r) => /^\d\d:\d\d$/.test(r.t)),
+  /*
+   * "Carries a time", not "carries HH:MM". The clock follows the device now,
+   * so this suite's en-US context renders "9:30 AM" and the old /^\d\d:\d\d$/
+   * called a correct column of times a failure. clockMinutes is the parser
+   * that knows both, and asserting it parses is a stronger claim than a
+   * shape: a string matching HH:MM could still be nonsense.
+   */
+  const ahead = times.slice(3).map((r) => clockMinutes(r.t));
+  check("legs ahead of you all carry one", ahead.every(Number.isFinite),
     times.slice(3).map((r) => r.t).join(" ") || "none");
   // Reading down the list, the times only ever go forward.
-  const ahead = times.slice(3).map((r) => Number(r.t.slice(0, 2)) * 60 + Number(r.t.slice(3)));
-  check("and they run forwards", ahead.every((v, i) => i === 0 || v >= ahead[i - 1]),
-    `${ahead[0]} to ${ahead[ahead.length - 1]}`);
+  check("and they run forwards",
+    ahead.length > 0 && ahead.every((v, i) => i === 0 || v >= ahead[i - 1]),
+    `${times.slice(3)[0]?.t} to ${times.slice(-1)[0]?.t}`);
 
   // The point of a pinned screen is that the thing you came to tap is still
   // there. Opening the route must not bury it.
@@ -7087,6 +7095,79 @@ if (feature("51. What this mountain is, from the card")) {
 
   check("no page errors", page.errors.length === 0, page.errors.join(" | "));
   await page.context_.close();
+}
+
+if (feature("52. The clock is the reader's own")) {
+  /*
+   * "Down by 16:30" is exactly right in Chamonix and reads as a train
+   * timetable to an American, so the app formats times the way the device
+   * does. Two things have to hold and they pull opposite ways.
+   *
+   * Every line of PROSE follows the phone. And the plan form's two time
+   * inputs must NOT: `<input type="time">` takes and returns 24-hour "HH:MM"
+   * as its value by spec, whatever clock the browser draws it in, so
+   * localising those would break the value the app reads back.
+   *
+   * Checked in a real browser under both locales rather than only in node,
+   * because src/lib/clock.test.js already proves the helper and proves
+   * nothing about which of the app's strings go through it. The second
+   * formatter this change removed — ResortStatus had its own hand-rolled
+   * hhmm — is exactly the fault a node test cannot see.
+   */
+  const clockOf = async (locale) => {
+    const page = await newPage(browser, { at: [9, 30], locale });
+    await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+    await page.click(".hero");
+    await page.click("text=Go skiing");
+    await page.waitForSelector(".planbtn", { timeout: 15000 });
+    await page.click(".planbtn");
+    await page.waitForSelector("#p-t1", { timeout: 15000 });
+    const input = await page.$eval("#p-t1", (e) => e.value);
+    await page.click("text=Find routes");
+    await page.waitForSelector(".routecard", { timeout: 25000 });
+    const shown = await page.$$eval(".routecard__back b", (x) => x.map((e) => e.textContent));
+    const errors = page.errors.slice();
+    await page.context_.close();
+    return { input, shown, errors };
+  };
+
+  const us = await clockOf("en-US");
+  const it = await clockOf("it-IT");
+
+  check("an American phone is told the afternoon is PM",
+    us.shown.length > 0 && us.shown.every((t) => /\d{1,2}:\d{2} [AP]M$/.test(t)),
+    us.shown.join(", "));
+  check("an Italian phone is told 16:30",
+    it.shown.length > 0 && it.shown.every((t) => /^\d{2}:\d{2}$/.test(t)),
+    it.shown.join(", "));
+  /*
+   * The padding, which the first version of this got wrong. `hour: "numeric"`
+   * gives a correct "4:30 PM" and an Italian "9:15", and this app writes
+   * "09:15" — the leg list puts one time per leg in a narrow auto-width
+   * column and unpadded hours make it ragged on a day running 9 to 16.
+   */
+  check("and zero-padded, the way this app has always written it",
+    it.shown.every((t) => t.length === 5), it.shown.join(", "));
+  check("but the American hour is not padded, because nobody writes 04:30 PM",
+    !us.shown.some((t) => /^0\d:/.test(t)), us.shown.join(", "));
+
+  // The one place that must stay 24-hour, under both.
+  check("the plan form's time input is 24-hour whatever the phone says",
+    /^\d{2}:\d{2}$/.test(us.input) && us.input === it.input,
+    `${us.input} on en-US, ${it.input} on it-IT`);
+
+  /*
+   * And the same instant either way. Parsed rather than compared as text,
+   * which is the bug this whole section came out of: two e2e checks compared
+   * rendered times as strings, so "4:07 PM" sorted after "16:30" and a route
+   * getting you back early read as late.
+   */
+  check("and both phones are shown the same time of day",
+    us.shown.map(clockMinutes).join() === it.shown.map(clockMinutes).join(),
+    `${us.shown.join(", ")} against ${it.shown.join(", ")}`);
+  check("no page errors", us.errors.length === 0 && it.errors.length === 0,
+    [...us.errors, ...it.errors].join(" | "));
 }
 
 

@@ -88,10 +88,22 @@ const NETWORK_NOISE =
  */
 export async function newPage(
   browser,
-  { at = [9, 5], geolocation, permissions = [], offline = false, viewport, touch = false } = {}
+  { at = [9, 5], geolocation, permissions = [], offline = false, viewport, touch = false,
+    locale = "en-US" } = {}
 ) {
   const context = await browser.newContext({
     viewport: viewport || { width: 430, height: 900 },
+    /*
+     * Declared, not inherited. Since the app says the time the way the phone
+     * does, the browser's locale decides whether every screen reads "16:30" or
+     * "4:30 PM" — so leaving it to a Playwright default would make the suites
+     * depend on a value nothing in here states. en-US on purpose rather than
+     * an Alpine locale: it is the twelve-hour path, which is the newer and
+     * therefore riskier one, and it renders the widest times, so every layout
+     * check runs against the worst case. Pass `locale: "it-IT"` for a check
+     * that needs the twenty-four-hour side.
+     */
+    locale,
     ...(geolocation ? { geolocation } : {}),
     ...(touch ? { hasTouch: true, isMobile: true } : {}),
     permissions,
@@ -317,6 +329,32 @@ export async function reachNext(page, selector = '.nav__foot .btn:has-text("Reac
   await page.waitForTimeout(90);
   return true;
 }
+
+/**
+ * Minutes past midnight from a time the APP RENDERED, under either clock.
+ *
+ * `toMinutes` below reads the 24-hour "HH:MM" the plan form's inputs carry and
+ * is still right for those. This one reads what a screen shows a reader, which
+ * since the clock follows the device is "16:30" on one phone and "4:30 PM" on
+ * another.
+ *
+ * It exists because two e2e checks compared rendered times as STRINGS. That
+ * happened to work while every time was zero-padded 24-hour and broke the
+ * moment one was not — "4:07 PM" sorts after "16:30" lexically, so a route
+ * getting you back comfortably early read as late. Worth noting the string
+ * compare was already wrong for a day crossing midnight; the twelve-hour clock
+ * only made it visible.
+ */
+export const clockMinutes = (text) => {
+  const s = String(text ?? "").replace(/[\u202f\u2009\u00a0]/g, " ").trim();
+  const m = /^(\d{1,2}):(\d{2})\s*([AaPp])\.?\s?[Mm]\.?$/.exec(s);
+  if (m) {
+    const h = Number(m[1]) % 12 + (/[Pp]/.test(m[3]) ? 12 : 0);
+    return h * 60 + Number(m[2]);
+  }
+  const h24 = /^(\d{1,2}):(\d{2})$/.exec(s);
+  return h24 ? Number(h24[1]) * 60 + Number(h24[2]) : NaN;
+};
 
 export const toMinutes = (hhmm) => {
   const [h, m] = hhmm.split(":").map(Number);

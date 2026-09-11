@@ -20,6 +20,7 @@ import {
   openLegs,
   routeCount,
   toMinutes,
+  clockMinutes,
   reachNext,
   toForm,
   openTools,
@@ -366,9 +367,16 @@ try {
       // which npm run resort:verify reports — so ninety minutes honestly does
       // not do it. What must never happen is a route that leaves you short.
       if (n > 0) {
-        const backs = await page.$$eval(".routecard__back", (cards) =>
-          cards.map((c) => (c.textContent.match(/(\d{1,2}):(\d{2})/) || []))
-            .filter((m) => m.length).map((m) => Number(m[1]) * 60 + Number(m[2])));
+        /*
+         * Same fix as the one further down, and this site is the more
+         * instructive of the two: it PASSED with the AM/PM thrown away,
+         * because the wrong parse produces a smaller number — "3:25 PM" read
+         * as 205 minutes, which is comfortably under the 15:30 deadline this
+         * asks about. A check that cannot fail is worse than one that does.
+         */
+        const backs = (await page.$$eval(".routecard__back", (cards) => cards.map((c) => c.textContent)))
+          .map(clockMinutes)
+          .filter(Number.isFinite);
         const late = backs.filter((b) => b > 15 * 60 + 30);
         check("90 minutes to the car: nothing offered gets you there late",
           backs.length > 0 && late.length === 0, `${n} routes, ${late.length} late`);
@@ -382,7 +390,8 @@ try {
       }
       if (n > 0) {
         const back = await page.$eval(".routecard__back b", (x) => x.textContent);
-        check("and it gets you there before your finish time", back <= "15:30", `back ${back}`);
+        check("and it gets you there before your finish time",
+          clockMinutes(back) <= 15 * 60 + 30, `back ${back}`);
       }
       check("no page errors", page.errors.length === 0, page.errors.join(" | "));
       await page.context_.close();
@@ -476,7 +485,16 @@ try {
       await solve(page);
       return v;
     })();
-    check("no route gets you back after your finish time", backs.every((b) => b <= t1), `${backs.join(", ")} vs ${t1}`);
+    /*
+     * In minutes, not as strings. `t1` is the plan form's input value, which
+     * is 24-hour "HH:MM" by spec and always will be; `backs` is what the cards
+     * SHOW, which follows the device's clock. Comparing the two as text read
+     * "4:07 PM" as later than "16:30" and failed a route that gets you back
+     * twenty-three minutes early.
+     */
+    check("no route gets you back after your finish time",
+      backs.every((b) => clockMinutes(b) <= toMinutes(t1)),
+      `${backs.join(", ")} vs ${t1}`);
     check("no page errors", page.errors.length === 0, page.errors.join(" | "));
     await page.context_.close();
   }
@@ -594,13 +612,18 @@ try {
     check("the legs page shows the profile with a scale", (await page.$(".profile__scale")) !== null);
     check("and the difficulty mix with percentages", (await page.$(".mixbar__key")) !== null);
     check("and lists every leg", (await page.$$eval(".leg", (n) => n.length)) > 0);
-    check(
-      "leg times run forward",
-      await page.$$eval(".leg__t", (n) => {
-        const t = n.map((e) => e.textContent);
-        return t.every((v, i) => i === 0 || v >= t[i - 1]);
-      })
-    );
+    /*
+     * Also in minutes. This was a lexical compare on the rendered text, which
+     * worked only because every time was zero-padded 24-hour — and would have
+     * been wrong anyway for a day crossing midnight. The twelve-hour clock is
+     * what made it visible rather than what broke it.
+     */
+    const legTimes = (await page.$$eval(".leg__t", (n) => n.map((e) => e.textContent)))
+      .map(clockMinutes)
+      .filter(Number.isFinite);
+    check("leg times run forward",
+      legTimes.length > 0 && legTimes.every((v, i) => i === 0 || v >= legTimes[i - 1]),
+      `${legTimes.length} times, ${legTimes.slice(0, 5).join(" ")}`);
     await page.click('[aria-label="Back to the map"]');
     await page.waitForSelector(".sheet__foot .btn", { timeout: 10000 });
     check("and it comes back to the route, not to the options",
@@ -1077,7 +1100,7 @@ try {
     check("lunch is announced in the header", /lunch included/i.test(eyebrow), eyebrow.trim());
     check(
       "you are still back before your finish time",
-      withLunch.every((b) => b <= t1),
+      withLunch.every((b) => clockMinutes(b) <= toMinutes(t1)),
       `${withLunch.join(", ")} vs ${t1}`
     );
     // The latest of the offered days, not the earliest. These are two different
@@ -1087,7 +1110,7 @@ try {
     // nothing was wrong. The longest day is the one that shows the 45 minutes.
     check(
       "the sit-down comes out of the skiing, so the day ends later",
-      Math.max(...withLunch.map(toMinutes)) > Math.max(...withoutLunch.map(toMinutes)),
+      Math.max(...withLunch.map(clockMinutes)) > Math.max(...withoutLunch.map(clockMinutes)),
       `latest back ${withoutLunch.join(",")} → ${withLunch.join(",")}`
     );
 
@@ -1164,7 +1187,8 @@ try {
         );
         if (n > 0) {
           const backs = await page.$$eval(".routecard__back b", (x) => x.map((e) => e.textContent));
-          check("the new options fit the time actually left", backs.every((b) => b <= "16:00"), backs.join(", "));
+          check("the new options fit the time actually left",
+            backs.every((b) => clockMinutes(b) <= 16 * 60), backs.join(", "));
         }
       }
       check("no page errors", page.errors.length === 0, page.errors.join(" | "));
@@ -1495,15 +1519,25 @@ try {
           // you back after the time you said you had to be down. Checked on
           // the clock each card prints, not on the solver's own arithmetic,
           // because that is the number a skier reads and trusts.
-          const backs = await page.$$eval(".routecard__back", (n) =>
-            n.map((c) => (c.textContent.match(/(\d{1,2}):(\d{2})/) || [])).filter((m) => m.length)
-              .map((m) => Number(m[1]) * 60 + Number(m[2])));
+          /*
+           * Parsed out here, not in the page, and with the parser that knows
+           * about both clocks. The version inside $$eval matched
+           * /(\d{1,2}):(\d{2})/ and threw the AM/PM away, so on a phone set
+           * to twelve hours "4:07 PM" became 247 minutes past midnight and
+           * every one of these checks went negative: "-615 min offered
+           * against a 105 min window", twenty-four times over. The app was
+           * right throughout; the regex predated the clock following the
+           * device.
+           */
+          const backs = (await page.$$eval(".routecard__back", (n) => n.map((c) => c.textContent)))
+            .map(clockMinutes)
+            .filter(Number.isFinite);
           const due = toMinutes(persona.t1);
           const late = backs.filter((b) => b > due);
           check(`${resort.id}: ${persona.name} — nothing gets you back late`,
             backs.length > 0 && late.length === 0,
             backs.length
-              ? late.map((b) => `back ${Math.floor(b / 60)}:${String(b % 60).padStart(2, "0")}`).join(", ") ||
+              ? late.map((b) => `back ${String(Math.floor(b / 60)).padStart(2, "0")}:${String(b % 60).padStart(2, "0")}`).join(", ") ||
                 `${due - Math.max(...backs)} min to spare on the latest`
               : "no return clock shown on any card");
 
