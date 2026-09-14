@@ -46,7 +46,7 @@
       "queue": 5
     }
   },
-  "operationsProvenance": "PLACEHOLDER. lastUp and queue are not from OpenStreetMap and are not yet from the resort either. They must be replaced with published lift hours before this resort is marked available.",
+  "operationsProvenance": "PLACEHOLDER. lastUp and queue are not from OpenStreetMap and are not yet from the resort either. Searched for on 14 September 2026 and not found: kronplatz.com publishes an hours page at /operatingtime, which is unreachable from this machine, and no secondary source states the daily first and last lift. The only operating fact found was the season start, 28 November 2026. Left exactly as it was rather than inferred from a neighbouring resort — Latemar’s 8.30-16.30 is thirty kilometres away and is not evidence about this mountain. Must be replaced with published hours before this goes public.",
   "sources": [
     "https://www.skiresort.info/ski-resort/kronplatz-plan-de-corones/",
     "https://en.wikipedia.org/wiki/Kronplatz_(Plan_de_Corones)"

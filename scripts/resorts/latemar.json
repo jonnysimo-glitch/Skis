@@ -42,7 +42,7 @@
       "queue": 4
     }
   },
-  "operationsProvenance": "PLACEHOLDER. lastUp and queue are not from OpenStreetMap and are not yet from the resort either. They must be replaced with published lift hours before this resort is marked available.",
+  "operationsProvenance": "PARTLY SOURCED, and still a PLACEHOLDER because of the one number that is not. Obereggen publishes its winter lift hours as 8.30-16.30 daily, which matches firstLift 510 and lastUp 990 exactly; the 8.30 is corroborated twice, by the hours page and by the season-opening announcement for 27 November 2026. So those two are no longer guesses. lastDown 1020 is, and it is the one that can strand somebody: it gives thirty minutes to get down after the last lift, against Monterosa’s sourced forty-five, and nothing published says which is right for Latemar. Understating a last lift is safe and overstating it is not, so the number stays where it is rather than being moved on a guess, and the flag stays up until the resort says. Recorded from search rather than fetched: obereggen.com, feratel.com, dolomitisuperski.com and every other resort site are unreachable from this machine.",
   "sources": [
     "https://www.obereggen.com/en/",
     "https://www.visitfiemme.it/en/ski/ski-center-latemar"
@@ -67,5 +67,9 @@
       "note": "Loc. Pampeago 4, 38038 Tesero. sportventura.it, visitfiemme.it and dolomitisuperski.com, read 8 Sep 2026; the listings put it under a hundred metres from the Agnello and Latemar lifts, and those two valley stations are 55 m apart in this graph, so the hundred metres lands on both. The coordinate is OpenStreetMap's Latemar station node (325138727)."
     }
   ],
-  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. The export's hire sweep finds no ski hire anywhere at Latemar — none at Pampeago, Obereggen, Gardonè or Stalimen — so the guide had no Ski hire section for a three-village resort. Only Pampeago's is in, and only because the shop's own listings place it at two named lifts whose stations this graph has. Obereggen's hire is run by the lift company out of the valley station at Via Obereggen 16 and is described as a depot as much as a shop; that is a claim about what a business does rather than where it is, so it waits for something better than a search result. The note says where the address was read and what the coordinate actually is, because no geocoder is reachable from the build. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs."
+  "extraPlacesWhy": "Places that are real and are not in OpenStreetMap. The export's hire sweep finds no ski hire anywhere at Latemar — none at Pampeago, Obereggen, Gardonè or Stalimen — so the guide had no Ski hire section for a three-village resort. Only Pampeago's is in, and only because the shop's own listings place it at two named lifts whose stations this graph has. Obereggen's hire is run by the lift company out of the valley station at Via Obereggen 16 and is described as a depot as much as a shop; that is a claim about what a business does rather than where it is, so it waits for something better than a search result. The note says where the address was read and what the coordinate actually is, because no geocoder is reachable from the build. kind is one of hut, restaurant, cafe, rental, parking. The note is required and the build fails without it — see scripts/sources/manual.mjs.",
+  "operationsSource": [
+    "https://obereggen.com/en/ropeways/winter",
+    "https://www.feratel.com/en/lifts-slopes/italy/obereggen.html"
+  ]
 }
