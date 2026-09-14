@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- kronplatz` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:32:21.249Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-14T22:50:44.287Z
  * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -47,7 +47,7 @@ export const NODES = {
   coldancona:         { name: "Col d'Ancona",                 lat: 46.69791, lon: 11.91168, alt: 1605, area: "St. Vigil", rifugio: true },
   piculin:            { name: "Piculin",                      lat: 46.69209, lon: 11.89306, alt: 1094, area: "St. Vigil" },
   miara2:             { name: "Miara",                        lat: 46.71119, lon: 11.95117, alt: 1477, area: "St. Vigil" },
-  coltoron:           { name: "Col Toron",                    lat: 46.71908, lon: 11.96456, alt: 1814, area: "St. Vigil" },
+  coltoron:           { name: "Col Toron",                    lat: 46.71908, lon: 11.96456, alt: 1814, area: "St. Vigil", rifugio: true },
   costa2:             { name: "Costa",                        lat: 46.72689, lon: 11.96879, alt: 1845, area: "St. Vigil" },
   marchner:           { name: "Marchner",                     lat: 46.73366, lon: 11.99452, alt: 1559, area: "St. Vigil", rifugio: true },
   belvedere2:         { name: "Belvedere",                    lat: 46.73667, lon: 11.97309, alt: 2005, area: "St. Vigil" },
@@ -88,7 +88,7 @@ export const NODES = {
   sonne2:             { name: "Sonne",                        lat: 46.73352, lon: 11.96129, alt: 2112, area: "St. Vigil" },
   p69:                { name: "Above Costa",                  lat: 46.73212, lon: 11.96966, alt: 1993, area: "St. Vigil", named: false },
   p70:                { name: "Above Kronplatz I / II",       lat: 46.74984, lon: 11.95732, alt: 1901, area: "Bruneck", named: false },
-  kronplatz20002:     { name: "Kronplatz 2000",               lat: 46.76969, lon: 11.94207, alt: 984, area: "Bruneck" },
+  kronplatz20002:     { name: "Kronplatz 2000",               lat: 46.76969, lon: 11.94207, alt: 984, area: "Bruneck", rifugio: true },
   p72:                { name: "Pramstall junction",           lat: 46.74770, lon: 11.95660, alt: 1985, area: "Bruneck", named: false },
   p73:                { name: "Above Kronplatz I / II",       lat: 46.74838, lon: 11.95742, alt: 1955, area: "Bruneck", named: false },
   plateau:            { name: "Plateau",                      lat: 46.74138, lon: 11.97295, alt: 2056, area: "St. Vigil" },
@@ -345,12 +345,14 @@ export const PLACES = [
   ["Corones", "restaurant", 46.7382, 11.9579, 2263],
   ["Furcia Center", "restaurant", 46.72294, 11.9646, 1744],
   ["Geiselsberger Hütte", "restaurant", 46.74246, 11.97086, 2088],
+  ["Giggeralm", "cafe", 46.77242, 11.94237, 952],
   ["Gipfel Restaurant Cima", "restaurant", 46.73907, 11.95891, 2264],
   ["Graziani Lodge & Chalets", "restaurant", 46.73204, 11.9571, 2098],
   ["Hardimitz‘n", "restaurant", 46.77156, 11.94316, 963],
   ["Herzlalm", "restaurant", 46.7545, 11.95859, 1726],
   ["Huiba Hitte", "restaurant", 46.75136, 11.98283, 1802],
   ["K1", "restaurant", 46.77221, 11.94143, 952],
+  ["Kiosk", "cafe", 46.71933, 11.96406, 1804],
   ["Korer parking", "parking", 46.77295, 11.94025, 943, {"fee":"yes"}],
   ["Kron-Restaurant", "restaurant", 46.73907, 11.96011, 2261],
   ["L'Apetit", "restaurant", 46.70019, 11.93024, 1183],
@@ -384,10 +386,13 @@ export const PLACES = [
   ["Ski Sport Heinz", "rental", 46.69845, 11.93055, 1190],
   ["Skidepot und Verleih - Noleggio", "rental", 46.70098, 11.92785, 1179],
   ["Skisaloon Miara", "rental", 46.70453, 11.93022, 1222],
+  ["Sonne Pizza Stop", "cafe", 46.7322, 11.96124, 2073],
   ["Tabarel", "restaurant", 46.69799, 11.92998, 1191],
+  ["Tenne", "cafe", 46.77042, 11.942, 975],
   ["Treff Kronplatz", "cafe", 46.73926, 11.95819, 2261],
   ["Treff Reischach", "cafe", 46.77243, 11.94196, 952],
   ["Treff Ried", "cafe", 46.79046, 11.97783, 927],
+  ["Tresele - Snackbar", "cafe", 46.70097, 11.92919, 1180],
   ["Ücia Picio Pré", "restaurant", 46.71783, 11.96978, 1943],
   ["Ütia da Jù", "restaurant", 46.69761, 11.91146, 1604],
 ];

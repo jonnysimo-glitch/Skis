@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- paganella` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:33:51.865Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-14T22:51:55.597Z
  * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -25,7 +25,7 @@
  */
 
 export const NODES = {
-  rindoledosdeleva:  { name: "Rindole - Dos de Leva", lat: 46.16135, lon: 11.00850, alt: 1064, area: "Andalo" },
+  rindoledosdeleva:  { name: "Rindole - Dos de Leva", lat: 46.16135, lon: 11.00850, alt: 1064, area: "Andalo", rifugio: true },
   rindoledosdeleva2: { name: "Rindole - Dos de Leva", lat: 46.16017, lon: 11.00995, alt: 1100, area: "Andalo" },
   andalo:            { name: "Andalo",                lat: 46.16340, lon: 11.00582, alt: 1035, area: "Andalo", base: true },
   p6:                { name: "Above Albi de Mez",     lat: 46.14550, lon: 11.02157, alt: 1778, area: "Andalo", named: false },
@@ -198,10 +198,15 @@ export const RUNS = [
 export const PLACES = [
   ["Albi de Mez", "restaurant", 46.14639, 11.02396, 1776],
   ["Andalo parking", "parking", 46.16497, 11.00344, 1022, {"spaces":9,"fee":"no"}],
+  ["Apres ski Piz - Pub Al Laghet", "cafe", 46.16159, 11.00227, 1028],
   ["Baita Lovara", "restaurant", 46.14718, 10.99762, 1401],
+  ["Bar BO", "cafe", 46.16476, 11.00373, 1022],
+  ["Bar le Rindole", "cafe", 46.16097, 11.00598, 1059],
+  ["Caffè Vienna", "cafe", 46.16428, 11.00358, 1022],
   ["Chalet Forst", "restaurant", 46.15013, 10.99632, 1328],
   ["Chalet Malga Terlaga", "restaurant", 46.14163, 11.02179, 1816],
   ["Chalet Paganella 2", "restaurant", 46.14136, 11.015, 1744],
+  ["La Marenda", "cafe", 46.16309, 11.00327, 1030],
   ["Malga di Fai", "restaurant", 46.15232, 11.04976, 1668],
   ["Malga Zambana", "restaurant", 46.15027, 11.02837, 1782],
   ["Pizzeria Romantica", "restaurant", 46.16312, 11.00291, 1030],
@@ -210,8 +215,10 @@ export const PLACES = [
   ["Rifugio Dosson", "restaurant", 46.1535, 11.01597, 1448],
   ["Rifugio La Roda", "hut", 46.14245, 11.03693, 2106],
   ["Rifugio Meriz", "restaurant", 46.16381, 11.05063, 1427],
+  ["Rindole Noleggio Ski e Bike", "rental", 46.16108, 11.00622, 1058],
   ["Santel parking", "parking", 46.17689, 11.05229, 1024, {"fee":"no"}],
   ["Ski Bar", "restaurant", 46.16021, 11.00135, 1028],
+  ["Snow Bar", "cafe", 46.16134, 11.00801, 1062],
   ["Tre3", "restaurant", 46.17551, 11.05251, 1047],
 ];
 

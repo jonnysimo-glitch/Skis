@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- monterosa` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:33:20.851Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-14T22:51:31.304Z
  * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -26,7 +26,7 @@
 
 export const NODES = {
   pianalungabocchetta:   { name: "Pianalunga-Bocchetta",         lat: 45.86546, lon: 7.90380, alt: 2040, area: "Alagna", rifugio: true },
-  passodeisalati:        { name: "Passo dei Salati",             lat: 45.87722, lon: 7.86845, alt: 2962, area: "Gressoney", rifugio: true },
+  passodeisalati:        { name: "Passo dei Salati",             lat: 45.87723, lon: 7.86844, alt: 2962, area: "Gressoney", rifugio: true },
   alpeostafa:            { name: "Alpe Ostafa",                  lat: 45.83405, lon: 7.76217, alt: 2415, area: "Ayas", rifugio: true },
   collesarezza:          { name: "Colle Sarezza",                lat: 45.83879, lon: 7.76970, alt: 2687, area: "Ayas" },
   p23:                   { name: "Below Belvedere",              lat: 45.84895, lon: 7.75478, alt: 2219, area: "Ayas", named: false },
@@ -297,12 +297,14 @@ export const PLACES = [
   ["Bar Ristoro L'Aroula", "restaurant", 45.8285, 7.75145, 2047],
   ["Bar Tavola Calda Del Crest", "restaurant", 45.83275, 7.7427, 1978],
   ["Bedemi", "restaurant", 45.84471, 7.82186, 1900],
+  ["Cafe' du Bistrot", "cafe", 45.83637, 7.73013, 1574],
   ["Caffè del Centro Luisa", "cafe", 45.8541, 7.93747, 1187],
   ["Caffé delle Guide", "cafe", 45.85446, 7.9368, 1195],
   ["Campo Base", "restaurant", 45.85992, 7.75969, 2432],
   ["Chäisscheri", "cafe", 45.85355, 7.93509, 1220],
   ["Champoluc parking", "parking", 45.83077, 7.72563, 1562, {"fee":"no"}],
   ["Dir und Don", "restaurant", 45.8532, 7.93757, 1181],
+  ["Dominus Pub - Bar Favre", "cafe", 45.83097, 7.82302, 1637],
   ["Edelboden", "cafe", 45.83128, 7.8232, 1638],
   ["Edelweiss", "restaurant", 45.83258, 7.7422, 1967],
   ["Ermanno Sport", "rental", 45.85787, 7.812, 1817, {"src":"manual"}],
@@ -338,6 +340,7 @@ export const PLACES = [
   ["Stafal parking", "parking", 45.83206, 7.82185, 1643],
   ["trattoria Fum Diss", "restaurant", 45.85518, 7.93087, 1346],
   ["Unione Alagnese", "restaurant", 45.85255, 7.93677, 1192],
+  ["Vineria", "cafe", 45.85335, 7.93751, 1182],
   ["Wunderbar", "cafe", 45.85827, 7.81195, 1820],
   ["Zam Tachji", "restaurant", 45.85493, 7.93821, 1193],
 ];

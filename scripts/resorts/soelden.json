@@ -18,13 +18,12 @@
     "Giggijoch",
     "Giggijochbahn",
     "Innerwald",
-    "Stabele",
     "Gletscherexpress",
     "Hochsölden",
     "Rettenbach",
     "Tiefenbach"
   ],
-  "basesWhy": "A first pass, and deliberately generous. The village plus the names of the lifts that leave it, because OSM names an Austrian valley station after the lift at least as often as after the place — the same reason Kronplatz's config asks for 'Kronplatz 2000' and 'Korer'. Nothing here can mark a summit: scripts/osm/operations.mjs only considers nodes in the lower part of the resort's own altitude range, so asking for 'Gaislachkogl' cannot flag the 3,040 m top station as somewhere to park. The run report says how many matched and how many same-named nodes it left alone; tune this from that rather than from this list.",
+  "basesWhy": "Tuned from the first run's report, which is what the generous first pass was for. Four matched of eleven asked and sixteen same-named nodes were left alone, and exactly one of the four was wrong: Stabele, a mid-mountain lift at 1,951 m that this list asked for by name and that the app would then have offered as somewhere your car might be. Gone. The three that remain are the village's own valley stations and are right — Giggijochbahn at 1,353 m, Gaislachkoglbahn at 1,359 and Innerwald at 1,461, which is the bottom of the Sölden road. The rest of the names stay because they cost nothing: scripts/osm/operations.mjs only considers nodes in the lower part of the resort's altitude range, which is why asking for Gaislachkogl never marked the 3,040 m top station.",
   "areas": {
     "Sölden": "Sölden",
     "Gaislachkogl": "Gaislachkogl",
@@ -32,7 +31,6 @@
     "Giggijoch": "Giggijoch",
     "Giggijochbahn": "Giggijoch",
     "Innerwald": "Giggijoch",
-    "Stabele": "Giggijoch",
     "Hochsölden": "Giggijoch",
     "Gletscherexpress": "Glacier",
     "Rettenbach": "Glacier",

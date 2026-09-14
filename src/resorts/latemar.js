@@ -3,7 +3,7 @@
  *
  * GENERATED. Do not edit by hand: run `npm run resort -- latemar` instead.
  *
- * Source:    OpenStreetMap via the Overpass API, 2026-09-07T23:32:51.602Z
+ * Source:    OpenStreetMap via the Overpass API, 2026-09-14T22:51:07.729Z
  * Places:    OpenStreetMap, a few checked by hand
  * Elevation: AWS Terrain Tiles (terrarium), zoom 13
  * Licence:   OSM data is ODbL. Attribution is required wherever this is shown.
@@ -28,7 +28,7 @@
 export const NODES = {
   tresca:               { name: "Tresca",                       lat: 46.34241, lon: 11.54926, alt: 1864, area: "Latemar" },
   passofeudo:           { name: "Passo Feudo",                  lat: 46.34674, lon: 11.55868, alt: 2165, area: "Latemar", rifugio: true },
-  stalimen:             { name: "Stalimen",                     lat: 46.32772, lon: 11.60205, alt: 1058, area: "Latemar", base: true },
+  stalimen:             { name: "Stalimen",                     lat: 46.32772, lon: 11.60205, alt: 1058, area: "Latemar", base: true, rifugio: true },
   gardone:              { name: "Gardonè",                      lat: 46.34083, lon: 11.57815, alt: 1664, area: "Latemar", rifugio: true },
   gardone2:             { name: "Gardonè",                      lat: 46.33965, lon: 11.57746, alt: 1648, area: "Latemar", base: true },
   ochsenweide:          { name: "Ochsenweide",                  lat: 46.38294, lon: 11.52491, alt: 1539, area: "Obereggen" },
@@ -303,6 +303,7 @@ export const PLACES = [
   ["Parking 2", "parking", 46.34144, 11.53997, 1767, {"fee":"no"}],
   ["Parking 3", "parking", 46.34118, 11.53931, 1763, {"fee":"no"}],
   ["Parking 4", "parking", 46.34043, 11.5378, 1750, {"fee":"no"}],
+  ["Pisten Gaudi", "cafe", 46.36716, 11.53067, 1731],
   ["Platzl Mountain Lounge", "restaurant", 46.38365, 11.52644, 1549],
   ["Rifugio Monte Agnello", "hut", 46.33367, 11.54779, 2165],
   ["Ski Bar", "cafe", 46.34154, 11.54098, 1773],

@@ -75,11 +75,43 @@ const oneAndTheSame = (a, b) => {
   );
 };
 
+/*
+ * What counts as a place, restated — and it had drifted.
+ *
+ * This is a deliberate copy of the pipeline's own rule rather than an import,
+ * for the same reason `metres` above is: a copy that disagrees is a finding,
+ * an import that agrees proves nothing. The catch is that a copy only works
+ * if somebody keeps it honest, and this one had not been. It knew about
+ * restaurant, cafe, alpine_hut, shop=ski and shop=rental — and the query has
+ * been asking for bar, pub, fast_food and biergarten since the day somebody
+ * noticed that in Italy the place you stop for a coffee is a BAR, and for
+ * shop=sports and shop=outdoor since the ski=yes requirement was dropped.
+ *
+ * The four Italian graphs never caught it. Austria did, immediately: eleven
+ * après-ski bars and a Skiverleih across Sölden and Hintertux, every one of
+ * them correctly fetched, correctly kept, and then reported by this file as
+ * a place that "is neither" in the export nor marked as added by hand. The
+ * audit was calling the pipeline a liar for doing exactly what it was told.
+ *
+ * So the ladder below now matches scripts/osm/graph.mjs line for line. The
+ * hire test is the interesting one: a sports or outdoor shop counts only if
+ * its name says it hires skis, because "it is a sports shop and we are at a
+ * ski resort" is how a map starts telling people things that are not true.
+ */
+const EATS = new Set(["restaurant", "cafe", "bar", "pub", "fast_food", "biergarten"]);
+const HIRE_NAME = /noleggio|verleih|rent\s?(and|&|-)?\s?go|\brent(al|s)?\b|\bhire\b|\bski\b|\bsci\b|snowboard|skiverleih|skiservice/i;
+const isHire = (t) =>
+  t.shop === "ski" || t.amenity === "ski_rental" ||
+  t["service:ski:rental"] === "yes" ||
+  (t.shop === "rental" && /ski|sci|snowboard/i.test(t.rental ?? "")) ||
+  ((t.shop === "sports" || t.shop === "outdoor") &&
+    (t.ski === "yes" || HIRE_NAME.test(t.name ?? "")));
+
 const KIND = (t) =>
   t.tourism === "alpine_hut" || t.tourism === "wilderness_hut" ? "hut"
     : t.amenity === "restaurant" ? "restaurant"
-      : t.amenity === "cafe" ? "cafe"
-        : t.shop === "ski" || t.shop === "rental" || t.amenity === "ski_rental" ? "rental"
+      : EATS.has(t.amenity) ? "cafe"
+        : isHire(t) ? "rental"
           : t.amenity === "parking" ? "parking"
             : null;
 
