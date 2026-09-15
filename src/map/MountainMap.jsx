@@ -1292,6 +1292,26 @@ export default function MountainMap({
     else reaim.current?.();
   }, [navLeg]);
 
+  /*
+   * A way to ask for the same frame again, for the checks only.
+   *
+   * The heading cone cannot be told from the route line by colour — they are
+   * the same cyan and the route runs along the heading by construction, which
+   * the cone's own comment says. Measured: deleting the wedge's fill outright
+   * still left four of six resorts passing the check that was supposed to be
+   * looking at it, at two different sampling geometries.
+   *
+   * So the only honest way to ask "did the wedge reach the canvas" is to draw
+   * the view twice and difference it. That needs a repaint of the SAME frame —
+   * a zoom or an orbit would move every pixel and there would be nothing to
+   * compare — which is what this is. `__skisHideCone` below is the other half.
+   */
+  useEffect(() => {
+    if (!mapTest) return;
+    window.__skisRedraw = () => { dirty.current = true; };
+    return () => { delete window.__skisRedraw; };
+  }, [mapTest]);
+
   useEffect(() => {
     if (!controlRef) return;
     const zoomFloor = () => zoomFloorFor(propsRef.current);
@@ -4650,9 +4670,17 @@ export default function MountainMap({
           wedge();
           ctx.fillStyle = "rgba(11,26,36,0.14)";
           ctx.fill();
-          wedge();
-          ctx.fillStyle = beam;
-          ctx.fill();
+          /*
+           * The second half of the differential check. False in the app — the
+           * flag is only ever set by a check that has just sampled the wedge
+           * and wants the same frame back without it, and `mapTest` is off
+           * outside the harness, so the shipping path is the plain one.
+           */
+          if (!(mapTest && window.__skisHideCone)) {
+            wedge();
+            ctx.fillStyle = beam;
+            ctx.fill();
+          }
           /*
            * The cone's own geometry, for the checks.
            *

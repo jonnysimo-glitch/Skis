@@ -1009,7 +1009,33 @@ const PEOPLE = [
       check(`${resort.id}: ${this.who} has a heading to follow`, Boolean(cone),
         cone ? `${Math.round((cone.ang * 180) / Math.PI)} degrees` : "no cone");
       if (cone) {
-        const seen = await page.evaluate((k) => {
+        /*
+         * Sampled twice, with the wedge and without it, and differenced.
+         *
+         * The obvious version of this check — cyan inside the wedge against
+         * cyan beside it — cannot fail, and that was measured rather than
+         * suspected. Deleting `ctx.fill()` on the beam outright and re-running
+         * all six resorts left four of them still passing at 0.6 of the
+         * half-angle, and three at 0.9 with the radii pushed out to 0.9 of the
+         * reach. The reason is in the renderer's own comment: the route line
+         * is drawn in the same cyan and lies ALONG the heading, so every ray
+         * inside the wedge has route furniture on it. At Hintertux, whose
+         * first leg is a straight lift up a valley with several parallel
+         * pistes beside it, the region read 93 with no cone drawn at all.
+         *
+         * Hintertux failed it from the other side too, which is what started
+         * this: the route's white casing and a red piste, rgb(145,69,86), sat
+         * on three of the six sampled rays and pulled the mean to 73 against a
+         * 72 background while the untouched side read 121, 169, 76.
+         *
+         * So the wedge is isolated the only way it can be: the same frame
+         * drawn again with `__skisHideCone` set, at the same camera, and the
+         * difference over the same pixels. Nothing else on the map moves
+         * between the two reads, so whatever changed is the wedge. That makes
+         * the check fail when the cone is missing, which is the whole point of
+         * having it.
+         */
+        const sample = async () => page.evaluate((k) => {
           const c = document.querySelector("canvas[aria-label*='Terrain view']");
           if (!c) return null;
           const dpr = c.width / c.getBoundingClientRect().width;
@@ -1026,20 +1052,42 @@ const PEOPLE = [
           const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
           return {
             inside: mean([...band(k.half * 0.6), ...band(-k.half * 0.6)]),
-            across: mean([...band(Math.PI / 2), ...band(-Math.PI / 2)]),
             behind: mean(band(Math.PI)),
           };
         }, cone);
-        if (seen && seen.inside !== null && seen.across !== null) {
-          check(`${resort.id}: ${this.who} can see which way it points`,
-            seen.inside - seen.across > 10,
-            `${Math.round(seen.inside)} in front, ${Math.round(seen.across)} across`);
-          // And it is a cone rather than a halo: nothing behind her.
-          if (seen.behind !== null) {
-            check(`${resort.id}: ${this.who} sees nothing pointing backwards`,
-              seen.inside - seen.behind > 10,
-              `${Math.round(seen.inside)} in front, ${Math.round(seen.behind)} behind`);
-          }
+
+        const withCone = await sample();
+        const off = await page.evaluate(async () => {
+          if (typeof window.__skisRedraw !== "function") return false;
+          window.__skisHideCone = true;
+          window.__skisRedraw();
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          return true;
+        });
+        const without = off ? await sample() : null;
+        await page.evaluate(async () => {
+          window.__skisHideCone = false;
+          window.__skisRedraw?.();
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        });
+
+        if (withCone && without) {
+          const lit = withCone.inside - without.inside;
+          check(`${resort.id}: ${this.who} can see which way it points`, lit > 10,
+            `${Math.round(withCone.inside)} with the cone, ${Math.round(without.inside)} without`);
+        } else if (withCone) {
+          check(`${resort.id}: ${this.who} can see which way it points`, false,
+            "could not redraw without the cone to compare against");
+        }
+        /*
+         * And it is a cone rather than a halo. Differenced the same way: the
+         * wedge must change the pixels ahead and leave the ones behind alone.
+         */
+        if (withCone && without && withCone.behind !== null && without.behind !== null) {
+          const ahead = withCone.inside - without.inside;
+          const back = Math.abs(withCone.behind - without.behind);
+          check(`${resort.id}: ${this.who} sees nothing pointing backwards`, ahead - back > 10,
+            `${Math.round(ahead)} added in front, ${Math.round(back)} behind`);
         }
       }
       await screen(page, this.who, "navigating");
