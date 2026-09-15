@@ -3088,7 +3088,22 @@ export default function MountainMap({
         ctx.fillText(name, 0, 0);
         ctx.restore();
         ctx.globalAlpha = 1;
-        lit?.push({ name, alpha: Math.round(solid * 100) / 100 });
+        /*
+         * With whether any of it was on the screen, which is not the same
+         * question as whether it was drawn.
+         *
+         * An unplaceable name holds its last position while it fades, and that
+         * position can be off the frame — the comment above says so and it is
+         * deliberate. The fade guard in the checks read this list as "what the
+         * reader can see" and counted one of those leaving it as a name
+         * popping: Cimalegna at Monterosa, measured going from 0.48 to gone in
+         * one frame, at x = 465 on a canvas 430 wide. It had been off the right
+         * edge for every frame it was fading. Nobody saw it do anything.
+         */
+        lit?.push({
+          name, alpha: Math.round(solid * 100) / 100,
+          on: mx >= 0 && mx <= width && my >= 0 && my <= height,
+        });
         if (keep) { drawnNames.push(name); namedAt.set(name, frameNow); }
       }
       ctx.textBaseline = "alphabetic";

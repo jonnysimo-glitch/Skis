@@ -4745,8 +4745,12 @@ if (feature("38. Every tier of label, the same way")) {
     const tick = () => {
       const frame = { t: window.__skisFadeClock ?? 0 };
       for (const [label, hook] of Object.entries(tiers)) {
+          /*
+         * The alpha, and whether any of it was on the screen. Both, because
+         * neither answers this on its own — see the comparison below.
+         */
         frame[label] = Object.fromEntries(
-          (window[hook] ?? []).map((r) => [r.name ?? r.full, r.alpha]));
+          (window[hook] ?? []).map((r) => [r.name ?? r.full, { a: r.alpha, on: r.on }]));
       }
       window.__skisTrace.push(frame);
       window.__skisTraceId = requestAnimationFrame(tick);
@@ -4787,7 +4791,30 @@ if (feature("38. Every tier of label, the same way")) {
         const b = trace[i][label] ?? {};
         seen = Math.max(seen, Object.keys(b).length);
         for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
-          const d = Math.abs((b[k] ?? 0) - (a[k] ?? 0));
+          /*
+           * Skipped when it was off the frame at either end, because then
+           * nothing the reader can see has changed.
+           *
+           * A tier may keep drawing a name it can no longer place, at the last
+           * position it had, and that position can be off the screen — the run
+           * names do exactly that, on purpose. Cimalegna at Monterosa was
+           * measured going 0.48 to gone in one frame at x = 465 on a canvas
+           * 430 wide, having been off the right edge for every frame it faded.
+           * That is not a pop; nobody saw it.
+           *
+           * Both ends, not just the first. Filtering the list down to what was
+           * on screen was tried and is worse: a name at full strength crossing
+           * the edge then reads as appearing out of nothing, which took this
+           * from one step to six, the biggest of them a clean 1.0 on Olen.
+           * Crossing the frame is a change of position, not of opacity.
+           *
+           * What still counts, and is the whole point of the guard: a name on
+           * the screen in one frame and absent from the list in the next. The
+           * side it is missing from has no entry to be off-screen, so the pair
+           * is compared, and vanishing at 0.48 while visible still fails.
+           */
+          if (a[k]?.on === false || b[k]?.on === false) continue;
+          const d = Math.abs((b[k]?.a ?? 0) - (a[k]?.a ?? 0));
           if (d > biggest) { biggest = d; worst = k; }
           if (d > allowed) jumps++;
         }
