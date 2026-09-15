@@ -3334,6 +3334,15 @@ export default function MountainMap({
       });
 
       /*
+       * Where the day starts, which is the one number that cannot be dropped.
+       *
+       * Off the keys rather than off `order[0]`, because the sort above puts
+       * the leg you are on first while navigating and this has to mean the
+       * first leg of the day on every screen.
+       */
+      const firstLeg = order.length ? Math.min(...order) : null;
+
+      /*
        * Ten pixels of disc carrying a thirteen pixel numeral.
        *
        * It was 9.5 and 11, and the number floated in the middle of a lot of
@@ -3385,7 +3394,30 @@ export default function MountainMap({
            * about ground you cannot see. So yours and the next are exempt and
            * everything else is tested.
            */
-          const anchored = flat && leg >= done && leg <= ahead;
+          /*
+           * And on the screens where there is no puck, the start pin does the
+           * same job for step one.
+           *
+           * Hintertux found this. Its first leg is Gletscherbus 1 climbing out
+           * of the valley floor, and from the overview framing every candidate
+           * point along it reads occluded — measured, all five spots buried,
+           * while legs 2 to 5 further up the wall draw fine. So the route
+           * detail screen showed 2, 3, 4, 5, 10, 11 … and no 1, which is the
+           * same "nineteen numbers and no 1" the sort above was written to
+           * stop, surviving on the one screen that exemption never covered.
+           *
+           * The argument for exempting it is the argument already made for the
+           * leg you are on: what settles it is anchoring, not visibility. A
+           * lone 69 out on a snowfield is a claim about ground you cannot see;
+           * a 1 sitting on the start pin — drawn by planPins immediately
+           * before this, into the same box list — is not. It is saying which
+           * end of a marker you can already see the day begins at.
+           *
+           * Scoped to the planning screens on purpose. Exempting the first leg
+           * while navigating would put a 1 back over the ridge behind you at
+           * Stafal, which is the ghost the occlusion test was turned on for.
+           */
+          const anchored = flat ? leg >= done && leg <= ahead : leg === firstLeg;
           /*
            * Held, the way every other tier on this map holds: a number is only
            * really behind the mountain once it has been behind it for a while.
