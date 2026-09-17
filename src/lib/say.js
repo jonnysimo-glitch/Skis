@@ -158,6 +158,15 @@ const IT = {
   "Show the detail": "Mostra i dettagli",
   Finish: "Concludi",
 
+  // -- the units and connectives in a leg line -------------------------------
+  min: "min",
+  "min queue": "min di coda",
+  up: "in salita",
+  down: "in discesa",
+  "m down": "m di dislivello",
+  "skating or on foot": "spingendo o a piedi",
+  or: "o",
+
   // -- lifts and grades, the sourced vocabulary ------------------------------
   chair: "seggiovia",
   gondola: "cabinovia",
@@ -259,6 +268,15 @@ const DE = {
   "Back to the map": "Zurück zur Karte",
   "Show the detail": "Details zeigen",
   Finish: "Beenden",
+
+  // -- the units and connectives in a leg line -------------------------------
+  min: "Min.",
+  "min queue": "Min. Wartezeit",
+  up: "bergauf",
+  down: "bergab",
+  "m down": "Höhenmeter",
+  "skating or on foot": "schiebend oder zu Fuß",
+  or: "oder",
 
   // -- lifts and grades, the sourced vocabulary ------------------------------
   chair: "Sessellift",

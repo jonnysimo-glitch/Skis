@@ -14,6 +14,7 @@ import { legsOf } from "../solver.js";
 import { NODES, PLACES } from "../active-resort.js";
 import { Back, Warning, Check, Clock, Lift } from "../ui/Icons.jsx";
 import { showClock } from "../lib/clock.js";
+import { t, term } from "../lib/say.js";
 
 export default function LegsScreen({ route, opts, plan, onBack }) {
   const back = backAt(route, opts);
@@ -97,7 +98,7 @@ export default function LegsScreen({ route, opts, plan, onBack }) {
             <Lift className="info__icon" width="17" height="17" />
             <span>
               {down.count === 1 ? "One leg rides" : `${down.count} legs ride`} a{" "}
-              {down.kinds.join(" or ")} back <b>down</b>. That dashed line heading
+              {down.kinds.map(term).join(` ${t("or")} `)} back <b>down</b>. That dashed line heading
               downhill is a lift, not a run.
             </span>
           </div>

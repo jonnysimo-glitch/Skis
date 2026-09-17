@@ -51,7 +51,13 @@ for (const l of langs) {
  * — or a line somebody meant to come back to. The ones that really are
  * identical are listed, so adding a new one is a deliberate act.
  */
-const SAME_ON_PURPOSE = new Set(["Optional", "Start"]);
+/*
+ * Words that really are the same. "Optional" is the same in German, "Start" is
+ * the same in German, and "min" is the same abbreviation in Italian — Italian
+ * shortens minuti to min exactly as English does. Listed rather than tolerated
+ * generally, so a line somebody meant to come back to still fails.
+ */
+const SAME_ON_PURPOSE = new Set(["Optional", "Start", "min"]);
 for (const l of langs) {
   const untouched = Object.entries(DICTS[l])
     .filter(([k, v]) => k === v && !SAME_ON_PURPOSE.has(k))

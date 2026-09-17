@@ -6,6 +6,7 @@ import {legsOf} from "../solver.js";
 import { LUNCH_MINUTES as LUNCH_STOP_MINUTES } from "../lib/plan.js";
 import { Clock, Ruler, Descend, Runs, Lift } from "./Icons.jsx";
 import { showClock } from "../lib/clock.js";
+import { t, term } from "../lib/say.js";
 
 export const hours = (minutes) => {
   const h = Math.floor(minutes / 60);
@@ -89,11 +90,11 @@ export function LegList({ route, clocks, current = -1, doneThrough = -1, lunch =
         // flat two hundred metres between two pistes.
         const sub =
           edge.kind === "lift"
-            ? `${edge.liftType} · ${edge.ride} min ${edge.down ? "down" : "up"}` +
-              `${edge.queue ? ` · ${edge.queue} min queue` : ""}`
+            ? `${term(edge.liftType)} · ${edge.ride} ${t("min")} ${edge.down ? t("down") : t("up")}` +
+              `${edge.queue ? ` · ${edge.queue} ${t("min queue")}` : ""}`
             : edge.link
-              ? `link · ${edge.min} min · skating or on foot`
-              : `${edge.difficulty} · ${edge.km} km · ${edge.drop} m down`;
+              ? `${t("link")} · ${edge.min} ${t("min")} · ${t("skating or on foot")}`
+              : `${term(edge.difficulty)} · ${edge.km} km · ${edge.drop} ${t("m down")}`;
         /*
          * The stop itself, as a row in the day rather than a note about it.
          *
