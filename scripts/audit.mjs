@@ -165,8 +165,8 @@ const problems = [];
 let screensChecked = 0;
 
 /** A phone-sized page with the clock frozen. */
-async function newPage(at = [9, 5]) {
-  const page = await makePage(browser, { at, viewport: { width: 393, height: 852 } });
+async function newPage(at = [9, 5], locale = "en-US") {
+  const page = await makePage(browser, { at, locale, viewport: { width: 393, height: 852 } });
   page.ctx_ = page.context_;
   return page;
 }
@@ -299,6 +299,67 @@ for (const resort of RESORTS.filter((r) => r.available)) {
     await audit(page, `${resort.id}: navigate`);
   }
   await page.ctx_.close();
+}
+
+// ---- and in German, which is the longest the words get --------------------
+/*
+ * Every check above ran in English, and English is the short case.
+ *
+ * The critical copy is translated now, and German is where it costs the most
+ * room: "Letzte Schließung" against "Last to shut", "Bis zur nächsten
+ * Kreuzung" against "To next junction". This audit's whole job is overflow,
+ * clipped text, tap targets and the eight-point grid — all of which are
+ * width-sensitive — so running it only in English tests the layout against
+ * the one language that was never going to break it.
+ *
+ * German rather than both: it is longer than Italian almost everywhere, so it
+ * is the bound. If a row holds in German it holds in Italian.
+ */
+for (const [label, locale] of [["de", "de-AT"]]) {
+  const page = await newPage([9, 5], locale);
+  await go(page);
+  await page.click(".hero");
+  await audit(page, `${label}: chosen`);
+  await page.click("button:has-text('Go skiing'), button:has-text('Skifahren'), button:has-text('Vai a sciare')");
+  await page.waitForSelector(".planbtn", { timeout: 20000 });
+  const status = await page.$('[aria-label*="see what is"]');
+  if (status) {
+    await status.click();
+    await page.waitForSelector(".modal", { timeout: 10000 });
+    await audit(page, `${label}: what is open`);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".modal", { state: "detached", timeout: 5000 });
+  }
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await audit(page, `${label}: plan`);
+  await page.click("button.btn");
+  await page.waitForSelector(".routecard, .empty", { timeout: 25000 });
+  await audit(page, `${label}: choose`);
+  if (await page.$(".routecard")) {
+    await openRoute(page);
+    await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+    await audit(page, `${label}: detail`);
+    await page.click("text=/Save and start|Save offline and start|^Start$|Speichern|Starten/");
+    await page.waitForSelector(".nav", { timeout: 20000 });
+    await audit(page, `${label}: navigate`);
+  }
+  await page.ctx_.close();
+
+  // And the screen that has to be right when the day does not work.
+  const none = await newPage([9, 5], locale);
+  await go(none);
+  await none.click(".hero");
+  await none.click("button:has-text('Go skiing'), button:has-text('Skifahren'), button:has-text('Vai a sciare')");
+  await none.waitForSelector(".planbtn", { timeout: 20000 });
+  await none.click(".planbtn");
+  await none.waitForSelector("#p-t1", { timeout: 15000 });
+  await none.fill("#p-t0", "15:30");
+  await none.fill("#p-t1", "15:40");
+  await none.click("button.btn");
+  await none.waitForSelector(".empty", { timeout: 20000 });
+  await audit(none, `${label}: nothing fits`);
+  await none.ctx_.close();
 }
 
 // ---- straight there -------------------------------------------------------

@@ -7164,12 +7164,22 @@ if (feature("52. The clock is the reader's own")) {
     await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector(".hero", { timeout: 20000 });
     await page.click(".hero");
-    await page.click("text=Go skiing");
+    /*
+     * By role and class, not by the words on them.
+     *
+     * This section has always run one of its two phones at it-IT, and it used
+     * to click `text=Go skiing` and `text=Find routes` — which worked for as
+     * long as the app only spoke English. The moment the critical copy was
+     * translated it timed out on the Italian pass and crashed the whole file
+     * before the section after it ran. A check that pins the locale cannot
+     * also depend on the interface being in English.
+     */
+    await page.click("button:has-text('Go skiing'), button:has-text('Skifahren'), button:has-text('Vai a sciare')");
     await page.waitForSelector(".planbtn", { timeout: 15000 });
     await page.click(".planbtn");
     await page.waitForSelector("#p-t1", { timeout: 15000 });
     const input = await page.$eval("#p-t1", (e) => e.value);
-    await page.click("text=Find routes");
+    await page.click("button.btn");
     await page.waitForSelector(".routecard", { timeout: 25000 });
     const shown = await page.$$eval(".routecard__back b", (x) => x.map((e) => e.textContent));
     const errors = page.errors.slice();
