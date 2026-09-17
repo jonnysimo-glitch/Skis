@@ -16,6 +16,7 @@ import { minutesToClock, clockToMinutes, CONTEXT_COPY, MODES, viaOf, VIA_MAX } f
 import { viaChoices, viaGroups } from "../lib/via.js";
 import { Clock, Arrow, Locate, Info, Close, ChevronDown, ChevronUp, Pin } from "../ui/Icons.jsx";
 import { hours } from "../ui/RouteBits.jsx";
+import { t } from "../lib/say.js";
 
 /**
  * What the locate button says. Every branch says something: a tap that quietly
@@ -133,18 +134,18 @@ export default function PlanScreen({
   return (
     <div className="page">
       <header className="page__bar">
-        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label="Back to the resort">
+        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label={t("Back to the resort")}>
           <Back />
         </button>
         <div className="eyebrow">
-          <Clock width="14" height="14" /> {copy.eyebrow} · {resort.name}
+          <Clock width="14" height="14" /> {t(copy.eyebrow)} · {resort.name}
         </div>
         <span style={{ width: "var(--tap)" }} />
       </header>
 
       <div className="page__body">
         <h1 className="title">
-          {copy.title.split("\n").map((line, i, all) => (
+          {t(copy.title).split("\n").map((line, i, all) => (
             <span key={i}>
               {line}
               {/* The space belongs in the text, not just in the layout. The
@@ -175,7 +176,7 @@ export default function PlanScreen({
                 aria-pressed={(plan.mode ?? "day") === m.id}
                 onClick={() => set({ mode: m.id })}
               >
-                {m.label}
+                {t(m.label)}
               </button>
             ))}
           </div>
@@ -184,7 +185,7 @@ export default function PlanScreen({
         <div className="field pair">
           <div>
             <label className="flabel" htmlFor="p-start">
-              {context === "midday" ? "You are at" : "Start"}
+              {context === "midday" ? t("You are at") : t("Start")}
             </label>
             <select
               id="p-start"
@@ -205,7 +206,7 @@ export default function PlanScreen({
           </div>
           <div>
             <label className="flabel" htmlFor="p-finish">
-              {plan.mode === "direct" ? "Take me to" : "Finish at"}
+              {plan.mode === "direct" ? t("Take me to") : t("Finish at")}
             </label>
             <select
               id="p-finish"
@@ -240,7 +241,7 @@ export default function PlanScreen({
         <div className="field pair">
           <div>
             <label className="flabel" htmlFor="p-t0">
-              {context === "nightbefore" ? "First lift" : "Starting"}
+              {context === "nightbefore" ? t("First lift") : t("Starting")}
             </label>
             <input
               id="p-t0"
@@ -252,7 +253,7 @@ export default function PlanScreen({
           </div>
           <div>
             <label className="flabel" htmlFor="p-t1">
-              {plan.mode === "direct" ? "By" : "Down by"}
+              {plan.mode === "direct" ? t("By") : t("Down by")}
             </label>
             <input
               id="p-t1"
@@ -276,8 +277,8 @@ export default function PlanScreen({
         </p>
 
         <div className="field">
-          <label className="flabel">Comfortable on</label>
-          <div className="chips" role="group" aria-label="Ability">
+          <label className="flabel">{t("Comfortable on")}</label>
+          <div className="chips" role="group" aria-label={t("Ability")}>
             {ABILITIES.map((a) => (
               <button
                 key={a.v}
@@ -286,7 +287,7 @@ export default function PlanScreen({
                 onClick={() => setAbility(a.v)}
               >
                 <i className="chip__swatch" style={{ background: a.swatch }} />
-                {a.label}
+                {t(a.label)}
               </button>
             ))}
           </div>
@@ -308,7 +309,7 @@ export default function PlanScreen({
                   of a collapsed row: a plan with two stops in it must not
                   look like a plan with none. */}
               <span className="disclose__n">
-                {chosen.length ? `${chosen.length} of ${VIA_MAX}` : "Optional"}
+                {chosen.length ? `${chosen.length} of ${VIA_MAX}` : t("Optional")}
               </span>
               {viaOpen
                 ? <ChevronUp className="disclose__c" width="18" height="18" />
@@ -352,7 +353,7 @@ export default function PlanScreen({
                     phrasing for the same thing on one screen reads as three
                     different features. This label is the action. */}
                 <label className="flabel" htmlFor="p-via">
-                  {chosen.length ? "Add another" : "Add a place"}
+                  {chosen.length ? t("Add another") : t("Add a place")}
                 </label>
                 <select
                   id="p-via"
@@ -399,14 +400,14 @@ export default function PlanScreen({
             dozen others. */}
         {plan.mode !== "direct" && (
           <div className="field">
-            <label className="flabel">Also</label>
+            <label className="flabel">{t("Also")}</label>
             <div className="chips">
               <button
                 className="chip"
                 aria-pressed={plan.lunch}
                 onClick={() => set({ lunch: !plan.lunch })}
               >
-                Sit-down lunch
+                {t("Sit-down lunch")}
               </button>
             </div>
           </div>
@@ -431,7 +432,7 @@ export default function PlanScreen({
           disabled={Boolean(blocked)}
           onClick={onSolve}
         >
-          {plan.mode === "direct" ? "Take me there" : "Find routes"}{" "}
+          {plan.mode === "direct" ? t("Take me there") : t("Find routes")}{" "}
           <Arrow width="18" height="18" />
         </button>
       </div>

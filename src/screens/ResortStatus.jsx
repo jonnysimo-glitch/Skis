@@ -17,6 +17,7 @@ import { Close, Info } from "../ui/Icons.jsx";
 import { LIFTS, RUNS, NODES, PLACES } from "../active-resort.js";
 import { PISTE_COLOUR } from "../lib/geo.js";
 import { shortName, describe } from "../lib/places.js";
+import { t, term } from "../lib/say.js";
 // The second of two hand-rolled 24-hour formatters this file used to carry.
 // Both are now one locale-aware helper — see src/lib/clock.js.
 import { showClock } from "../lib/clock.js";
@@ -105,7 +106,7 @@ export default function ResortStatus({ resort, onClose }) {
       <div className="modal__scrim" onClick={onClose} />
       <div className="modal__panel" ref={panel}>
         <header className="modal__bar">
-          <h2 className="title title--sm">What is open</h2>
+          <h2 className="title title--sm">{t("What is open")}</h2>
           <button className="iconbtn iconbtn--flat" onClick={onClose} aria-label="Close">
             <Close />
           </button>
@@ -122,13 +123,13 @@ export default function ResortStatus({ resort, onClose }) {
           </div>
 
           <div className="field">
-            <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>Lifts</div>
+            <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>{t("Lifts")}</div>
             <ul className="rows">
               {LIFTS.map(([, , name, type, , lastUp]) => (
                 <li className="row" key={name}>
                   <span>{name}</span>
                   <span className="row__v">
-                    {type}, last up {showClock(lastUp)}
+                    {term(type)}, {t("last up")} {showClock(lastUp)}
                   </span>
                 </li>
               ))}
@@ -150,7 +151,7 @@ export default function ResortStatus({ resort, onClose }) {
                 </li>
               ))}
               <li className="row">
-                <span>Altitude</span>
+                <span>{t("Altitude")}</span>
                 <span className="row__v">
                   {Math.min(...alts).toLocaleString()} to {Math.max(...alts).toLocaleString()} m
                 </span>
@@ -198,18 +199,18 @@ export default function ResortStatus({ resort, onClose }) {
           )}
 
           <div className="sectionrule">
-            <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>Planning against</div>
+            <div className="eyebrow" style={{ marginBottom: "var(--s-3)" }}>{t("Planning against")}</div>
             <ul className="rows">
               <li className="row">
-                <span>Total pisted</span>
+                <span>{t("Total pisted")}</span>
 <span className="row__v">{totalKm.toFixed(0)} km of piste</span>
               </li>
               <li className="row">
-                <span>First lift shuts</span>
+                <span>{t("First to shut")}</span>
                 <span className="row__v">{showClock(firstToShut)}</span>
               </li>
               <li className="row">
-                <span>Last lift shuts</span>
+                <span>{t("Last to shut")}</span>
                 <span className="row__v">{showClock(lastToShut)}</span>
               </li>
             </ul>

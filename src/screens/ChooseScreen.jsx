@@ -23,6 +23,7 @@ import { REFINEMENTS, refinementApplies, backAt, LUNCH_MINUTES } from "../lib/pl
 import { Info, Clock, Pin, Arrow, Back } from "../ui/Icons.jsx";
 import { NODES } from "../active-resort.js";
 import { showClock } from "../lib/clock.js";
+import { t } from "../lib/say.js";
 
 /** Above roughly six a list stops being a choice and becomes homework. */
 const SHOWN_BY_DEFAULT = 3;
@@ -97,14 +98,14 @@ export default function ChooseScreen({
   return (
     <div className="page">
       <header className="page__bar">
-        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label="Change the plan">
+        <button className="iconbtn iconbtn--flat" onClick={onBack} aria-label={t("Change the plan")}>
           <Back />
         </button>
         <div className="eyebrow">
           {ruledOut
-            ? "Nothing left"
+            ? t("Nothing left")
             : routes.length === 1
-              ? "One route"
+              ? t("One route")
               : hidden > 0
                 // "3 of 4 routes" reads as which one you are looking at. It
                 // means how many of them are on the screen, so it says that.
@@ -117,7 +118,7 @@ export default function ChooseScreen({
 
       <div className="page__body">
         <h1 className="title title--sm" style={{ marginTop: 0 }}>
-          {ruledOut ? "That rules everything out" : "Pick a shape for the day"}
+          {ruledOut ? t("That rules everything out") : t("Pick a shape for the day")}
         </h1>
         {ruledOut && (
           <div className="warn">
@@ -195,7 +196,7 @@ export default function ChooseScreen({
               onMouseEnter={() => onHover?.(i)}
               onFocus={() => onHover?.(i)}
             >
-              <span className="routecard__lab">{route.label}</span>
+              <span className="routecard__lab">{t(route.label)}</span>
               <span className="routecard__nm">{route.title}</span>
               <ElevationProfile route={route} height={48} id={`c${i}`} />
               <span className="routecard__mix">
@@ -243,7 +244,7 @@ export default function ChooseScreen({
         )}
 
         <div className="sectionrule">
-          <label className="flabel">{ruledOut ? "Turn one back off" : "Not quite?"}</label>
+          <label className="flabel">{ruledOut ? t("Turn one back off") : t("Not quite?")}</label>
           <div className="chips">
             {REFINEMENTS.map((r) => {
               const on = refine.has(r.id);
@@ -256,7 +257,7 @@ export default function ChooseScreen({
                   disabled={!usable}
                   onClick={() => onRefine(r.id)}
                 >
-                  {r.label}
+                  {t(r.label)}
                 </button>
               );
             })}

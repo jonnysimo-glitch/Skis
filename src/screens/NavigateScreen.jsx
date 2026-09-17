@@ -26,6 +26,7 @@ import { Arrow, Warning, Restart, Check, Satellite, Locate, Descend, Lift, Cross
 import { LegList } from "../ui/RouteBits.jsx";
 import { legClocks } from "../lib/plan.js";
 import { showClock } from "../lib/clock.js";
+import { t, term } from "../lib/say.js";
 
 /** Why the screen is not following along, in words a skier can act on. */
 function gpsExplanation(state) {
@@ -390,7 +391,7 @@ export default function NavigateScreen({
             */}
           {!minimised && (
             <div className={`nav__grade nav__grade--${isLift ? "lift" : isLink ? "link" : leg.difficulty}`}>
-              {isLift ? leg.liftType : isLink ? "link" : leg.difficulty}
+              {isLift ? term(leg.liftType) : isLink ? t("link") : term(leg.difficulty)}
             </div>
           )}
         </div>
@@ -423,7 +424,7 @@ export default function NavigateScreen({
           className="nav__grow"
           onClick={() => setMinimised((v) => !v)}
           aria-expanded={!minimised}
-          aria-label={minimised ? "Show the detail" : "Just the instruction"}
+          aria-label={minimised ? t("Show the detail") : t("Just the instruction")}
         >
           {/*
             * Down to open, up to close, because this panel is at the TOP.
@@ -435,7 +436,7 @@ export default function NavigateScreen({
             */}
           {minimised ? <ChevronDown width="18" height="18" /> : <ChevronUp width="18" height="18" />}
         </button>
-        <button className="nav__stop" onClick={onAbandon} aria-label="Stop navigating">
+        <button className="nav__stop" onClick={onAbandon} aria-label={t("Stop navigating")}>
           <Close width="20" height="20" />
         </button>
       </header>
@@ -538,9 +539,9 @@ export default function NavigateScreen({
         >
           {expanded ? <ChevronDown width="18" height="18" /> : <ChevronUp width="18" height="18" />}
           {expanded
-            ? "Back to the map"
+            ? t("Back to the map")
             : last
-              ? "The whole route"
+              ? t("The whole route")
               : `The rest of the day · ${legs.length - step - 1} to go`}
         </button>
         )}

@@ -7215,6 +7215,112 @@ if (feature("52. The clock is the reader's own")) {
     [...us.errors, ...it.errors].join(" | "));
 }
 
+// ===================== 53. THE WORDS ARE THE READER'S OWN TOO ==
+/*
+ * The clock follows the device. So does the language.
+ *
+ * Five of the six mountains are in Italy and Austria, so the phone on the
+ * piste is often set to Italian or German, and the strings that matter most on
+ * it are the ones a mistranslation makes dangerous rather than merely wrong:
+ * which lift is the last one up, what grade a run is, whether the day fits.
+ *
+ * What this checks is not that a dictionary exists — src/lib/say.test.js does
+ * that, against the sources each ski term came from. It is that the words
+ * reach the screen. Those are different failures: every entry can be correct
+ * and a screen still render in English because nobody wired it, which is
+ * exactly what happened here. The plan form went through three passes before
+ * "Comfortable on" and "Sit-down lunch" were found still in English, and the
+ * lift rows in the what-is-open panel were reading "gondola, last up 16:00"
+ * to an Austrian.
+ *
+ * So it drives the real app at three locales over the four screens that carry
+ * the critical copy, and looks for the words. The lift vocabulary is in the
+ * probe deliberately: it is the sourced half, and it cannot pass by accident
+ * the way a substring can — "Impianti" was matching inside "Impianti aperti"
+ * and reporting a translated panel that was not.
+ */
+if (feature("53. The words are the reader's own too")) {
+  const GO = "button:has-text('Go skiing'), button:has-text('Skifahren'), button:has-text('Vai a sciare')";
+  const CASES = {
+    "it-IT": ["Impianti aperti", "Ultima chiusura", "seggiovia", "cabinovia", "funivia",
+      "ultima salita", "Trova percorsi", "A valle entro", "A tuo agio su", "Non ci sta"],
+    "de-AT": ["Was offen ist", "Letzte Schließung", "Sessellift", "Gondelbahn", "Seilbahn",
+      "letzte Bergfahrt", "Routen finden", "Im Tal bis", "Sicher auf", "Das passt nicht"],
+    "en-GB": ["What is open", "Last to shut", "chair", "gondola", "cable car",
+      "last up", "Find routes", "Down by", "Comfortable on", "That won't fit"],
+  };
+  const toPlan = async (page) => {
+    await page.goto(`${url}?maptest=1`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".hero", { timeout: 20000 });
+    await page.click(".hero");
+    await page.click(GO);
+    await page.waitForSelector(".planbtn", { timeout: 20000 });
+  };
+  for (const [loc, want] of Object.entries(CASES)) {
+    let seen = "";
+    const a = await newPage(browser, { at: [9, 30], locale: loc });
+    await toPlan(a);
+    const status = await a.$('[aria-label*="see what is"]');
+    if (status) {
+      await status.click();
+      await a.waitForTimeout(900);
+      seen += await a.evaluate(() => document.body.innerText);
+      await a.keyboard.press("Escape");
+      await a.waitForTimeout(400);
+    }
+    await a.click(".planbtn");
+    await a.waitForSelector("#p-t1", { timeout: 15000 });
+    seen += "\n" + (await a.evaluate(() => document.body.innerText));
+    seen += "\n" + (await a.$$eval(".flabel,.eyebrow", (ns) => ns.map((n) => n.textContent).join("\n")));
+    await a.click("button.btn");
+    await a.waitForSelector(".routecard, .empty", { timeout: 25000 });
+    seen += "\n" + (await a.evaluate(() => document.body.innerText));
+    const errs = a.errors.slice();
+    await a.context_.close();
+
+    // And the one screen that has to be right when the day does not work.
+    const b = await newPage(browser, { at: [9, 30], locale: loc });
+    await toPlan(b);
+    await b.click(".planbtn");
+    await b.waitForSelector("#p-t1", { timeout: 15000 });
+    await b.fill("#p-t0", "15:30");
+    await b.fill("#p-t1", "15:40");
+    await b.click("button.btn");
+    await b.waitForSelector(".empty", { timeout: 20000 });
+    seen += "\n" + (await b.evaluate(() => document.body.innerText));
+    errs.push(...b.errors);
+    await b.context_.close();
+
+    const missing = want.filter((w) => !seen.includes(w));
+    check(`${loc} reads in its own language`, missing.length === 0,
+      missing.length ? `missing: ${missing.join(", ")}` : `all ${want.length} present`);
+    check(`${loc} renders without errors`, errs.length === 0, errs.join(" | "));
+  }
+  /*
+   * And a language we do not carry falls back to English rather than to a
+   * half-translated screen or to a key. French is the interesting case: the
+   * brief says the app expands into France, so this is the state a French
+   * skier sees today and it has to be coherent.
+   */
+  const fr = await newPage(browser, { at: [9, 30], locale: "fr-FR" });
+  await toPlan(fr);
+  await fr.click(".planbtn");
+  await fr.waitForSelector("#p-t1", { timeout: 15000 });
+  /*
+   * Read the labels as well as the body text, because `innerText` does not
+   * carry them — measured: the plan form's own "Im Tal bis" is on the screen
+   * and absent from `document.body.innerText`, which is why the three cases
+   * above collect both. A check that looked only at the body reported this
+   * fallback broken when it was not.
+   */
+  const frText = (await fr.evaluate(() => document.body.innerText)) + "\n" +
+    (await fr.$$eval(".flabel,.eyebrow", (ns) => ns.map((n) => n.textContent).join("\n")));
+  check("a language with no dictionary falls back to English, not to keys",
+    frText.includes("Down by") && !/\b[a-z]+\.[a-z]+[A-Z]/.test(frText),
+    frText.includes("Down by") ? "English throughout" : "did not fall back");
+  await fr.context_.close();
+}
+
 
 } catch (err) {
   /*

@@ -9,6 +9,7 @@ import { NODES } from "../active-resort.js";
 import { viaLabel } from "../lib/via.js";
 import { Warning, Arrow } from "../ui/Icons.jsx";
 import { showClock } from "../lib/clock.js";
+import { t } from "../lib/say.js";
 
 /**
  * Each returns null when it would not actually change anything.
@@ -27,7 +28,7 @@ const FIXES = {
     };
   },
   dropLunch: () => ({
-    title: "Ski through lunch",
+    title: t("Ski through lunch"),
     sub: "Buys back 45 minutes.",
   }),
   /*
@@ -44,9 +45,9 @@ const FIXES = {
       .map((key) => viaLabel(key, NODES));
     if (!names.length) return null;
     return names.length === 1
-      ? { title: `Plan a day without ${names[0]}`, sub: "Everything else stays as it is." }
+      ? { title: `Plan a day without ${names[0]}`, sub: t("Everything else stays as it is.") }
       : {
-          title: "Drop the places to swing by",
+          title: t("Drop the places to swing by"),
           sub: `${names.join(", ")}. Everything else stays as it is.`,
         };
   },
@@ -96,7 +97,7 @@ export default function EmptyScreen({ diagnosis, plan, resort, capacity, ability
         </div>
         {/* Not every empty state is a clock problem, so the heading is the
             diagnosis's to set when "That won't fit" would be untrue. */}
-        <h1 className="title title--sm">{diagnosis.title || "That won't fit"}</h1>
+        <h1 className="title title--sm">{diagnosis.title || t("That won't fit")}</h1>
       </SheetHead>
 
       <SheetBody>

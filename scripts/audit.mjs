@@ -250,6 +250,57 @@ for (const ability of ["Blue", "Anything"]) {
   await page.ctx_.close();
 }
 
+// ---- every resort, not only the one the app opens on ----------------------
+/*
+ * This audit walked one mountain for its whole life.
+ *
+ * Every journey above starts `page.click(".hero")`, which is the FIRST card on
+ * the home screen, so Monterosa got the overflow, clipping, tap-target,
+ * contrast and grid checks and the other five got none of them. That was fine
+ * when there was one resort. It is not fine now that there are six, and the
+ * two newest — Sölden and Hintertux, the first outside Italy — had never been
+ * through it at all. The findings this catches are the ones that come from
+ * DATA rather than from layout: a run name long enough to overflow its row, a
+ * base name that wraps to three lines, a resort whose numbers push a label
+ * into its neighbour. Those are per-resort by definition.
+ *
+ * The core journey only — plan, choose, detail, navigate. The entry contexts,
+ * abilities and edge cases above stay on one resort, because they exercise the
+ * app's own branching rather than the mountain's data, and running the full
+ * matrix six times would trade twenty minutes for nothing.
+ */
+for (const resort of RESORTS.filter((r) => r.available)) {
+  const page = await newPage();
+  await go(page);
+  const names = await page.$$eval(".hero", (ns) => ns.map((n) => n.textContent ?? ""));
+  const i = names.findIndex((n) => n.includes(resort.name));
+  if (i < 0) {
+    problems.push({ screen: resort.id, kind: "error", detail: `no card on the home screen for ${resort.name}` });
+    await page.ctx_.close();
+    continue;
+  }
+  (await page.$$(".hero"))[i].click();
+  await audit(page, `${resort.id}: chosen`);
+  await page.click("text=Go skiing");
+  await page.waitForSelector(".planbtn", { timeout: 20000 });
+  await audit(page, `${resort.id}: resort`);
+  await page.click(".planbtn");
+  await page.waitForSelector("#p-t1", { timeout: 15000 });
+  await audit(page, `${resort.id}: plan`);
+  await page.click("text=Find routes");
+  await page.waitForSelector(".routecard, .empty", { timeout: 25000 });
+  await audit(page, `${resort.id}: choose`);
+  if (await page.$(".routecard")) {
+    await openRoute(page);
+    await page.waitForSelector(".sheet__foot .btn", { timeout: 15000 });
+    await audit(page, `${resort.id}: detail`);
+    await page.click("text=/Save and start|Save offline and start|^Start$/");
+    await page.waitForSelector(".nav", { timeout: 20000 });
+    await audit(page, `${resort.id}: navigate`);
+  }
+  await page.ctx_.close();
+}
+
 // ---- straight there -------------------------------------------------------
 {
   const page = await newPage([14, 0]);
