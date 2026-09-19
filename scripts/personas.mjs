@@ -956,10 +956,19 @@ const PEOPLE = [
        * "Not a crowd" is now asserted directly rather than through a stride:
        * the discs may be many, and none of them may sit on another.
        */
-      const runs3 = far.steps.slice().sort((a, b) => a - b)
-        .some((n, i, l) => l[i + 1] === n + 1 && l[i + 2] === n + 2);
-      check(`${resort.id}: ${this.who} reads them as a sequence, not a stride`,
-        runs3, far.steps.slice().sort((a, b) => a - b).join(", "));
+      /*
+       * In order, and starting where the day starts.
+       *
+       * This wanted three consecutive numbers, as proof there was no stride.
+       * There is one again — it is what stops the set churning as the map
+       * turns — so what a reader needs from the pulled-back view is not that
+       * the numbers are contiguous but that they run the right way and begin
+       * at the beginning, so the shape of the day can be read off them.
+       */
+      const seq = far.steps.slice().sort((a, b) => a - b);
+      check(`${resort.id}: ${this.who} reads them in order, starting at one`,
+        seq.length > 2 && seq[0] === 1 && seq.every((n, i) => i === 0 || n > seq[i - 1]),
+        seq.join(", "));
       const discs = await page.evaluate(() =>
         (window.__skisStepBadges ?? []).filter((b) => !b.going));
       const stacked = [];
@@ -1334,22 +1343,17 @@ const PEOPLE = [
       }
       const easing = samples.filter((s) => s.some((b) => b.fade > 0.05 && b.fade < 0.95)).length;
       /*
-       * A fade needs something to fade.
+       * Nothing eases, because nothing is supposed to.
        *
-       * Where the day is short or the mountain small, pulling back does not
-       * change which numbers are on screen — and a set that does not change
-       * has nothing to ease, which is the map being right rather than the map
-       * popping. So the claim is conditional on the set actually moving, and
-       * the sets are compared to find out.
+       * This asked the opposite — that pinching in and out catches a number
+       * part way through a fade — and it was right until the tier was reported
+       * a fourth time as distracting. A number is now drawn at full strength
+       * or not drawn, so a sample caught "part way" is the fade having crept
+       * back in.
        */
-      const shapes = new Set(samples.map((s) =>
-        s.filter((b) => !b.going).map((b) => b.step).sort((a, c) => a - c).join(",")));
-      const changed = shapes.size > 1;
-      check(`${resort.id}: ${this.who} sees the numbers ease rather than blink`,
-        !changed || easing > 0,
-        changed
-          ? `${easing} of ${samples.length} samples caught one part way`
-          : `the same numbers throughout, nothing to fade`);
+      check(`${resort.id}: ${this.who} sees the numbers solid, never part way`,
+        easing === 0,
+        `${easing} of ${samples.length} samples caught one mid-fade`);
       await atRest(page, { quiet: 700, limit: 16000 });
       const far = (await badges()).filter((b) => !b.going).map((b) => b.step);
       check(`${resort.id}: ${this.who} still has numbers to read`, far.length > 0,

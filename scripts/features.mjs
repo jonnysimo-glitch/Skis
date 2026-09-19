@@ -2098,7 +2098,17 @@ if (feature("32. The places arrive as you get closer")) {
    * mountain, and past the budget — and a fade that is never asked for freezes
    * at whatever it last was. Every one of those popped.
    */
-  const pops = await page.evaluate(async (fadeMs) => {
+  const pops = await page.evaluate(async () => {
+    /*
+     * The renderer's own fade length, and the faster of the two. This was a
+     * hardcoded 260 handed in as an argument — a second copy of the same
+     * mistake the tier guard made, and it failed the same way when the
+     * durations changed: `dt / fadeMs` gives a SMALLER per-frame budget for a
+     * LONGER fade, so a name legitimately leaving in 100ms broke an allowance
+     * built for 260.
+     */
+    const fms = window.__skisFadeMs ?? { in: 260, out: 260 };
+    const fadeMs = Math.min(fms.in, fms.out);
     const c = document.querySelector("canvas[aria-label*='Terrain view']");
     const b = c.getBoundingClientRect();
     const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -4778,11 +4788,17 @@ if (feature("38. Every tier of label, the same way")) {
      * The renderer's own durations, not a copy of them. This held a hardcoded
      * 260, which described the fade accurately until the fade changed and then
      * described nothing — the allowance below is computed from it, so a stale
-     * number fails correct code. The slower of the two, because the allowance
-     * has to be generous enough for whichever direction a label is going.
+     * number fails correct code.
+     *
+     * The FASTER of the two, which is the opposite of what it first said. The
+     * allowance is `dt / fadeMs`, so a longer duration buys a SMALLER per-frame
+     * budget: taking the 200ms enter over the 100ms exit allowed 0.40 a frame
+     * while a label leaving legitimately moved 0.64, and five tiers failed at
+     * once on correct rendering. Any label may be on the quicker path, so the
+     * budget has to fit the quicker path.
      */
     const ms = window.__skisFadeMs ?? { in: 260, out: 260 };
-    const fadeMs = Math.max(ms.in, ms.out);
+    const fadeMs = Math.min(ms.in, ms.out);
     const out = {};
     for (const label of Object.keys(tiers)) {
       const trace = window.__skisTrace ?? [];
@@ -6487,18 +6503,28 @@ if (feature("48. The day is numbered, in the order you ski it")) {
     legs === 0 || shown.length <= legs, `${shown.length} numbers for ${legs} legs`);
 
   /*
-   * And the subset counts, rather than striding.
+   * And the same numbers are still there after the mountain turns.
    *
-   * This is the check that would have failed under the stride, which is the
-   * point of it: past the first two every number was a multiple of five, so
-   * three in a row was impossible. Now every leg is a candidate and what a
-   * reader gets is 1, 2, 3, 4, 5 — measured on this day at this framing —
-   * with holes only where two discs wanted the same pixels.
+   * This used to require three consecutive numbers, as proof there was no
+   * stride. There is a stride again — it is what makes the set hold still, and
+   * the reasoning is in MountainMap — so the property worth protecting is no
+   * longer which numbers appear but that they stay. A reader turning the map
+   * to look at the day must not watch numbers come and go while they do it,
+   * which is the complaint this tier has now drawn four times.
+   *
+   * Measured rather than asserted from the outside: the set before a sixty
+   * degree turn against the set after it, same numbers, same count.
    */
-  const runOf3 = (list) => list.some((n, i) => list[i + 1] === n + 1 && list[i + 2] === n + 2);
   const ascending = [...steps].sort((a, b) => a - b);
-  check("and they count, rather than running in fives", runOf3(ascending),
-    ascending.slice(0, 10).join(", "));
+  const before = ascending.join(",");
+  await page.evaluate(async () => {
+    const wait = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    for (let k = 0; k < 20; k++) { window.__skisSetBearing(-30 + k * 3); await wait(); }
+  });
+  await atRest(page, { quiet: 500, limit: 12000 });
+  const after = (await badges()).map((b) => b.step).sort((a, b) => a - b).join(",");
+  check("and the same numbers are there after the map turns", before === after,
+    before === after ? `${ascending.length} numbers held` : `${before} then ${after}`);
 
   // Navigating: the leg you are on is the one question this screen answers, so
   // its number is drawn at full weight and the ones behind you step back.
@@ -6537,28 +6563,29 @@ if (feature("48. The day is numbered, in the order you ski it")) {
     }
   };
   /*
-   * Out and then back in, and the second half is not padding.
+   * Out and then back in, watching for any number caught mid-anything.
    *
-   * Zooming out used to take numbers away: it crossed a stride threshold and
-   * a third of them switched off, which is the pop this check was written
-   * for. With the stride gone, zooming out only ever ADDS — more ground in
-   * frame, more room between the discs — so the fade-OUT path is no longer
-   * reachable in that direction and the check for it went from passing to
-   * intermittent to failing as the culling got stricter. Zooming back in is
-   * where a number leaves now: the frame tightens, legs fall off the edge and
-   * the survivors collide. Same assertion, exercised where the behaviour
-   * actually lives.
+   * This asked the opposite question until the tier was reported for a fourth
+   * time: it required a number to be caught part way through a fade, and a
+   * second one required catching one on its way out. Both now assert that
+   * neither ever happens. "The disappearing icons of the plan are not good
+   * they are distracting. Make them static and staying" — so a number is
+   * either drawn at full strength or not drawn, and there is no third state
+   * for a sample to land in.
+   *
+   * Kept as a check rather than deleted because a fade is exactly the kind of
+   * thing that gets added back for a good-sounding reason, and this is where
+   * it would be caught.
    */
   await sweep("out");
   await sweep("in");
   const middling = caught.filter((set) =>
     set.some((b) => b.fade > 0.05 && b.fade < 0.95)).length;
-  check("the numbers fade rather than pop", middling > 0,
-    `${middling} of ${caught.length} samples caught one part way`);
-  // Both directions: a set that only fades in still pops on the way out.
-  const leaving = caught.filter((set) => set.some((b) => b.going && b.fade < 0.95)).length;
-  check("and they fade out as well as in", leaving > 0,
-    `${leaving} of ${caught.length} samples caught one leaving`);
+  check("no number is ever caught part way", middling === 0,
+    `${middling} of ${caught.length} samples had one mid-fade`);
+  const leaving = caught.filter((set) => set.some((b) => b.going)).length;
+  check("and none is ever on its way out", leaving === 0,
+    `${leaving} of ${caught.length} samples had one leaving`);
   await atRest(page, { quiet: 700, limit: 16000 });
 
 
@@ -6604,24 +6631,21 @@ if (feature("48. The day is numbered, in the order you ski it")) {
     near.includes(onNow) && far.includes(onNow),
     `on leg ${onNow}; [${near.slice(0, 6).join(", ")}] close in, [${far.slice(0, 6).join(", ")}] far out`);
   /*
-   * And no stride, pulled back.
+   * And pulling back thins them rather than piling them up.
    *
-   * Three consecutive steps somewhere in the set. Under the old rule this was
-   * impossible past the first two — everything from later in the day was a
-   * multiple of five by construction, at this zoom above all — so it is the
-   * check that says the thinning is gone rather than merely widened.
+   * This demanded three consecutive numbers as proof there was no stride.
+   * There is one again, deliberately — it is what stops the set churning as
+   * the map turns — so the useful question changed. Pulled back covers more
+   * ground, so more of the day is in frame and the thinning has to work
+   * harder; what must not happen is the far set being larger than the near
+   * one, which would mean the thinning is not happening at all.
    *
-   * Pulled back only, and the close-in set is deliberately not asserted on.
-   * Navigating out of Stafal the follow camera sits in the valley and the
-   * route drawing reports eighteen hidden segments: what survives close in is
-   * [1, 2, 52], which has no run of three in it for a reason that is terrain
-   * rather than a rule. Demanding one there would be asserting the mountain
-   * away. Close in has its own check above — the leg you are on is numbered —
-   * and the route detail screen, where nothing is hidden, is checked for a
-   * run of three separately.
+   * Still the pulled-back set only. Navigating out of Stafal the follow
+   * camera sits in the valley with eighteen hidden segments, so what survives
+   * close in is a fact about the ridge rather than about this rule.
    */
-  check("and pulled back the numbers count rather than stride", runOf3(far),
-    `[${near.join(", ")}] close in, [${far.join(", ")}] far out`);
+  check("and pulling back does not add numbers", far.length <= near.length + 2,
+    `${near.length} close in [${near.slice(0, 8).join(", ")}], ${far.length} far out [${far.slice(0, 8).join(", ")}]`);
   /*
    * The pile is back, and this is it measured rather than asserted away.
    *

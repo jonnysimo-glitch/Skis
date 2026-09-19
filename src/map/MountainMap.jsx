@@ -3491,7 +3491,34 @@ export default function MountainMap({
             Math.max(...xs.map((m) => m.x)) - Math.min(...xs.map((m) => m.x)),
             Math.max(...xs.map((m) => m.z)) - Math.min(...xs.map((m) => m.z)))
         : 0;
-      const APART = extent * 0.045;
+      /*
+       * A tenth of the route's own extent, and measured in the world.
+       *
+       * Deriving it from pixels was tried, on the reasoning that the guard
+       * wants nineteen pixels between centres so the threshold should be
+       * whatever ground covers that. It reintroduced the churn it was meant to
+       * avoid — three set changes over a turn at two of the three resorts —
+       * and the reason is worth keeping: this camera is pitched, so
+       * pixels-per-metre is not one number. It varies across the frame and
+       * with the bearing, which makes "twenty-six pixels of ground" a
+       * camera-dependent quantity wearing a world-shaped disguise.
+       *
+       * A flat fraction of the route ignores the camera completely, which is
+       * the whole point. Thirteen per cent, measured rather than chosen, over
+       * a sixty-degree turn at each resort:
+       *
+       *            0.045        0.10          0.13
+       *   Monterosa 12, 0 chg    9, 0 chg      7, 0 chg
+       *             17px pair    clean         clean
+       *   Paganella      —      10-12, 3 chg  9-11, 3 chg
+       *
+       * Paganella keeps its three and does not lose them at 0.16 either, so
+       * they are not the packing: that is a compact resort whose day doubles
+       * back, and what changes is legs swinging past the edge of the frame,
+       * which cannot be drawn at any separation. Monterosa is fixed from 0.13
+       * up, and the two numbers that buys are worth it.
+       */
+      const APART = extent * 0.13;
       const spread = [];
       const roomy = (leg) => {
         const m = mids.get(leg);
@@ -3673,7 +3700,17 @@ export default function MountainMap({
          * numbers ahead of you are dense and a legible pile matters more than
          * a fixed set.
          */
-        if (!put && !flat && fallback) {
+        /*
+         * And the fallback still has to be readable.
+         *
+         * Two discs closer than their own diameter are one bolder disc with an
+         * illegible number in it, which is the fault the overlap guards exist
+         * for. The world separation above keeps them apart in almost every
+         * case, so this refusal is rare — and rare is what makes it safe to
+         * let it drop a number, because a rule that fires on one leg in fifty
+         * is not something a reader watches flicker.
+         */
+        if (!put && !flat && fallback && fallback.clear >= 19) {
           placed.push(fallback.box);
           drawn.push({
             leg,
