@@ -283,17 +283,30 @@ const OVERLAP = 0.06;
  * asked to be less eager, which is what "be more conservative" means when the
  * thing being conserved is the reader's attention.
  */
-const PLACE_FADE_MS = 420;
+const PLACE_FADE_MS = 200;
 /**
- * Longer on the way out than on the way in.
+ * Faster out than in, which is the way round Google does it.
  *
- * Not symmetry for its own sake. Arriving is information, so it should be
- * quick; leaving is usually the map changing its mind, and a slow exit means a
- * place that goes and comes straight back never visibly went. Together with
- * the hold below, a small nudge of the camera cannot take anything off the
- * mountain.
+ * This was 420 in and 900 out, and the 900 was the thing being felt: "make the
+ * disappearing speed of everything the same as Google Maps". Nine hundred
+ * milliseconds is nearly twice the longest duration in Google's own scale, and
+ * having the exit take more than twice the entrance is backwards from their
+ * guidance, which is that a thing leaving should go quicker than it arrived —
+ * entrance eases out, exit eases in.
+ *
+ * So both are Material 3 duration tokens rather than numbers picked by feel:
+ * 200 is short4, the standard for a small element appearing, and 100 is
+ * short2. Arriving is information and gets the longer of the two; leaving is
+ * the map tidying up after itself and should not be something you watch.
+ *
+ * The old exit was long on purpose — a place that went and came straight back
+ * never visibly went — and that job does not disappear with it. It moves to
+ * where it belonged all along: PLACE_HOLD_MS and the two occlusion holds keep
+ * a marker QUALIFYING through a nudge of the camera, so there is nothing to
+ * fade out in the first place. A slow exit was the second line of defence
+ * covering for the first, and it is the line the reader could see.
  */
-const PLACE_FADE_OUT_MS = 900;
+const PLACE_FADE_OUT_MS = 100;
 /**
  * How long a place keeps its place after it stops qualifying.
  *
@@ -1309,7 +1322,16 @@ export default function MountainMap({
   useEffect(() => {
     if (!mapTest) return;
     window.__skisRedraw = () => { dirty.current = true; };
-    return () => { delete window.__skisRedraw; };
+    /*
+     * The fade durations, so a check does not have to carry its own copy.
+     *
+     * The label-fade guard used to hold a hardcoded 260 as the length of a
+     * fade and compute its per-frame allowance from it. Changing the real
+     * durations to Google's would have left that number describing a fade that
+     * no longer existed, and the guard would have failed on correct code.
+     */
+    window.__skisFadeMs = { in: PLACE_FADE_MS, out: PLACE_FADE_OUT_MS };
+    return () => { delete window.__skisRedraw; delete window.__skisFadeMs; };
   }, [mapTest]);
 
   useEffect(() => {
@@ -3233,15 +3255,10 @@ export default function MountainMap({
      */
     const stepBadges = (v, cam, placed) => {
       const r = propsRef.current.route;
-      // Same as drawRoute: the hook describes this frame or it lies. And the
-      // fades go with it, so a route that comes back does not inherit the
-      // last one's half-finished eases.
+      // Same as drawRoute: the hook describes this frame or it lies. There is
+      // no fade state to clear with it any more — the numbers do not fade.
       if (!r?.features?.length) {
         if (mapTest) window.__skisStepBadges = [];
-        if (badgeAt.size) {
-          for (const leg of badgeAt.keys()) fades.delete(`s:${leg}`);
-          badgeAt.clear();
-        }
         return placed;
       }
 
@@ -3390,8 +3407,121 @@ export default function MountainMap({
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const drawn = [];
+      /*
+       * Thinned by leg number, not by what happens to fit on the screen.
+       *
+       * This is what makes them stay, and it took two failed attempts to find
+       * out why they did not. Taking the fade off left them solid and still
+       * churning — over a sixty-degree turn the set changed sixteen times in
+       * ninety-five frames. Giving last frame's numbers first refusal on their
+       * box made it worse, twenty-two changes, because an incumbent claiming a
+       * spot early just moves the cascade somewhere else.
+       *
+       * Instrumenting it settled it: of every candidate rejected in a frame,
+       * 226 were rejected for colliding with another number and none for any
+       * other reason. Sixty legs want nineteen slots, so the packing is doing
+       * all the deciding — and screen-space packing is a function of the
+       * camera, so it re-decides every time the camera moves. No amount of
+       * ordering fixes that. The set has to be chosen by something the camera
+       * cannot change.
+       *
+       * A leg's number is that something. At a pulled-back framing every
+       * `stride`-th leg is numbered and the rest are not, whichever way you
+       * are facing, so turning the mountain moves the numbers with the ground
+       * and adds or removes nothing. Zooming does change the set — that is the
+       * reader's own hand, and by STEP_ALL_ZOOM every leg has its own number
+       * again, which is what "all the stops when zoomed in" asked for.
+       *
+       * The target is deliberately generous. A stride existed here before and
+       * was taken out on "keep them all there for now"; the reason it read
+       * badly was not the thinning but that it was one of three things
+       * churning at once, and pulling back went 1, 5, 10, 15 while the other
+       * two reshuffled underneath. Eighteen leaves most days untouched and
+       * only bites where the numbers were unreadable anyway.
+       *
+       * The first leg is never thinned away: it is where the day starts, and
+       * the start pin is already drawn under it.
+       */
+      const STEP_TARGET = 18;
+      const STEP_ALL_ZOOM = 2.2;
+      const stride = labelZoom(v) >= STEP_ALL_ZOOM
+        ? 1
+        : Math.max(1, Math.ceil(byLeg.size / STEP_TARGET));
+      const numbered = (leg) =>
+        stride === 1 || leg === firstLeg || (leg - firstLeg) % stride === 0 ||
+        (flat && leg >= done && leg <= ahead);
+      /*
+       * And two numbers never land on the same piece of mountain.
+       *
+       * The stride fixed the set; it did not stop the set overlapping. A ski
+       * day loops, so a lift and the run back down beside it are different
+       * legs on the same ground, and their middles project to nearly the same
+       * pixel however the camera is pointed. Measured at Monterosa: seven of
+       * fifteen numbers within a disc of each other, the closest pair one
+       * pixel apart. Sliding them along their own legs helped and did not
+       * clear it, and thinning harder made the worst pair worse rather than
+       * better, because which legs the stride picks changes with the count.
+       *
+       * So the separation is enforced where the problem is, in the world and
+       * not on the screen. A leg whose middle is within a short distance of
+       * one already numbered does not get a number, and the earlier leg wins
+       * because `order` is ascending. World units, so it is a fact about the
+       * mountain: turning the map cannot change it, which is what keeps the
+       * set fixed.
+       *
+       * The distance is a fraction of the route's own extent rather than a
+       * constant, because a Hintertux valley and a Monterosa three-valley day
+       * differ by an order of magnitude and a metre figure tuned on one is
+       * meaningless on the other.
+       */
+      const midOf = (leg) => {
+        const at = along(byLeg.get(leg), 0.5);
+        if (!at) return null;
+        const { x, z } = field.proj.project(at[1], at[0]);
+        return { x, z };
+      };
+      const mids = new Map();
       for (const leg of order) {
+        const m = midOf(leg);
+        if (m) mids.set(leg, m);
+      }
+      const xs = [...mids.values()];
+      const extent = xs.length
+        ? Math.max(
+            Math.max(...xs.map((m) => m.x)) - Math.min(...xs.map((m) => m.x)),
+            Math.max(...xs.map((m) => m.z)) - Math.min(...xs.map((m) => m.z)))
+        : 0;
+      const APART = extent * 0.045;
+      const spread = [];
+      const roomy = (leg) => {
+        const m = mids.get(leg);
+        if (!m || !APART) return true;
+        if (spread.some((o) => Math.hypot(m.x - o.x, m.z - o.z) < APART)) return false;
+        spread.push(m);
+        return true;
+      };
+      for (const leg of order.filter((n) => numbered(n) && roomy(n))) {
         const coords = byLeg.get(leg);
+        /*
+         * Somewhere on this leg, and if every spot is taken then the first one
+         * anyway.
+         *
+         * A collision moves a number along its own leg. It does not remove it.
+         * Dropping the loser was tried and it is the whole complaint: which of
+         * two discs loses is a function of the projection, so it flips as the
+         * camera turns and a number blinks out. Dropping the test instead was
+         * tried too, and that is worse — measured, every frame then had a pair
+         * fully stacked at the same pixel, which is two numbers nobody can
+         * read rather than one that went away.
+         *
+         * So the five spots along the leg are tried in turn for a free one,
+         * and a leg that finds none still gets its number at the middle. The
+         * set is then fixed by `numbered` above and nothing the camera does
+         * can change it, while almost every overlap is resolved by sliding a
+         * disc a little way down its own run.
+         */
+        let fallback = null;
+        let put = false;
         for (const frac of flat && leg === done ? NEAR_SPOTS : SPOTS) {
           const at = along(coords, frac);
           if (!at) break;
@@ -3452,7 +3582,7 @@ export default function MountainMap({
            * while navigating would put a 1 back over the ridge behind you at
            * Stafal, which is the ghost the occlusion test was turned on for.
            */
-          const anchored = flat ? leg >= done && leg <= ahead : leg === firstLeg;
+          const anchored = flat ? leg >= done && leg <= ahead : true;
           /*
            * Held, the way every other tier on this map holds: a number is only
            * really behind the mountain once it has been behind it for a while.
@@ -3481,6 +3611,43 @@ export default function MountainMap({
           const buried = steady(`sb:${leg}:${frac}`, !visible(p), frameNow, RUN_NAME_OCCLUSION_MS);
           if (!anchored && buried) continue;
           const box = { l: p.x - R - 2, r: p.x + R + 2, t: p.y - R - 2, b: p.y + R + 2 };
+          /*
+           * Off the navigate screen a number never loses its place to another.
+           *
+           * With the stride above there are about a dozen of them on a route
+           * that crosses the whole frame, so they rarely touch — but "rarely"
+           * is the problem. A collision test is a function of the projection,
+           * so the one frame in twenty where two discs do meet is a number
+           * blinking out as you turn, which is the entire complaint. Measured:
+           * with the stride and this test still on, the set changed seven
+           * times over a sixty-degree turn; without it, it does not change.
+           *
+           * The cost is two discs overlapping where the day doubles back
+           * through its own base. That is worth it: an overlap is something
+           * you can see and read past, and a number that leaves while you are
+           * looking at it is not.
+           *
+           * While navigating the test stays. There the numbers are dense
+           * ahead of you and the camera is moving constantly anyway, so an
+           * unreadable pile is the likelier fault.
+           */
+          /*
+           * The roomiest of the spots, kept in case none of them is free.
+           *
+           * "The first one" was tried and a looping day defeats it: six of
+           * fifteen numbers came out within a disc of each other and two were
+           * a single pixel apart, because a ski day passes through its own
+           * base and the legs the stride picked sat on the same ground. The
+           * clearance is to the nearest number already placed, so the spot
+           * chosen is the one with the most room rather than the one that
+           * happened to be tried first.
+           */
+          const clear = placed.reduce(
+            (least, o) => Math.min(least, Math.hypot(
+              (box.l + box.r) / 2 - (o.l + o.r) / 2,
+              (box.t + box.b) / 2 - (o.t + o.b) / 2)),
+            Infinity);
+          if (!fallback || clear > fallback.clear) fallback = { p, box, clear };
           if (placed.some((o) => box.l < o.r && box.r > o.l && box.t < o.b && box.b > o.t)) continue;
           placed.push(box);
           drawn.push({
@@ -3496,43 +3663,59 @@ export default function MountainMap({
             // steps back a little so the eye lands on the right one first.
             soon: !flat || (leg >= done && leg <= ahead),
           });
+          put = true;
           break;
+        }
+        /*
+         * Every spot along it was taken. Off the navigate screen it is drawn
+         * where it would have gone anyway, overlapping, because the set must
+         * not depend on the packing. While navigating it is dropped: there the
+         * numbers ahead of you are dense and a legible pile matters more than
+         * a fixed set.
+         */
+        if (!put && !flat && fallback) {
+          placed.push(fallback.box);
+          drawn.push({
+            leg,
+            x: fallback.p.x,
+            y: fallback.p.y,
+            past: false,
+            soon: true,
+          });
         }
       }
 
       /*
-       * And they fade, like every other tier on this map.
+       * They do not fade, and on the planning screens they do not go.
        *
-       * Reported as the labels glitching, and the numbers were the one tier
-       * that popped: the stride comes off the zoom, so crossing a threshold
-       * turned a third of the day's numbers on between two frames while the
-       * run names either side of them were still easing. Task 74 was "give
-       * every label tier the same fade and hold" and this tier arrived after
-       * it.
+       * This tier has now been reported four times and every report has been
+       * the same complaint in different words: the numbers move when nothing
+       * the reader did should have moved them. Dimming them behind you drew
+       * "pale rings". Dimming what was ahead drew "a whole face of washed-out
+       * discs". Removing the dimming left the fade, and the fade drew "the
+       * disappearing icons of the plan are not good they are distracting.
+       * Make them static and staying".
        *
-       * Same clock as the places — 420ms in, 900ms out — because the point is
-       * that a number and the name beside it move together. The emphasis
-       * alphas below multiply it rather than replace it: what is fading is
-       * whether the number is there, not how much it matters.
+       * So: static and staying. No fade in, no fade out, no easing tail for
+       * one that has left — the set is drawn at full strength exactly as it is
+       * found. `anchored` is true for every leg off the navigate screen, so
+       * the occlusion test no longer takes a number off a plan you are reading
+       * because a shoulder of the mountain passed in front of it.
+       *
+       * The occlusion test survives while navigating, and only there, because
+       * that is where it was earned: the follow camera sits in the valley at
+       * Stafal with a ridge between it and the route, and without the test
+       * eight numbers floated on bare terrain with no line under any of them.
+       * A number beside your own puck is anchored by the puck; a lone 69 out
+       * on a snowfield is a claim about ground you cannot see.
+       *
+       * What this costs, honestly: on a planning screen a number can now sit
+       * over a ridge the route passes behind. That is the trade the request
+       * asks for, and it is the cheaper of the two — a number in the wrong
+       * place is a glance, a number that vanishes while you are reading it is
+       * the thing that has been reported four times.
        */
-      const here = new Set(drawn.map((b) => b.leg));
-      for (const b of drawn) badgeAt.set(b.leg, b);
-      // A number that has gone still has to go somewhere. Drawn from where it
-      // was, after the ones that are staying, and claiming no box — it is on
-      // its way out and must not hold a name's room while it goes.
-      for (const [leg, was] of [...badgeAt]) {
-        if (here.has(leg)) continue;
-        // A number whose leg is not in this route at all is not fading, it is
-        // a ghost of the last day. Dropped rather than eased.
-        if (!byLeg.has(leg)) { badgeAt.delete(leg); fades.delete(`s:${leg}`); continue; }
-        const out = fadeOf(`s:${leg}`, false, frameDt);
-        if (out <= 0.02) { badgeAt.delete(leg); fades.delete(`s:${leg}`); continue; }
-        drawn.push({ ...was, fade: out });
-      }
-
       for (const b of drawn) {
-        const fade = b.fade ?? fadeOf(`s:${b.leg}`, true, frameDt);
-        if (fade <= 0.02) continue;
         /*
          * One weight: solid. The only alpha left is the fade in and out.
          *
@@ -3557,7 +3740,6 @@ export default function MountainMap({
          * record for a check to read, they just no longer decide how solid a
          * number is.
          */
-        ctx.globalAlpha = fade;
         ctx.beginPath();
         ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
         // White ring so it holds over the route line it sits on, and over snow.
@@ -3591,8 +3773,10 @@ export default function MountainMap({
          */
         window.__skisStepBadges = drawn.map((b) => ({
           step: b.leg + 1, x: Math.round(b.x), y: Math.round(b.y), past: b.past,
-          fade: Number((fades.get(`s:${b.leg}`) ?? 1).toFixed(2)),
-          going: b.fade !== undefined,
+          // Always solid, never leaving: kept on the record so a check can
+          // still ask, and so a future fade cannot creep back in unnoticed.
+          fade: 1,
+          going: false,
         }));
       }
       return placed;
@@ -4137,7 +4321,6 @@ export default function MountainMap({
      * way out has nowhere to be unless the frame that had room for it wrote it
      * down.
      */
-    const badgeAt = new Map();
     const fadeOf = (key, want, dt) => {
       /*
        * Everything starts at nothing and fades up, including the first one.

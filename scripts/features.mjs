@@ -4773,7 +4773,16 @@ if (feature("38. Every tier of label, the same way")) {
 
   const report = await page.evaluate((args) => {
     cancelAnimationFrame(window.__skisTraceId);
-    const [tiers, fadeMs] = args;
+    const [tiers] = args;
+    /*
+     * The renderer's own durations, not a copy of them. This held a hardcoded
+     * 260, which described the fade accurately until the fade changed and then
+     * described nothing — the allowance below is computed from it, so a stale
+     * number fails correct code. The slower of the two, because the allowance
+     * has to be generous enough for whichever direction a label is going.
+     */
+    const ms = window.__skisFadeMs ?? { in: 260, out: 260 };
+    const fadeMs = Math.max(ms.in, ms.out);
     const out = {};
     for (const label of Object.keys(tiers)) {
       const trace = window.__skisTrace ?? [];
@@ -4822,7 +4831,7 @@ if (feature("38. Every tier of label, the same way")) {
       out[label] = { jumps, biggest: Math.round(biggest * 100) / 100, worst, seen };
     }
     return out;
-  }, [TIERS, 260]);
+  }, [TIERS, null]);
 
   for (const [label, r] of Object.entries(report)) {
     // Both halves matter. Zero jumps across zero labels is a tier that never
