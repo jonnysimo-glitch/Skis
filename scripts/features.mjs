@@ -2145,7 +2145,7 @@ if (feature("32. The places arrive as you get closer")) {
     send(cx + 88, cy + 44, "pointerup");
     for (let k = 0; k < 20; k++) await wait();
     return { jumps, watched, biggest: Math.round(biggest * 100) / 100, worst };
-  }, 260);
+  });
   // With something to watch, or it passes by having nothing to report.
   check("and what changes fades rather than popping",
     pops.watched >= 3 && pops.jumps === 0,
@@ -4614,7 +4614,17 @@ if (feature("36. Every name arrives the same way")) {
   });
   await zoomBy(page, 5, "in", { settle: 430 });
   await page.waitForTimeout(900);
-  const steps = await page.evaluate((fadeMs) => {
+  const steps = await page.evaluate(() => {
+    /*
+     * The renderer's own durations. This was the third copy of a hardcoded
+     * 260 in this file and the last one to be found — the comment below
+     * already said "the shorter of the two", which was right, but 260 stopped
+     * describing anything when the fades were set to Google's 200 in and 100
+     * out. A guard that carries its own copy of a constant is a guard that
+     * measures the past.
+     */
+    const fms = window.__skisFadeMs ?? { in: 260, out: 260 };
+    const fadeMs = Math.min(fms.in, fms.out);
     cancelAnimationFrame(window.__skisTraceId);
     const trace = window.__skisTrace ?? [];
     let jumps = 0;
@@ -4638,7 +4648,7 @@ if (feature("36. Every name arrives the same way")) {
       }
     }
     return { jumps, biggest: Math.round(biggest * 100) / 100, worst, watched, frames: trace.length };
-  }, 260);
+  });
   check("a run name fades in rather than appearing", steps.watched >= 3 && steps.jumps === 0,
     `${steps.jumps} steps bigger than the fade allows over ${steps.watched} names ` +
     `and ${steps.frames} frames, biggest ${steps.biggest} (${steps.worst || "none"})`);

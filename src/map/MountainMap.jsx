@@ -283,28 +283,38 @@ const OVERLAP = 0.06;
  * asked to be less eager, which is what "be more conservative" means when the
  * thing being conserved is the reader's attention.
  */
-const PLACE_FADE_MS = 200;
+const PLACE_FADE_MS = 420;
 /**
  * Faster out than in, which is the way round Google does it.
  *
- * This was 420 in and 900 out, and the 900 was the thing being felt: "make the
- * disappearing speed of everything the same as Google Maps". Nine hundred
- * milliseconds is nearly twice the longest duration in Google's own scale, and
- * having the exit take more than twice the entrance is backwards from their
- * guidance, which is that a thing leaving should go quicker than it arrived —
- * entrance eases out, exit eases in.
+ * The exit was 900ms and that was the thing being felt: "make the disappearing
+ * speed of everything the same as Google Maps". Nine hundred is nearly twice
+ * the longest duration in Google's own scale, and an exit taking more than
+ * twice the entrance is backwards from their guidance — a thing leaving should
+ * go quicker than it arrived. So the exit is 100, which is Material 3's
+ * short2, and leaving is no longer something you watch.
  *
- * So both are Material 3 duration tokens rather than numbers picked by feel:
- * 200 is short4, the standard for a small element appearing, and 100 is
- * short2. Arriving is information and gets the longer of the two; leaving is
- * the map tidying up after itself and should not be something you watch.
+ * The ENTRANCE stays at 420, and that is not an oversight. Google's short4 is
+ * 200 and it was tried; this map will not hold still at it. Measured against
+ * the settle check — how many milliseconds of a two second quiet window the
+ * renderer spends drawing — there is a cliff:
  *
- * The old exit was long on purpose — a place that went and came straight back
- * never visibly went — and that job does not disappear with it. It moves to
- * where it belonged all along: PLACE_HOLD_MS and the two occlusion holds keep
- * a marker QUALIFYING through a nudge of the camera, so there is nothing to
- * fade out in the first place. A slow exit was the second line of defence
- * covering for the first, and it is the line the reader could see.
+ *   enter  200   300   380   420
+ *   redraw 667   650    18    17     (ms of 2000)
+ *
+ * Below about 350 the declutter enters a limit cycle. A newcomer reaches the
+ * weight at which it can take a box before the incumbent's hold has expired,
+ * the incumbent leaves, its box frees, and the newcomer's own arrival lets the
+ * first back — so nothing settles and the map redraws forever, which on a
+ * chairlift is the battery. The holds are what should prevent that, and they
+ * are tuned around an entrance of this length; making the entrance quick
+ * without retuning PLACE_HOLD_MS and PLACE_BUDGET_SLACK just outruns them.
+ *
+ * Which also corrects the reasoning this comment carried a moment ago. It said
+ * the long exit was a second line of defence for churn that the holds really
+ * owned. The measurement says the opposite about the entrance: the timing is
+ * load-bearing, and the honest version is that the exit was free to change and
+ * the entrance was not.
  */
 const PLACE_FADE_OUT_MS = 100;
 /**

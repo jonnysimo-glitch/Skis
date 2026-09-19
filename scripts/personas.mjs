@@ -966,8 +966,16 @@ const PEOPLE = [
        * at the beginning, so the shape of the day can be read off them.
        */
       const seq = far.steps.slice().sort((a, b) => a - b);
+      /*
+       * No floor on how many. Pulled back while NAVIGATING, the follow camera
+       * sits low and most of the day is behind a ridge — Kronplatz and Latemar
+       * both come back with a single number, which is the terrain and not the
+       * rule. A first version of this demanded three and failed them for being
+       * honest about what can be seen. What it asks now is that whatever is
+       * there runs the right way and begins at the beginning.
+       */
       check(`${resort.id}: ${this.who} reads them in order, starting at one`,
-        seq.length > 2 && seq[0] === 1 && seq.every((n, i) => i === 0 || n > seq[i - 1]),
+        seq.length > 0 && seq[0] === 1 && seq.every((n, i) => i === 0 || n > seq[i - 1]),
         seq.join(", "));
       const discs = await page.evaluate(() =>
         (window.__skisStepBadges ?? []).filter((b) => !b.going));
