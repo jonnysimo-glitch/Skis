@@ -3369,6 +3369,16 @@ export default function MountainMap({
        * this".
        */
       const NEAR_SPOTS = [0.04, 0.08, 0.14, 0.22, 0.3];
+      /*
+       * And the mirror of it, for the leg you have just finished.
+       *
+       * Its middle is a long way back — often behind the follow camera
+       * entirely once the view reframes on the new leg — so a number placed
+       * there is a number nowhere. Its END is where you are standing, which is
+       * both on screen and where the reader last was. Same reasoning as
+       * NEAR_SPOTS and the same distances, counted from the other end.
+       */
+      const PAST_SPOTS = [0.96, 0.92, 0.86, 0.78, 0.7];
 
       const order = [...byLeg.keys()].sort((a, b) => {
         if (flat) {
@@ -3457,9 +3467,24 @@ export default function MountainMap({
       const stride = labelZoom(v) >= STEP_ALL_ZOOM
         ? 1
         : Math.max(1, Math.ceil(byLeg.size / STEP_TARGET));
+      /*
+       * And while navigating, the leg you just finished keeps its number.
+       *
+       * The stride thins the day by leg number, which is what makes the set
+       * hold still, and it thins what is BEHIND you as readily as what is
+       * ahead — so on leg 5 there was nothing drawn back at all. Finishing a
+       * leg and watching its number vanish is the opposite of the point: the
+       * numbers behind you are how far you have got.
+       *
+       * One either side, matching NAV_LOOKAHEAD. Both ends are anchored by the
+       * puck for the same reason the leg under your skis is, so they are
+       * exempt from the occlusion test too — a number a few metres from the
+       * marker is unambiguous whatever the ridge behind it is doing.
+       */
+      const behind = flat ? done - NAV_LOOKAHEAD : -Infinity;
       const numbered = (leg) =>
         stride === 1 || leg === firstLeg || (leg - firstLeg) % stride === 0 ||
-        (flat && leg >= done && leg <= ahead);
+        (flat && leg >= behind && leg <= ahead);
       /*
        * And two numbers never land on the same piece of mountain.
        *
@@ -3531,6 +3556,18 @@ export default function MountainMap({
       const APART = extent * 0.13;
       const spread = [];
       const roomy = (leg) => {
+        /*
+         * The legs around the puck are never spaced out of existence.
+         *
+         * Consecutive legs are adjacent by definition, so the separation rule
+         * throws the one you have just finished away for being close to the
+         * one you are on — measured, leg 3 rejected as "too close" while on
+         * leg 4, which is exactly the number a reader wants to see behind
+         * them. The rule is there to stop two numbers from unrelated parts of
+         * a looping day landing on each other; the leg before and after your
+         * own are not that, and they are anchored by the puck.
+         */
+        if (flat && leg >= behind && leg <= ahead) return true;
         const m = mids.get(leg);
         if (!m || !APART) return true;
         if (spread.some((o) => Math.hypot(m.x - o.x, m.z - o.z) < APART)) return false;
@@ -3559,7 +3596,10 @@ export default function MountainMap({
          */
         let fallback = null;
         let put = false;
-        for (const frac of flat && leg === done ? NEAR_SPOTS : SPOTS) {
+        const spots = flat && leg === done ? NEAR_SPOTS
+          : flat && leg < done ? PAST_SPOTS
+            : SPOTS;
+        for (const frac of spots) {
           const at = along(coords, frac);
           if (!at) break;
           const { x, z } = field.proj.project(at[1], at[0]);
@@ -3619,7 +3659,7 @@ export default function MountainMap({
            * while navigating would put a 1 back over the ridge behind you at
            * Stafal, which is the ghost the occlusion test was turned on for.
            */
-          const anchored = flat ? leg >= done && leg <= ahead : true;
+          const anchored = flat ? leg >= behind && leg <= ahead : true;
           /*
            * Held, the way every other tier on this map holds: a number is only
            * really behind the mountain once it has been behind it for a while.
@@ -3726,8 +3766,11 @@ export default function MountainMap({
             leg,
             x: fallback.p.x,
             y: fallback.p.y,
-            past: false,
-            soon: true,
+            // The same answers the placed path gives, not hardcoded ones: a
+            // number reaching the map this way is still behind you if its leg
+            // is behind you, and the checks read `past` to tell.
+            past: flat && leg < done,
+            soon: !flat || (leg >= done && leg <= ahead),
           });
         }
       }
